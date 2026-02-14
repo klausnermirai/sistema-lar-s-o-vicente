@@ -300,6 +300,13 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
     setData(prev => ({ ...prev, [field]: value }));
   };
 
+  // Helper para avançar de etapa, salvar e fechar o modal imediatamente
+  const advanceStage = (nextStage: CandidateStage) => {
+    const updated = { ...data, stage: nextStage };
+    onSave(updated);
+    onClose();
+  };
+
   const renderStageControls = () => {
     switch (data.stage) {
       case 'agendamentos':
@@ -347,7 +354,7 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
             </div>
             <button 
               disabled={!data.scheduledDate}
-              onClick={() => updateField('stage', 'entrevista')}
+              onClick={() => advanceStage('entrevista')}
               className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
               Confirmar Visita e Ir para Entrevista <ArrowRight size={16} />
@@ -365,7 +372,7 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
                </div>
             </div>
             <button 
-              onClick={() => updateField('stage', 'aguardando_vaga')}
+              onClick={() => advanceStage('aguardando_vaga')}
               className="w-full py-4 bg-[#004c99] text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-blue-800 transition-all flex items-center justify-center gap-2"
             >
               Concluir Entrevista e Ir para Fila <ArrowRight size={16} />
@@ -388,7 +395,7 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
               </select>
             </div>
             <button 
-              onClick={() => updateField('stage', 'decisao_diretoria')}
+              onClick={() => advanceStage('decisao_diretoria')}
               className="w-full py-4 bg-purple-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-purple-700 transition-all flex items-center justify-center gap-2"
             >
               Enviar para Parecer da Diretoria <ArrowRight size={16} />
@@ -409,7 +416,7 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
             </div>
             <button 
               disabled={!data.boardOpinion}
-              onClick={() => updateField('stage', 'avaliacao_medica')}
+              onClick={() => advanceStage('avaliacao_medica')}
               className="w-full py-4 bg-teal-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-teal-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
               Encaminhar para Parecer Médico <ArrowRight size={16} />
@@ -443,7 +450,7 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
             </div>
             {data.medicalStatus === 'favoravel' && (
               <button 
-                onClick={() => updateField('stage', 'integracao')}
+                onClick={() => advanceStage('integracao')}
                 className="w-full py-4 bg-pink-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-pink-700 transition-all flex items-center justify-center gap-2"
               >
                 Seguir para Integração <ArrowRight size={16} />
