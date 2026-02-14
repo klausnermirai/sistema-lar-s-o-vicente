@@ -35,6 +35,7 @@ interface ScreeningModuleProps {
 }
 
 const STAGE_THEMES: Record<string, { active: string; text: string; bg: string; border: string; iconBg: string }> = {
+  indigo: { active: 'border-indigo-500 bg-indigo-50/50', text: 'text-indigo-600', bg: 'bg-indigo-500', border: 'border-indigo-100', iconBg: 'bg-indigo-50' },
   blue: { active: 'border-blue-500 bg-blue-50/50', text: 'text-blue-600', bg: 'bg-blue-500', border: 'border-blue-100', iconBg: 'bg-blue-50' },
   orange: { active: 'border-orange-500 bg-orange-50/50', text: 'text-orange-600', bg: 'bg-orange-500', border: 'border-orange-100', iconBg: 'bg-orange-50' },
   purple: { active: 'border-purple-500 bg-purple-50/50', text: 'text-purple-600', bg: 'bg-purple-500', border: 'border-purple-100', iconBg: 'bg-purple-50' },
@@ -47,9 +48,10 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
   const [editingCandidate, setEditingCandidate] = React.useState<Candidate | null>(null);
   const [managingCandidate, setManagingCandidate] = React.useState<Candidate | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
-  const [selectedStage, setSelectedStage] = React.useState<CandidateStage>('entrevista');
+  const [selectedStage, setSelectedStage] = React.useState<CandidateStage>('agendamentos');
 
   const stages: { id: CandidateStage; label: string; icon: any; color: string; description: string }[] = [
+    { id: 'agendamentos', label: '0. Agendamentos', icon: Calendar, color: 'indigo', description: 'Pessoas aguardando visita ou entrevista inicial.' },
     { id: 'entrevista', label: '1. Entrevistas', icon: ClipboardList, color: 'blue', description: 'Coleta de dados iniciais e visita social.' },
     { id: 'aguardando_vaga', label: '2. Fila de Espera', icon: Clock, color: 'orange', description: 'Aptos aguardando vaga disponível.' },
     { id: 'decisao_diretoria', label: '3. Diretoria', icon: Scale, color: 'purple', description: 'Análise de prioridade em ata de reunião.' },
@@ -80,7 +82,8 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
     );
   }
 
-  const ActiveIcon = stages.find(s => s.id === selectedStage)?.icon || LayoutGrid;
+  const activeStageData = stages.find(s => s.id === selectedStage);
+  const ActiveIcon = activeStageData?.icon || LayoutGrid;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -106,13 +109,13 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
              className="w-full sm:w-auto bg-[#004c99] hover:bg-blue-800 text-white px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all font-black text-xs uppercase"
            >
              <Plus size={18} />
-             <span>Nova Entrevista</span>
+             <span>Novo Agendamento</span>
            </button>
         </div>
       </div>
 
       {/* Tabs de Status Lado a Lado (Cards Superiores) */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 no-print overflow-x-auto pb-2 no-scrollbar">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3 no-print overflow-x-auto pb-2 no-scrollbar">
         {stages.map((stage) => {
           const count = candidates.filter(c => c.stage === stage.id).length;
           const isActive = selectedStage === stage.id;
@@ -123,18 +126,18 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
             <button
               key={stage.id}
               onClick={() => setSelectedStage(stage.id)}
-              className={`p-5 rounded-2xl border-2 transition-all text-left flex flex-col gap-3 group relative overflow-hidden h-full ${
+              className={`p-4 rounded-2xl border-2 transition-all text-left flex flex-col gap-2 group relative overflow-hidden h-full ${
                 isActive 
                   ? `${theme.active} border-${stage.color}-500 shadow-lg` 
                   : 'bg-white border-transparent hover:border-gray-200 shadow-sm'
               }`}
             >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${isActive ? `${theme.bg} text-white` : 'bg-gray-50 text-gray-400 group-hover:bg-gray-100'}`}>
-                 <StageIcon size={20} />
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${isActive ? `${theme.bg} text-white` : 'bg-gray-50 text-gray-400 group-hover:bg-gray-100'}`}>
+                 <StageIcon size={18} />
               </div>
               <div>
-                 <div className="text-[9px] font-black uppercase text-gray-400 tracking-widest">{stage.label}</div>
-                 <div className="text-2xl font-black text-gray-900 leading-none mt-1">{count}</div>
+                 <div className="text-[8px] font-black uppercase text-gray-400 tracking-widest leading-tight">{stage.label}</div>
+                 <div className="text-xl font-black text-gray-900 leading-none mt-0.5">{count}</div>
               </div>
               {isActive && <div className={`absolute bottom-0 left-0 right-0 h-1 ${theme.bg}`}></div>}
             </button>
@@ -151,10 +154,10 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
                </div>
                <div>
                   <h2 className="text-lg font-black text-gray-900 uppercase tracking-tighter">
-                     {stages.find(s => s.id === selectedStage)?.label}
+                     {activeStageData?.label}
                   </h2>
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                     {stages.find(s => s.id === selectedStage)?.description}
+                     {activeStageData?.description}
                   </p>
                </div>
             </div>
@@ -187,13 +190,20 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
                                  {cand.priority}
                               </span>
                            )}
+                           {cand.stage === 'agendamentos' && cand.scheduledDate && (
+                             <span className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase border bg-indigo-50 text-indigo-600 border-indigo-100 flex items-center gap-1">
+                               <Clock size={10} /> {new Date(cand.scheduledDate).toLocaleDateString('pt-BR')}
+                             </span>
+                           )}
                         </div>
                      </div>
                   </div>
                   <div className="flex items-center gap-6">
                      <div className="text-right hidden lg:block border-r pr-6 border-gray-100">
-                        <span className="text-[9px] font-black text-gray-300 uppercase block mb-0.5 tracking-widest">Motivo Principal</span>
-                        <span className="text-[11px] font-medium text-gray-600 italic max-w-xs truncate block">"{cand.admissionReason || 'Sem detalhamento social'}"</span>
+                        <span className="text-[9px] font-black text-gray-300 uppercase block mb-0.5 tracking-widest">Observações</span>
+                        <span className="text-[11px] font-medium text-gray-600 italic max-w-xs truncate block">
+                          "{cand.scheduledNotes || cand.admissionReason || 'Sem detalhamento'}"
+                        </span>
                      </div>
                      <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-xl text-[10px] font-black uppercase text-[#004c99] group-hover:bg-[#004c99] group-hover:text-white group-hover:shadow-lg transition-all">
                         Gerenciar Etapa <ChevronRight size={14} />
@@ -292,13 +302,65 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
 
   const renderStageControls = () => {
     switch (data.stage) {
+      case 'agendamentos':
+        return (
+          <div className="space-y-6">
+            <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-start gap-4">
+               <Calendar className="text-indigo-500 shrink-0" size={20} />
+               <div className="space-y-1">
+                  <p className="text-[11px] font-black text-indigo-900 uppercase">Etapa 0: Agendamento de Visita</p>
+                  <p className="text-[10px] text-indigo-800 leading-relaxed font-medium">Defina a data prevista para a visita social domiciliar e entrevista inicial.</p>
+               </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                 <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Data da Visita</label>
+                 <input 
+                   type="date" 
+                   value={data.scheduledDate} 
+                   onChange={(e) => updateField('scheduledDate', e.target.value)}
+                   className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase"
+                 />
+              </div>
+              <div className="space-y-2">
+                 <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Período</label>
+                 <select 
+                   value={data.scheduledPeriod} 
+                   onChange={(e) => updateField('scheduledPeriod', e.target.value)}
+                   className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase"
+                 >
+                   <option value="">Selecione...</option>
+                   <option value="manha">Manhã</option>
+                   <option value="tarde">Tarde</option>
+                   <option value="noite">Noite</option>
+                 </select>
+              </div>
+            </div>
+            <div className="space-y-2">
+               <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Notas do Agendamento</label>
+               <textarea 
+                 value={data.scheduledNotes} 
+                 onChange={(e) => updateField('scheduledNotes', e.target.value)}
+                 placeholder="Informações sobre localização, contatos adicionais..."
+                 className="w-full p-5 border border-gray-200 rounded-2xl text-xs font-medium h-24 focus:ring-2 focus:ring-indigo-200 outline-none uppercase"
+               />
+            </div>
+            <button 
+              disabled={!data.scheduledDate}
+              onClick={() => updateField('stage', 'entrevista')}
+              className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              Confirmar Visita e Ir para Entrevista <ArrowRight size={16} />
+            </button>
+          </div>
+        );
       case 'entrevista':
         return (
           <div className="space-y-6">
             <div className="p-5 bg-blue-50 border border-blue-100 rounded-2xl flex items-start gap-4">
                <Info className="text-blue-500 shrink-0" size={20} />
                <div className="space-y-1">
-                  <p className="text-[11px] font-black text-blue-900 uppercase">Instruções: Etapa 1</p>
+                  <p className="text-[11px] font-black text-blue-900 uppercase">Etapa 1: Entrevista Social</p>
                   <p className="text-[10px] text-blue-800 leading-relaxed font-medium">O idoso está sendo entrevistado. Ao finalizar a ficha social, avance para a fila de espera.</p>
                </div>
             </div>
@@ -547,6 +609,30 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             </div>
           </div>
         </section>
+
+        {data.stage === 'agendamentos' && (
+           <section>
+            <div className="flex items-center gap-4 mb-8 border-b-2 border-gray-50 pb-3">
+              <div className="w-10 h-10 bg-indigo-600 text-white rounded-2xl flex items-center justify-center font-black">A</div>
+              <h3 className="text-sm font-black uppercase tracking-widest text-indigo-600">Dados do Agendamento</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase text-gray-400">Data Agendada</label>
+                  <input type="date" value={data.scheduledDate} onChange={(e) => updateField('scheduledDate', e.target.value)} className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase" />
+               </div>
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase text-gray-400">Período</label>
+                  <select value={data.scheduledPeriod} onChange={(e) => updateField('scheduledPeriod', e.target.value)} className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase">
+                     <option value="">Selecione...</option>
+                     <option value="manha">Manhã</option>
+                     <option value="tarde">Tarde</option>
+                     <option value="noite">Noite</option>
+                  </select>
+               </div>
+            </div>
+           </section>
+        )}
 
         <section>
            <div className="flex items-center gap-4 mb-8 border-b-2 border-gray-50 pb-3">

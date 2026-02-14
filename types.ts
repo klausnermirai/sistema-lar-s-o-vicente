@@ -61,6 +61,7 @@ export interface Medication {
 }
 
 export type CandidateStage = 
+  | 'agendamentos'
   | 'entrevista' 
   | 'aguardando_vaga' 
   | 'decisao_diretoria' 
@@ -77,6 +78,11 @@ export interface Candidate {
   priority?: WaitlistPriority;
   archiveReason?: string;
   
+  // Campos de Agendamento
+  scheduledDate?: string;
+  scheduledPeriod?: 'manha' | 'tarde' | 'noite';
+  scheduledNotes?: string;
+
   // Níveis de Decisão
   boardOpinion?: string;
   medicalOpinion?: string;

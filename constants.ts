@@ -10,7 +10,7 @@ export const COLORS = {
 
 export const INITIAL_CANDIDATE: Candidate = {
   id: '',
-  stage: 'entrevista',
+  stage: 'agendamentos',
   name: '',
   birthDate: '',
   age: '',
@@ -121,6 +121,15 @@ export const INITIAL_RESIDENT: Resident = {
 };
 
 export const DUMMY_CANDIDATES: Candidate[] = [
+  {
+    ...INITIAL_CANDIDATE,
+    id: 'c0',
+    name: 'LUÍS GONZAGA DA SILVA',
+    stage: 'agendamentos',
+    phone: '(16) 98112-9988',
+    admissionReason: 'Solicitação via CRAS. Idoso em situação de isolamento severo.',
+    createdAt: '2024-05-20'
+  },
   {
     ...INITIAL_CANDIDATE,
     id: 'c1',
