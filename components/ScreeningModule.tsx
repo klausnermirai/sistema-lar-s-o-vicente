@@ -307,7 +307,10 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
             setEditingCandidate(managingCandidate);
             setManagingCandidate(null);
           }}
-          onOpenFullForm={(cand: Candidate) => setEditingCandidate(cand)}
+          onOpenFullForm={(cand: Candidate) => {
+            setEditingCandidate(cand);
+            setManagingCandidate(null);
+          }}
           onAdmit={() => {
             onAdmit(managingCandidate);
             setManagingCandidate(null);
@@ -344,7 +347,7 @@ function SimpleAppointmentModal({ onClose, onSave }: { onClose: () => void, onSa
             </div>
             <div>
               <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">Novo Agendamento</h3>
-              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Pré-Triagem / Visita Social</p>
+              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Pré-Triagem / Registro Inicial</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-gray-300 hover:text-gray-900 rounded-xl transition-all"><X size={24} /></button>
@@ -378,7 +381,7 @@ function SimpleAppointmentModal({ onClose, onSave }: { onClose: () => void, onSa
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Data da Visita *</label>
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Data do contato *</label>
               <input 
                 type="date"
                 required
@@ -430,14 +433,6 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
     onClose();
   };
 
-  // Lógica especial para iniciar entrevista (salva, fecha status e abre ficha completa)
-  const startEntrevista = () => {
-    const updated = { ...data, stage: 'entrevista' as CandidateStage };
-    onSave(updated);
-    onClose();
-    onOpenFullForm(updated);
-  };
-
   const renderStageControls = () => {
     switch (data.stage) {
       case 'agendamentos':
@@ -449,21 +444,30 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
                </div>
                <div className="space-y-1">
                   <p className="text-[12px] font-black text-indigo-900 uppercase tracking-tighter">Visita Social Realizada?</p>
-                  <p className="text-[10px] text-indigo-800 leading-relaxed font-medium">Ao clicar abaixo, você confirma que a visita domiciliar ocorreu e iniciará o preenchimento da ficha social detalhada.</p>
+                  <p className="text-[10px] text-indigo-800 leading-relaxed font-medium">Você pode iniciar o preenchimento da ficha agora ou apenas evoluir o status para a próxima etapa.</p>
                </div>
             </div>
             
             <div className="space-y-3">
                <div className="bg-gray-50 p-4 rounded-2xl flex items-center justify-between border border-gray-100">
-                  <div className="text-[10px] font-black uppercase text-gray-400">Data Agendada:</div>
+                  <div className="text-[10px] font-black uppercase text-gray-400">Data do contato:</div>
                   <div className="text-xs font-black text-gray-800">{new Date(data.scheduledDate || '').toLocaleDateString('pt-BR')}</div>
                </div>
-               <button 
-                 onClick={startEntrevista}
-                 className="w-full py-5 bg-indigo-600 text-white rounded-2xl text-[12px] font-black uppercase shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3"
-               >
-                 <ClipboardList size={20} /> INICIAR ENTREVISTA SOCIAL
-               </button>
+               
+               <div className="grid grid-cols-1 gap-3 pt-2">
+                 <button 
+                   onClick={() => onOpenFullForm(data)}
+                   className="w-full py-4 bg-white border-2 border-indigo-600 text-indigo-600 rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-indigo-50 transition-all flex items-center justify-center gap-3"
+                 >
+                   <FileText size={18} /> INICIAR ENTREVISTA (ABRIR FICHA)
+                 </button>
+                 <button 
+                   onClick={() => advanceStage('entrevista')}
+                   className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3"
+                 >
+                   <ArrowRight size={20} /> EVOLUIR PARA ENTREVISTA
+                 </button>
+               </div>
             </div>
           </div>
         );
@@ -692,7 +696,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             <button onClick={onCancel} className="p-2.5 border rounded-xl hover:bg-gray-100 transition-colors text-gray-500"><ArrowLeft size={20} /></button>
             <div>
                <h2 className="text-lg font-black text-gray-900 uppercase tracking-tighter">Entrevista de Triagem</h2>
-               <div className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-700 inline-block">Ficha: {data.stage.replace('_', ' ')}</div>
+               <div className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-700 inline-block">Fase: {data.stage.replace('_', ' ')}</div>
             </div>
          </div>
          <div className="flex gap-2">
@@ -731,7 +735,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-gray-400">Data Agendada</label>
+                  <label className="text-[10px] font-black uppercase text-gray-400">Data do contato</label>
                   <input type="date" value={data.scheduledDate} onChange={(e) => updateField('scheduledDate', e.target.value)} className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase" />
                </div>
                <div className="space-y-2">
