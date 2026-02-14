@@ -77,6 +77,13 @@ export interface Candidate {
   priority?: WaitlistPriority;
   archiveReason?: string;
   
+  // Níveis de Decisão
+  boardOpinion?: string;
+  medicalOpinion?: string;
+  medicalStatus?: 'favoravel' | 'desfavoravel';
+  integrationDate?: string;
+  contractStatus?: 'pendente' | 'assinado';
+
   // 1. Identificação
   name: string;
   birthDate: string;
