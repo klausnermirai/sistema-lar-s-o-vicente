@@ -22,7 +22,9 @@ import {
   AlertCircle,
   LayoutGrid,
   Info,
-  CheckCircle2
+  CheckCircle2,
+  Phone,
+  MapPin
 } from 'lucide-react';
 import { Candidate, CandidateStage, WaitlistPriority, FamilyMemberRecord, Resident } from '../types';
 import { INITIAL_CANDIDATE } from '../constants';
@@ -47,6 +49,7 @@ const STAGE_THEMES: Record<string, { active: string; text: string; bg: string; b
 const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, residents, onAdmit }) => {
   const [editingCandidate, setEditingCandidate] = React.useState<Candidate | null>(null);
   const [managingCandidate, setManagingCandidate] = React.useState<Candidate | null>(null);
+  const [isCreatingSimple, setIsCreatingSimple] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [selectedStage, setSelectedStage] = React.useState<CandidateStage>('agendamentos');
 
@@ -64,6 +67,22 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
 
   const archivedCandidates = candidates.filter(c => c.stage === 'arquivado');
   const admittedCandidates = candidates.filter(c => c.stage === 'acolhido');
+
+  const handleSaveSimpleAppointment = (data: Partial<Candidate>) => {
+    const newCandidate: Candidate = {
+      ...INITIAL_CANDIDATE,
+      id: `C${Date.now()}`,
+      name: data.name || '',
+      phone: data.phone || '',
+      address: data.address || '',
+      scheduledDate: data.scheduledDate || new Date().toISOString().split('T')[0],
+      stage: 'agendamentos',
+      createdAt: new Date().toISOString()
+    };
+    onSave(newCandidate);
+    setIsCreatingSimple(false);
+    setSelectedStage('agendamentos');
+  };
 
   if (editingCandidate) {
     return (
@@ -105,7 +124,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
               />
            </div>
            <button
-             onClick={() => setEditingCandidate(INITIAL_CANDIDATE)}
+             onClick={() => setIsCreatingSimple(true)}
              className="w-full sm:w-auto bg-[#004c99] hover:bg-blue-800 text-white px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all font-black text-xs uppercase"
            >
              <Plus size={18} />
@@ -114,7 +133,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
         </div>
       </div>
 
-      {/* Tabs de Status Lado a Lado (Cards Superiores) */}
+      {/* Tabs de Status */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3 no-print overflow-x-auto pb-2 no-scrollbar">
         {stages.map((stage) => {
           const count = candidates.filter(c => c.stage === stage.id).length;
@@ -145,7 +164,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
         })}
       </div>
 
-      {/* Lista Empilhada (Vertical) do Status Selecionado */}
+      {/* Lista Empilhada */}
       <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm overflow-hidden min-h-[400px]">
          <div className="p-8 border-b bg-gray-50/30 flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -200,9 +219,9 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
                   </div>
                   <div className="flex items-center gap-6">
                      <div className="text-right hidden lg:block border-r pr-6 border-gray-100">
-                        <span className="text-[9px] font-black text-gray-300 uppercase block mb-0.5 tracking-widest">Observações</span>
+                        <span className="text-[9px] font-black text-gray-300 uppercase block mb-0.5 tracking-widest">Localização/Contato</span>
                         <span className="text-[11px] font-medium text-gray-600 italic max-w-xs truncate block">
-                          "{cand.scheduledNotes || cand.admissionReason || 'Sem detalhamento'}"
+                          {cand.address ? cand.address : cand.phone ? cand.phone : 'Sem detalhamento'}
                         </span>
                      </div>
                      <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-xl text-[10px] font-black uppercase text-[#004c99] group-hover:bg-[#004c99] group-hover:text-white group-hover:shadow-lg transition-all">
@@ -267,6 +286,14 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
          </div>
       </div>
 
+      {/* MODAL SIMPLES DE CRIAÇÃO */}
+      {isCreatingSimple && (
+        <SimpleAppointmentModal 
+          onClose={() => setIsCreatingSimple(false)} 
+          onSave={handleSaveSimpleAppointment} 
+        />
+      )}
+
       {/* MODAL DE GESTÃO DE STATUS */}
       {managingCandidate && (
         <StatusManagementModal 
@@ -280,6 +307,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
             setEditingCandidate(managingCandidate);
             setManagingCandidate(null);
           }}
+          onOpenFullForm={(cand: Candidate) => setEditingCandidate(cand)}
           onAdmit={() => {
             onAdmit(managingCandidate);
             setManagingCandidate(null);
@@ -290,9 +318,105 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
   );
 };
 
+// --- MODAL SIMPLES DE AGENDAMENTO ---
+
+function SimpleAppointmentModal({ onClose, onSave }: { onClose: () => void, onSave: (data: any) => void }) {
+  const [data, setData] = React.useState({
+    name: '',
+    address: '',
+    phone: '',
+    scheduledDate: new Date().toISOString().split('T')[0]
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!data.name || !data.phone || !data.scheduledDate) return;
+    onSave(data);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
+      <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden flex flex-col">
+        <div className="p-8 border-b bg-indigo-50/50 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-xl border border-indigo-100">
+              <Calendar size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">Novo Agendamento</h3>
+              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Pré-Triagem / Visita Social</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-gray-300 hover:text-gray-900 rounded-xl transition-all"><X size={24} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-10 space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Nome do Idoso *</label>
+            <input 
+              required
+              autoFocus
+              value={data.name} 
+              onChange={e => setData(prev => ({ ...prev, name: e.target.value }))}
+              className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none" 
+              placeholder="NOME COMPLETO..."
+            />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Telefone Contato *</label>
+              <div className="relative">
+                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
+                <input 
+                  required
+                  value={data.phone} 
+                  onChange={e => setData(prev => ({ ...prev, phone: e.target.value }))}
+                  className="w-full pl-10 pr-4 py-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none" 
+                  placeholder="(00) 00000-0000"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Data da Visita *</label>
+              <input 
+                type="date"
+                required
+                value={data.scheduledDate} 
+                onChange={e => setData(prev => ({ ...prev, scheduledDate: e.target.value }))}
+                className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none" 
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Endereço da Visita</label>
+            <div className="relative">
+              <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
+              <input 
+                value={data.address} 
+                onChange={e => setData(prev => ({ ...prev, address: e.target.value }))}
+                className="w-full pl-10 pr-4 py-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none" 
+                placeholder="RUA, NÚMERO, BAIRRO..."
+              />
+            </div>
+          </div>
+
+          <button 
+            type="submit"
+            className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+          >
+            Cadastrar Agendamento <ArrowRight size={16} />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // --- MODAL DE GESTÃO DE ETAPA ---
 
-function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: any) {
+function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, onOpenFullForm }: any) {
   const [data, setData] = React.useState<Candidate>(candidate);
   const [view, setView] = React.useState<'update' | 'archive'>('update');
 
@@ -300,11 +424,18 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
     setData(prev => ({ ...prev, [field]: value }));
   };
 
-  // Helper para avançar de etapa, salvar e fechar o modal imediatamente
   const advanceStage = (nextStage: CandidateStage) => {
     const updated = { ...data, stage: nextStage };
     onSave(updated);
     onClose();
+  };
+
+  // Lógica especial para iniciar entrevista (salva, fecha status e abre ficha completa)
+  const startEntrevista = () => {
+    const updated = { ...data, stage: 'entrevista' as CandidateStage };
+    onSave(updated);
+    onClose();
+    onOpenFullForm(updated);
   };
 
   const renderStageControls = () => {
@@ -312,53 +443,28 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
       case 'agendamentos':
         return (
           <div className="space-y-6">
-            <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-start gap-4">
-               <Calendar className="text-indigo-500 shrink-0" size={20} />
+            <div className="p-6 bg-indigo-50 border border-indigo-100 rounded-3xl flex flex-col items-center text-center gap-4">
+               <div className="w-16 h-16 bg-white rounded-full shadow-lg flex items-center justify-center text-indigo-600">
+                  <Calendar size={32} />
+               </div>
                <div className="space-y-1">
-                  <p className="text-[11px] font-black text-indigo-900 uppercase">Etapa 0: Agendamento de Visita</p>
-                  <p className="text-[10px] text-indigo-800 leading-relaxed font-medium">Defina a data prevista para a visita social domiciliar e entrevista inicial.</p>
+                  <p className="text-[12px] font-black text-indigo-900 uppercase tracking-tighter">Visita Social Realizada?</p>
+                  <p className="text-[10px] text-indigo-800 leading-relaxed font-medium">Ao clicar abaixo, você confirma que a visita domiciliar ocorreu e iniciará o preenchimento da ficha social detalhada.</p>
                </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                 <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Data da Visita</label>
-                 <input 
-                   type="date" 
-                   value={data.scheduledDate} 
-                   onChange={(e) => updateField('scheduledDate', e.target.value)}
-                   className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase"
-                 />
-              </div>
-              <div className="space-y-2">
-                 <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Período</label>
-                 <select 
-                   value={data.scheduledPeriod} 
-                   onChange={(e) => updateField('scheduledPeriod', e.target.value)}
-                   className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase"
-                 >
-                   <option value="">Selecione...</option>
-                   <option value="manha">Manhã</option>
-                   <option value="tarde">Tarde</option>
-                   <option value="noite">Noite</option>
-                 </select>
-              </div>
+            
+            <div className="space-y-3">
+               <div className="bg-gray-50 p-4 rounded-2xl flex items-center justify-between border border-gray-100">
+                  <div className="text-[10px] font-black uppercase text-gray-400">Data Agendada:</div>
+                  <div className="text-xs font-black text-gray-800">{new Date(data.scheduledDate || '').toLocaleDateString('pt-BR')}</div>
+               </div>
+               <button 
+                 onClick={startEntrevista}
+                 className="w-full py-5 bg-indigo-600 text-white rounded-2xl text-[12px] font-black uppercase shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3"
+               >
+                 <ClipboardList size={20} /> INICIAR ENTREVISTA SOCIAL
+               </button>
             </div>
-            <div className="space-y-2">
-               <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Notas do Agendamento</label>
-               <textarea 
-                 value={data.scheduledNotes} 
-                 onChange={(e) => updateField('scheduledNotes', e.target.value)}
-                 placeholder="Informações sobre localização, contatos adicionais..."
-                 className="w-full p-5 border border-gray-200 rounded-2xl text-xs font-medium h-24 focus:ring-2 focus:ring-indigo-200 outline-none uppercase"
-               />
-            </div>
-            <button 
-              disabled={!data.scheduledDate}
-              onClick={() => advanceStage('entrevista')}
-              className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              Confirmar Visita e Ir para Entrevista <ArrowRight size={16} />
-            </button>
           </div>
         );
       case 'entrevista':
@@ -368,7 +474,7 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
                <Info className="text-blue-500 shrink-0" size={20} />
                <div className="space-y-1">
                   <p className="text-[11px] font-black text-blue-900 uppercase">Etapa 1: Entrevista Social</p>
-                  <p className="text-[10px] text-blue-800 leading-relaxed font-medium">O idoso está sendo entrevistado. Ao finalizar a ficha social, avance para a fila de espera.</p>
+                  <p className="text-[10px] text-blue-800 leading-relaxed font-medium">O idoso está em processo de entrevista. Ao finalizar e emitir o parecer, mova para a fila de espera.</p>
                </div>
             </div>
             <button 
@@ -519,7 +625,7 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit }: 
                  {renderStageControls()}
                  <div className="pt-8 border-t flex flex-col gap-4">
                     <button onClick={onEdit} className="w-full py-4 text-[10px] font-black text-[#004c99] bg-blue-50 hover:bg-blue-100 rounded-2xl uppercase flex items-center justify-center gap-3 transition-all">
-                       <FileText size={18} /> Acessar Ficha Social Completa
+                       <FileText size={18} /> Acessar Ficha Completa
                     </button>
                     {data.stage !== 'acolhido' && data.stage !== 'arquivado' && (
                        <button onClick={() => setView('archive')} className="w-full py-4 text-[10px] font-black text-red-500 hover:bg-red-50 rounded-2xl uppercase flex items-center justify-center gap-3 transition-all">
