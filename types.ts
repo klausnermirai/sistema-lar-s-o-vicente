@@ -72,6 +72,60 @@ export type CandidateStage =
 
 export type WaitlistPriority = 'social' | 'saude' | 'geral';
 
+export interface InterviewData {
+  // 3. Composição e Apoio
+  residesWith: string;
+  hasChildren: string;
+  childrenCount: string;
+  hasCaregiver: string;
+  hasSupportNetwork: string;
+  supportNetworkDetails: string;
+  
+  // 4. Composição Familiar (Tabela)
+  familyTable: FamilyMemberRecord[];
+
+  // 5. Moradia
+  housingType: string;
+  rentValue: string;
+
+  // 6. Socioeconômica
+  incomeSource: string;
+  incomeValue: string;
+  hasLoan: string;
+  loanValue: string;
+  canAffordCare: string;
+
+  // 7. Saúde
+  medicalDiagnoses: string;
+  continuousMedication: string;
+  medicationDetails: string;
+  regularMedicalFollowup: string;
+  cognitiveImpairment: string;
+  cognitiveDetails: string;
+
+  // 8. Dependência
+  depHygiene: string;
+  depFeeding: string;
+  depMobility: string;
+  depBathroom: string;
+  depMedication: string;
+
+  // Extras do topo da página 3
+  needsFullTimeCare: string;
+
+  // 9. Psicossociais
+  familyConflicts: string;
+  conflictDetails: string;
+  elderlyAgrees: string;
+  familyAgrees: string;
+
+  // 10. Motivo
+  requestReason: string;
+
+  // 11. Parecer
+  socialAnalysis: string;
+}
+
 export interface Candidate {
   id: string;
   stage: CandidateStage;
@@ -90,7 +144,7 @@ export interface Candidate {
   integrationDate?: string;
   contractStatus?: 'pendente' | 'assinado';
 
-  // 1. Identificação
+  // Identificação (Top-level para listas)
   name: string;
   birthDate: string;
   age: string;
@@ -101,61 +155,18 @@ export interface Candidate {
   address: string;
   phone: string;
 
-  // 2. Responsável
+  // Responsável (Top-level)
   repName: string;
   repKinship: string;
   repPhone: string;
   repAddress: string;
 
-  // 3. Composição Familiar e Rede de Apoio
-  residesWith: string; // Sozinho, Filhos, Familiares, Outros
-  hasChildren: string;
-  childrenCount: string;
-  hasCaregiver: string; // Não, Sim, Familiar, Profissional
-  hasSupportNetwork: string;
-  supportNetworkDetails: string;
-
-  // 4. Tabela Composição Familiar
-  familyMembers: FamilyMemberRecord[];
-
-  // 5. Condições de Moradia
-  housingType: string; // Própria, Alugada, Cedida
-  rentValue: string;
-
-  // 6. Situação Socioeconômica
-  incomeSource: string[]; // Aposentadoria, Pensão, BPC, Outros
-  incomeValue: string;
-  hasLoan: string;
-  loanValue: string;
-  canAffordCare: string; // Sim, Não, Parcialmente
-
-  // 7. Condições de Saúde
-  medicalDiagnoses: string;
-  continuousMedication: string;
-  medicationDetails: string;
-  regularMedicalFollowup: string;
-  cognitiveImpairment: string;
-  cognitiveDetails: string;
-
-  // 8. Grau de Dependência
-  depHygiene: string;
-  depFeeding: string;
-  depMobility: string; // Sim, Não, Andador, Cadeira de Rodas
-  depBathroom: string;
-  depMedication: string;
-
-  // 9. Aspectos Psicossociais
-  needsFullTimeCare: string;
-  familyConflicts: string;
-  conflictDetails: string;
-  elderlyAgrees: string; // Sim, Não, Parcialmente
-  familyAgrees: string;
-
-  // 10. Motivo da Solicitação
+  // Campos para compatibilidade legada
   admissionReason: string;
-
-  // 11. Parecer Social
   socialOpinion: string;
+
+  // NOVA FICHA OFICIAL
+  interview: InterviewData;
   
   createdAt: string;
 }

@@ -24,9 +24,10 @@ import {
   Info,
   CheckCircle2,
   Phone,
-  MapPin
+  MapPin,
+  Users
 } from 'lucide-react';
-import { Candidate, CandidateStage, WaitlistPriority, FamilyMemberRecord, Resident } from '../types';
+import { Candidate, CandidateStage, WaitlistPriority, FamilyMemberRecord, Resident, InterviewData } from '../types';
 import { INITIAL_CANDIDATE } from '../constants';
 
 interface ScreeningModuleProps {
@@ -680,7 +681,7 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
   );
 }
 
-// --- FORMULÁRIO DE CANDIDATO ---
+// --- NOVO FORMULÁRIO DE CANDIDATO (ENTREVISTA SOCIAL OFICIAL) ---
 
 function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
   const [data, setData] = React.useState<Candidate>(candidate);
@@ -689,94 +690,440 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
     setData(prev => ({ ...prev, [field]: value }));
   };
 
+  const updateInterview = (field: keyof InterviewData, value: any) => {
+    setData(prev => ({
+      ...prev,
+      interview: { ...prev.interview, [field]: value }
+    }));
+  };
+
+  const addFamilyMember = () => {
+    const newMember: FamilyMemberRecord = { id: Date.now().toString(), name: '', kinship: '', age: '', job: '', income: '' };
+    updateInterview('familyTable', [...data.interview.familyTable, newMember]);
+  };
+
+  const updateFamilyMember = (id: string, field: string, value: string) => {
+    const updatedTable = data.interview.familyTable.map(m => m.id === id ? { ...m, [field]: value } : m);
+    updateInterview('familyTable', updatedTable);
+  };
+
+  const removeFamilyMember = (id: string) => {
+    updateInterview('familyTable', data.interview.familyTable.filter(m => m.id !== id));
+  };
+
+  const Section = ({ num, title, children }: any) => (
+    <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-8">
+      <div className="bg-gray-50/50 p-6 border-b flex items-center gap-4">
+        <div className="w-10 h-10 bg-[#004c99] text-white rounded-2xl flex items-center justify-center font-black">{num}</div>
+        <h3 className="text-sm font-black uppercase tracking-widest text-[#004c99]">{title}</h3>
+      </div>
+      <div className="p-8">
+        {children}
+      </div>
+    </div>
+  );
+
+  const Label = ({ children }: any) => (
+    <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1 block">
+      {children}
+    </label>
+  );
+
+  const Input = (props: any) => (
+    <input 
+      {...props} 
+      className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase bg-transparent" 
+    />
+  );
+
+  const Choice = ({ label, value, current, onClick }: any) => (
+    <button 
+      type="button"
+      onClick={onClick}
+      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border-2 transition-all flex items-center gap-2 ${current === value ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}`}
+    >
+      <div className={`w-3 h-3 rounded-full border-2 ${current === value ? 'bg-white border-white' : 'bg-transparent border-gray-200'}`}></div>
+      {label}
+    </button>
+  );
+
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-20 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between bg-white p-6 rounded-2xl border border-gray-200 shadow-sm no-print sticky top-0 z-30">
+    <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-in fade-in duration-500">
+      {/* Top Sticky Bar */}
+      <div className="flex items-center justify-between bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-gray-200 shadow-xl no-print sticky top-4 z-40">
          <div className="flex items-center gap-4">
-            <button onClick={onCancel} className="p-2.5 border rounded-xl hover:bg-gray-100 transition-colors text-gray-500"><ArrowLeft size={20} /></button>
+            <button onClick={onCancel} className="p-3 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 transition-all text-gray-400"><ArrowLeft size={24} /></button>
             <div>
-               <h2 className="text-lg font-black text-gray-900 uppercase tracking-tighter">Entrevista de Triagem</h2>
-               <div className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-700 inline-block">Fase: {data.stage.replace('_', ' ')}</div>
+               <h2 className="text-lg font-black text-gray-900 uppercase tracking-tighter">Entrevista Social para Acolhimento ILPI</h2>
+               <div className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-700 inline-block mt-0.5">Módulo Assistência Social</div>
             </div>
          </div>
-         <div className="flex gap-2">
-            <button onClick={() => window.print()} className="px-4 py-2.5 border border-gray-300 rounded-xl text-xs font-black uppercase flex items-center gap-2 hover:bg-gray-50 transition-all"><Printer size={16} /> Imprimir</button>
-            <button onClick={() => onSave(data)} className="px-6 py-2.5 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase flex items-center gap-2 hover:bg-blue-800 shadow-xl shadow-blue-100 transition-all"><Save size={18} /> Salvar Ficha</button>
+         <div className="flex gap-3">
+            <button onClick={() => window.print()} className="px-6 py-3 bg-white border border-gray-200 rounded-2xl text-xs font-black uppercase flex items-center gap-2 hover:shadow-md transition-all"><Printer size={18} /> Imprimir Ficha</button>
+            <button onClick={() => onSave(data)} className="px-8 py-3 bg-[#004c99] text-white rounded-2xl text-xs font-black uppercase flex items-center gap-2 hover:bg-blue-800 shadow-2xl shadow-blue-200 transition-all"><Save size={20} /> Salvar Alterações</button>
          </div>
       </div>
 
-      <div className="bg-white p-12 rounded-[40px] shadow-xl border border-gray-200 space-y-12">
-        <section>
-          <div className="flex items-center gap-4 mb-8 border-b-2 border-gray-50 pb-3">
-             <div className="w-10 h-10 bg-[#004c99] text-white rounded-2xl flex items-center justify-center font-black">1</div>
-             <h3 className="text-sm font-black uppercase tracking-widest text-[#004c99]">Dados Pessoais</h3>
+      {/* Identificação */}
+      <Section num="1" title="IDENTIFICAÇÃO DO IDOSO">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-x-8 gap-y-6">
+          <div className="md:col-span-2">
+            <Label>Nome Completo</Label>
+            <Input value={data.name} onChange={(e: any) => updateField('name', e.target.value)} />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="md:col-span-2 space-y-2">
-               <label className="text-[10px] font-black uppercase text-gray-400">Nome Completo</label>
-               <input value={data.name} onChange={(e) => updateField('name', e.target.value)} className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase" />
-            </div>
-            <div className="space-y-2">
-               <label className="text-[10px] font-black uppercase text-gray-400">Nascimento</label>
-               <input type="date" value={data.birthDate} onChange={(e) => updateField('birthDate', e.target.value)} className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase" />
-            </div>
-            <div className="space-y-2">
-               <label className="text-[10px] font-black uppercase text-gray-400">CPF</label>
-               <input value={data.cpf} onChange={(e) => updateField('cpf', e.target.value)} className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase" />
+          <div>
+            <Label>Data de Nascimento</Label>
+            <Input type="date" value={data.birthDate} onChange={(e: any) => updateField('birthDate', e.target.value)} />
+          </div>
+          <div>
+            <Label>Idade</Label>
+            <Input value={data.age} onChange={(e: any) => updateField('age', e.target.value)} />
+          </div>
+          <div className="md:col-span-2 flex gap-3">
+            <div className="flex-1">
+              <Label>Sexo</Label>
+              <div className="flex gap-2">
+                {['Feminino', 'Masculino', 'Outro'].map(v => (
+                  <Choice key={v} label={v} value={v} current={data.gender} onClick={() => updateField('gender', v)} />
+                ))}
+              </div>
             </div>
           </div>
-        </section>
+          <div className="md:col-span-2">
+            <Label>Estado Civil</Label>
+            <Input value={data.maritalStatus} onChange={(e: any) => updateField('maritalStatus', e.target.value)} />
+          </div>
+          <div>
+            <Label>RG</Label>
+            <Input value={data.rg} onChange={(e: any) => updateField('rg', e.target.value)} />
+          </div>
+          <div>
+            <Label>CPF</Label>
+            <Input value={data.cpf} onChange={(e: any) => updateField('cpf', e.target.value)} />
+          </div>
+          <div className="md:col-span-3">
+            <Label>Endereço Atual</Label>
+            <Input value={data.address} onChange={(e: any) => updateField('address', e.target.value)} />
+          </div>
+          <div>
+            <Label>Telefone</Label>
+            <Input value={data.phone} onChange={(e: any) => updateField('phone', e.target.value)} />
+          </div>
+        </div>
+      </Section>
 
-        {data.stage === 'agendamentos' && (
-           <section>
-            <div className="flex items-center gap-4 mb-8 border-b-2 border-gray-50 pb-3">
-              <div className="w-10 h-10 bg-indigo-600 text-white rounded-2xl flex items-center justify-center font-black">A</div>
-              <h3 className="text-sm font-black uppercase tracking-widest text-indigo-600">Dados do Agendamento</h3>
+      {/* Responsável Legal */}
+      <Section num="2" title="RESPONSÁVEL LEGAL / FAMILIAR">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div>
+            <Label>Nome do Responsável</Label>
+            <Input value={data.repName} onChange={(e: any) => updateField('repName', e.target.value)} />
+          </div>
+          <div>
+            <Label>Grau de Parentesco</Label>
+            <Input value={data.repKinship} onChange={(e: any) => updateField('repKinship', e.target.value)} />
+          </div>
+          <div>
+            <Label>Telefone</Label>
+            <Input value={data.repPhone} onChange={(e: any) => updateField('repPhone', e.target.value)} />
+          </div>
+          <div>
+            <Label>Endereço</Label>
+            <Input value={data.repAddress} onChange={(e: any) => updateField('repAddress', e.target.value)} />
+          </div>
+        </div>
+      </Section>
+
+      {/* Composição Familiar e Rede Apoio */}
+      <Section num="3" title="COMPOSIÇÃO FAMILIAR E REDE DE APOIO">
+        <div className="space-y-8">
+          <div>
+            <Label>Com quem o idoso reside atualmente?</Label>
+            <div className="flex flex-wrap gap-2">
+              {['Sozinho', 'Filhos', 'Familiares', 'Outros'].map(v => (
+                <Choice key={v} label={v} value={v} current={data.interview.residesWith} onClick={() => updateInterview('residesWith', v)} />
+              ))}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-               <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-gray-400">Data do contato</label>
-                  <input type="date" value={data.scheduledDate} onChange={(e) => updateField('scheduledDate', e.target.value)} className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="flex items-end gap-4">
+              <div className="flex-1">
+                <Label>Possui filhos?</Label>
+                <div className="flex gap-2">
+                  {['Sim', 'Não'].map(v => (
+                    <Choice key={v} label={v} value={v} current={data.interview.hasChildren} onClick={() => updateInterview('hasChildren', v)} />
+                  ))}
+                </div>
+              </div>
+              <div className="flex-1">
+                <Label>Quantos?</Label>
+                <Input value={data.interview.childrenCount} onChange={(e: any) => updateInterview('childrenCount', e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label>Existe cuidador?</Label>
+              <div className="flex flex-wrap gap-2">
+                {['Não', 'Sim', 'Familiar', 'Profissional'].map(v => (
+                  <Choice key={v} label={v} value={v} current={data.interview.hasCaregiver} onClick={() => updateInterview('hasCaregiver', v)} />
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
+            <div>
+              <Label>Possui rede de apoio (parentes, vizinhos, serviços)?</Label>
+              <div className="flex gap-2">
+                {['Sim', 'Não'].map(v => (
+                  <Choice key={v} label={v} value={v} current={data.interview.hasSupportNetwork} onClick={() => updateInterview('hasSupportNetwork', v)} />
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label>Quais?</Label>
+              <Input value={data.interview.supportNetworkDetails} onChange={(e: any) => updateInterview('supportNetworkDetails', e.target.value)} />
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* Tabela de Composição Familiar */}
+      <Section num="4" title="COMPOSIÇÃO FAMILIAR (DETALHAMENTO)">
+        <div className="overflow-hidden border rounded-2xl">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 text-[10px] font-black uppercase text-gray-500 tracking-widest border-b">
+              <tr>
+                <th className="px-6 py-4">Nome</th>
+                <th className="px-6 py-4">Parentesco</th>
+                <th className="px-6 py-4">Idade</th>
+                <th className="px-6 py-4">Trabalho</th>
+                <th className="px-6 py-4">Renda Mensal</th>
+                <th className="px-6 py-4"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {data.interview.familyTable.map((m: any) => (
+                <tr key={m.id} className="hover:bg-blue-50/10">
+                  <td className="px-6 py-3"><Input value={m.name} onChange={(e: any) => updateFamilyMember(m.id, 'name', e.target.value)} /></td>
+                  <td className="px-6 py-3"><Input value={m.kinship} onChange={(e: any) => updateFamilyMember(m.id, 'kinship', e.target.value)} /></td>
+                  <td className="px-6 py-3 w-20"><Input value={m.age} onChange={(e: any) => updateFamilyMember(m.id, 'age', e.target.value)} /></td>
+                  <td className="px-6 py-3"><Input value={m.job} onChange={(e: any) => updateFamilyMember(m.id, 'job', e.target.value)} /></td>
+                  <td className="px-6 py-3 w-32"><Input value={m.income} onChange={(e: any) => updateFamilyMember(m.id, 'income', e.target.value)} /></td>
+                  <td className="px-6 py-3 text-right">
+                    <button onClick={() => removeFamilyMember(m.id)} className="p-2 text-red-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={6} className="p-4 bg-gray-50/30 text-center">
+                  <button onClick={addFamilyMember} className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-[#004c99] hover:bg-white px-6 py-2 rounded-xl border border-dashed border-[#004c99] transition-all">
+                    <Plus size={14} /> Adicionar Familiar à Tabela
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      {/* Moradia */}
+      <Section num="5" title="CONDIÇÕES DE MORADIA">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
+          <div>
+            <Label>Tipo de Moradia</Label>
+            <div className="flex gap-2">
+              {['Própria', 'Alugada', 'Cedida'].map(v => (
+                <Choice key={v} label={v} value={v} current={data.interview.housingType} onClick={() => updateInterview('housingType', v)} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <Label>Valor Aluguel</Label>
+            <Input value={data.interview.rentValue} onChange={(e: any) => updateInterview('rentValue', e.target.value)} />
+          </div>
+        </div>
+      </Section>
+
+      {/* Socioeconômica */}
+      <Section num="6" title="SITUAÇÃO SOCIOECONÔMICA">
+        <div className="space-y-8">
+          <div>
+            <Label>Fonte de renda do idoso</Label>
+            <div className="flex flex-wrap gap-2">
+              {['Aposentadoria', 'Pensão', 'BPC/LOAS', 'Outros'].map(v => (
+                <Choice key={v} label={v} value={v} current={data.interview.incomeSource} onClick={() => updateInterview('incomeSource', v)} />
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div>
+              <Label>Valor aproximado da renda R$</Label>
+              <Input value={data.interview.incomeValue} onChange={(e: any) => updateInterview('incomeValue', e.target.value)} />
+            </div>
+            <div className="flex items-end gap-4">
+               <div className="flex-1">
+                  <Label>Possui empréstimo?</Label>
+                  <div className="flex gap-2">
+                    {['Sim', 'Não'].map(v => (
+                      <Choice key={v} label={v} value={v} current={data.interview.hasLoan} onClick={() => updateInterview('hasLoan', v)} />
+                    ))}
+                  </div>
                </div>
-               <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-gray-400">Período</label>
-                  <select value={data.scheduledPeriod} onChange={(e) => updateField('scheduledPeriod', e.target.value)} className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase">
-                     <option value="">Selecione...</option>
-                     <option value="manha">Manhã</option>
-                     <option value="tarde">Tarde</option>
-                     <option value="noite">Noite</option>
-                  </select>
+               <div className="flex-1">
+                  <Label>Valor R$</Label>
+                  <Input value={data.interview.loanValue} onChange={(e: any) => updateInterview('loanValue', e.target.value)} />
                </div>
             </div>
-           </section>
-        )}
+            <div>
+              <Label>A família possui condições de custear cuidados?</Label>
+              <div className="flex gap-2">
+                {['Sim', 'Não', 'Parcialmente'].map(v => (
+                  <Choice key={v} label={v} value={v} current={data.interview.canAffordCare} onClick={() => updateInterview('canAffordCare', v)} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Section>
 
-        <section>
-           <div className="flex items-center gap-4 mb-8 border-b-2 border-gray-50 pb-3">
-             <div className="w-10 h-10 bg-[#004c99] text-white rounded-2xl flex items-center justify-center font-black">2</div>
-             <h3 className="text-sm font-black uppercase tracking-widest text-[#004c99]">Razões para Acolhimento</h3>
-           </div>
-           <textarea 
-             value={data.admissionReason} 
-             onChange={(e) => updateField('admissionReason', e.target.value)}
-             className="w-full p-6 border border-gray-100 rounded-2xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all h-40 outline-none"
-             placeholder="Descreva a situação social..."
-           />
-        </section>
+      {/* Saúde */}
+      <Section num="7" title="CONDIÇÕES DE SAÚDE">
+        <div className="space-y-8">
+          <div>
+            <Label>Diagnósticos médicos</Label>
+            <Input value={data.interview.medicalDiagnoses} onChange={(e: any) => updateInterview('medicalDiagnoses', e.target.value)} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
+            <div>
+              <Label>Uso de medicação contínua?</Label>
+              <div className="flex gap-2">
+                {['Sim', 'Não'].map(v => (
+                  <Choice key={v} label={v} value={v} current={data.interview.continuousMedication} onClick={() => updateInterview('continuousMedication', v)} />
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label>Quais?</Label>
+              <Input value={data.interview.medicationDetails} onChange={(e: any) => updateInterview('medicationDetails', e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
+            <div>
+              <Label>Possui acompanhamento médico regular?</Label>
+              <div className="flex gap-2">
+                {['Sim', 'Não'].map(v => (
+                  <Choice key={v} label={v} value={v} current={data.interview.regularMedicalFollowup} onClick={() => updateInterview('regularMedicalFollowup', v)} />
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label>Apresenta comprometimento cognitivo?</Label>
+              <div className="flex gap-2">
+                {['Sim', 'Não', 'Em avaliação'].map(v => (
+                  <Choice key={v} label={v} value={v} current={data.interview.cognitiveImpairment} onClick={() => updateInterview('cognitiveImpairment', v)} />
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label>Quais?</Label>
+              <Input value={data.interview.cognitiveDetails} onChange={(e: any) => updateInterview('cognitiveDetails', e.target.value)} />
+            </div>
+          </div>
+        </div>
+      </Section>
 
-        <section>
-           <div className="flex items-center gap-4 mb-8 border-b-2 border-gray-50 pb-3">
-             <div className="w-10 h-10 bg-[#004c99] text-white rounded-2xl flex items-center justify-center font-black">3</div>
-             <h3 className="text-sm font-black uppercase tracking-widest text-[#004c99]">Relatório da Assistente Social</h3>
+      {/* Grau de Dependência */}
+      <Section num="8" title="GRAU DE DEPENDÊNCIA (O idoso realiza sozinho?)">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+          {[
+            { label: 'Higiene pessoal', field: 'depHygiene' },
+            { label: 'Alimentação', field: 'depFeeding' },
+            { label: 'Locomoção', field: 'depMobility' },
+            { label: 'Uso do banheiro', field: 'depBathroom' },
+            { label: 'Medicação', field: 'depMedication' }
+          ].map(item => (
+            <div key={item.field} className="space-y-2">
+              <Label>{item.label}</Label>
+              <div className="flex flex-col gap-2">
+                {item.field === 'depMobility' ? 
+                   ['Sim', 'Não', 'Andador', 'Cadeira de Rodas'].map(v => (
+                     <Choice key={v} label={v} value={v} current={(data.interview as any)[item.field]} onClick={() => updateInterview(item.field as any, v)} />
+                   ))
+                : 
+                   ['Sim', 'Não'].map(v => (
+                     <Choice key={v} label={v} value={v} current={(data.interview as any)[item.field]} onClick={() => updateInterview(item.field as any, v)} />
+                   ))
+                }
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-10 pt-6 border-t border-dashed border-gray-100 flex items-center gap-6">
+           <Label>Necessita de cuidador em tempo integral?</Label>
+           <div className="flex gap-2">
+             {['Sim', 'Não'].map(v => (
+               <Choice key={v} label={v} value={v} current={data.interview.needsFullTimeCare} onClick={() => updateInterview('needsFullTimeCare', v)} />
+             ))}
            </div>
-           <textarea 
-             value={data.socialOpinion} 
-             onChange={(e) => updateField('socialOpinion', e.target.value)}
-             className="w-full p-6 border-l-8 border-l-[#004c99] border-y border-r border-gray-100 rounded-2xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all h-60 outline-none"
-             placeholder="Parecer técnico..."
-           />
-        </section>
-      </div>
+        </div>
+      </Section>
+
+      {/* Psicossociais */}
+      <Section num="9" title="ASPECTOS PSICOSSOCIAIS">
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
+            <div>
+              <Label>Há conflitos familiares?</Label>
+              <div className="flex gap-2">
+                {['Sim', 'Não'].map(v => (
+                  <Choice key={v} label={v} value={v} current={data.interview.familyConflicts} onClick={() => updateInterview('familyConflicts', v)} />
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label>Quais?</Label>
+              <Input value={data.interview.conflictDetails} onChange={(e: any) => updateInterview('conflictDetails', e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+              <Label>O idoso concorda com o ingresso na ILPI?</Label>
+              <div className="flex gap-2">
+                {['Sim', 'Não', 'Parcialmente'].map(v => (
+                  <Choice key={v} label={v} value={v} current={data.interview.elderlyAgrees} onClick={() => updateInterview('elderlyAgrees', v)} />
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label>A família concorda?</Label>
+              <div className="flex gap-2">
+                {['Sim', 'Não'].map(v => (
+                  <Choice key={v} label={v} value={v} current={data.interview.familyAgrees} onClick={() => updateInterview('familyAgrees', v)} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* Motivo Solicitação */}
+      <Section num="10" title="MOTIVO DA SOLICITAÇÃO DO ACOLHIMENTO">
+        <textarea 
+          value={data.interview.requestReason} 
+          onChange={(e) => updateInterview('requestReason', e.target.value)}
+          placeholder="Descreva detalhadamente o motivo do pedido..."
+          className="w-full p-8 border border-gray-100 rounded-2xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all h-60 outline-none leading-relaxed"
+        />
+      </Section>
+
+      {/* Parecer Social */}
+      <Section num="11" title="PARECER SOCIAL">
+        <textarea 
+          value={data.interview.socialAnalysis} 
+          onChange={(e) => updateInterview('socialAnalysis', e.target.value)}
+          placeholder="Parecer técnico da Assistente Social..."
+          className="w-full p-8 border-l-8 border-l-[#004c99] border-y border-r border-gray-100 rounded-2xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all h-60 outline-none leading-relaxed"
+        />
+      </Section>
     </div>
   );
 }
