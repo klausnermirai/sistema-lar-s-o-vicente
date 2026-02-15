@@ -70,7 +70,7 @@ export type CandidateStage =
   | 'acolhido' 
   | 'arquivado';
 
-export type WaitlistPriority = 'social' | 'saude' | 'geral';
+export type WaitlistPriority = 'social_urgente' | 'dependencia_duvidosa' | 'padrao';
 
 export interface InterviewData {
   // 3. Composição e Apoio

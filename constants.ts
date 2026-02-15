@@ -26,6 +26,7 @@ export const INITIAL_CANDIDATE: Candidate = {
   repAddress: '',
   admissionReason: '',
   socialOpinion: '',
+  priority: 'padrao',
   createdAt: new Date().toISOString(),
   interview: {
     residesWith: '',

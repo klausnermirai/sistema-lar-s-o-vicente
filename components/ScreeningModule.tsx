@@ -25,7 +25,8 @@ import {
   CheckCircle2,
   Phone,
   MapPin,
-  Users
+  Users,
+  FileDown
 } from 'lucide-react';
 import { Candidate, CandidateStage, WaitlistPriority, FamilyMemberRecord, Resident, InterviewData } from '../types';
 import { INITIAL_CANDIDATE } from '../constants';
@@ -42,7 +43,7 @@ const STAGE_THEMES: Record<string, { active: string; text: string; bg: string; b
   blue: { active: 'border-blue-500 bg-blue-50/50', text: 'text-blue-600', bg: 'bg-blue-500', border: 'border-blue-100', iconBg: 'bg-blue-50' },
   orange: { active: 'border-orange-500 bg-orange-50/50', text: 'text-orange-600', bg: 'bg-orange-500', border: 'border-orange-100', iconBg: 'bg-orange-50' },
   purple: { active: 'border-purple-500 bg-purple-50/50', text: 'text-purple-600', bg: 'bg-purple-500', border: 'border-purple-100', iconBg: 'bg-purple-50' },
-  teal: { active: 'border-teal-500 bg-teal-50/50', text: 'text-teal-600', bg: 'bg-teal-500', border: 'border-teal-100', iconBg: 'bg-teal-50' },
+  teal: { active: 'border-teal-500 bg-teal-600/50', text: 'text-teal-600', bg: 'bg-teal-500', border: 'border-teal-100', iconBg: 'bg-teal-50' },
   pink: { active: 'border-pink-500 bg-pink-50/50', text: 'text-pink-600', bg: 'bg-pink-500', border: 'border-pink-100', iconBg: 'bg-pink-50' },
   green: { active: 'border-green-500 bg-green-50/50', text: 'text-green-600', bg: 'bg-green-500', border: 'border-green-100', iconBg: 'bg-green-50' }
 };
@@ -62,6 +63,95 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
     { id: 'avaliacao_medica', label: '4. Médico/Parecer', icon: HeartPulse, color: 'teal', description: 'Avaliação clínica de compatibilidade.' },
     { id: 'integracao', label: '5. Integração', icon: Calendar, color: 'pink', description: 'Contratos e tarde de experiência.' }
   ];
+
+  const handleExportPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const allStages = [
+      ...stages, 
+      { id: 'acolhido' as CandidateStage, label: 'Acolhidos', color: 'green' }, 
+      { id: 'arquivado' as CandidateStage, label: 'Arquivados', color: 'red' }
+    ];
+    
+    let html = `
+      <html>
+        <head>
+          <title>Relatório de Candidatos - SSVP</title>
+          <style>
+            body { font-family: 'Inter', system-ui, sans-serif; padding: 30px; color: #1e293b; line-height: 1.5; }
+            .header { text-align: center; border-bottom: 3px solid #004c99; margin-bottom: 40px; padding-bottom: 20px; }
+            .header h1 { margin: 0; font-size: 24px; text-transform: uppercase; color: #004c99; font-weight: 900; letter-spacing: -0.5px; }
+            .header p { margin: 8px 0 0; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+            .stage-section { margin-bottom: 50px; page-break-inside: avoid; }
+            .stage-title { font-size: 14px; font-weight: 900; text-transform: uppercase; margin-bottom: 15px; display: flex; justify-content: space-between; border-left: 6px solid #004c99; padding-left: 15px; background: #f8fafc; padding: 10px 15px; border-radius: 0 8px 8px 0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
+            th { background: #f1f5f9; border: 1px solid #e2e8f0; padding: 10px; text-align: left; font-weight: 900; text-transform: uppercase; color: #475569; }
+            td { border: 1px solid #e2e8f0; padding: 10px; vertical-align: top; }
+            tr:nth-child(even) { background: #f8fafc; }
+            .priority-tag { font-size: 8px; font-weight: 900; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; border: 1px solid #e2e8f0; background: #fff; }
+            .footer { margin-top: 50px; font-size: 9px; text-align: center; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Relatório de Candidatos por Status</h1>
+            <p>Lar São Vicente de Paulo - Monte Alto/SP | Emitido em: ${new Date().toLocaleString('pt-BR')}</p>
+          </div>
+    `;
+
+    allStages.forEach(stage => {
+      const stageCandidates = candidates.filter(c => c.stage === stage.id);
+      if (stageCandidates.length > 0) {
+        html += `
+          <div class="stage-section">
+            <div class="stage-title">
+              <span>${stage.label}</span>
+              <span style="color: #64748b; font-weight: 700">Total: ${stageCandidates.length}</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">Nome do Candidato</th>
+                  <th style="width: 15%">Telefone</th>
+                  <th style="width: 30%">Localização / Endereço</th>
+                  <th style="width: 15%">Data Contato</th>
+                  <th style="width: 15%">Prioridade</th>
+                </tr>
+              </thead>
+              <tbody>
+        `;
+        stageCandidates.forEach(cand => {
+          const priorityLabel = cand.priority === 'social_urgente' ? 'SOCIAL (URGENTE)' : 
+                               cand.priority === 'dependencia_duvidosa' ? 'DEP. DUVIDOSA' : 
+                               cand.priority === 'padrao' ? 'PRIORIDADE PADRÃO' : '-';
+          html += `
+            <tr>
+              <td style="font-weight: 800; color: #0f172a; text-transform: uppercase">${cand.name}</td>
+              <td>${cand.phone || '-'}</td>
+              <td style="font-style: italic">${cand.address || '-'}</td>
+              <td>${cand.scheduledDate ? new Date(cand.scheduledDate).toLocaleDateString('pt-BR') : '-'}</td>
+              <td><span class="priority-tag">${priorityLabel}</span></td>
+            </tr>
+          `;
+        });
+        html += `</tbody></table></div>`;
+      }
+    });
+
+    html += `
+          <div class="footer">Este documento é de uso interno da SSVP e contém dados sensíveis.</div>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    
+    // Pequeno delay para carregar estilos se necessário
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
+  };
 
   const getStageCandidates = (stage: CandidateStage) => 
     candidates.filter(c => c.stage === stage && c.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -124,13 +214,25 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
            </div>
-           <button
-             onClick={() => setIsCreatingSimple(true)}
-             className="w-full sm:w-auto bg-[#004c99] hover:bg-blue-800 text-white px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all font-black text-xs uppercase"
-           >
-             <Plus size={18} />
-             <span>Novo Agendamento</span>
-           </button>
+           
+           <div className="flex gap-2 w-full sm:w-auto">
+             <button
+               onClick={handleExportPDF}
+               className="flex-1 sm:flex-none px-4 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl flex items-center justify-center gap-2 hover:bg-gray-50 transition-all font-black text-xs uppercase shadow-sm"
+               title="Gerar listagem completa por status"
+             >
+               <FileDown size={18} />
+               <span>Exportar PDF</span>
+             </button>
+             
+             <button
+               onClick={() => setIsCreatingSimple(true)}
+               className="flex-1 sm:flex-none bg-[#004c99] hover:bg-blue-800 text-white px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all font-black text-xs uppercase"
+             >
+               <Plus size={18} />
+               <span>Novo Agendamento</span>
+             </button>
+           </div>
         </div>
       </div>
 
@@ -204,10 +306,11 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
                            <span className="text-[9px] font-bold text-gray-400 uppercase">Ficha: {cand.id.slice(-4)} • Criada em {new Date(cand.createdAt).toLocaleDateString('pt-BR')}</span>
                            {cand.priority && (
                               <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase border ${
-                                 cand.priority === 'social' ? 'bg-red-50 text-red-600 border-red-100' : 
-                                 cand.priority === 'saude' ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-blue-50 text-blue-600 border-blue-100'
+                                 cand.priority === 'social_urgente' ? 'bg-red-50 text-red-600 border-red-100' : 
+                                 cand.priority === 'dependencia_duvidosa' ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-blue-50 text-blue-600 border-blue-100'
                               }`}>
-                                 {cand.priority}
+                                 {cand.priority === 'social_urgente' ? 'SOCIAL (URGENTE)' : 
+                                  cand.priority === 'dependencia_duvidosa' ? 'DEP. DUVIDOSA' : 'PADRÃO'}
                               </span>
                            )}
                            {cand.stage === 'agendamentos' && cand.scheduledDate && (
@@ -478,15 +581,29 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
             <div className="p-5 bg-blue-50 border border-blue-100 rounded-2xl flex items-start gap-4">
                <Info className="text-blue-500 shrink-0" size={20} />
                <div className="space-y-1">
-                  <p className="text-[11px] font-black text-blue-900 uppercase">Etapa 1: Entrevista Social</p>
-                  <p className="text-[10px] text-blue-800 leading-relaxed font-medium">O idoso está em processo de entrevista. Ao finalizar e emitir o parecer, mova para a fila de espera.</p>
+                  <p className="text-[11px] font-black text-blue-900 uppercase">Configuração de Fila</p>
+                  <p className="text-[10px] text-blue-800 leading-relaxed font-medium">Defina a prioridade de atendimento do idoso antes de movê-lo para a lista de espera.</p>
                </div>
             </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Nível de prioridade</label>
+              <select 
+                value={data.priority || 'padrao'} 
+                onChange={(e) => updateField('priority', e.target.value as WaitlistPriority)}
+                className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase bg-white focus:ring-2 focus:ring-blue-200 outline-none"
+              >
+                <option value="social_urgente">1) PRIORIDADE SOCIAL (URGENTE)</option>
+                <option value="dependencia_duvidosa">2) GRAU DE DEPENDÊNCIA DUVIDOSO (REQUER AVALIAÇÃO MÉDICA)</option>
+                <option value="padrao">3) PRIORIDADE PADRÃO</option>
+              </select>
+            </div>
+
             <button 
               onClick={() => advanceStage('aguardando_vaga')}
               className="w-full py-4 bg-[#004c99] text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-blue-800 transition-all flex items-center justify-center gap-2"
             >
-              Concluir Entrevista e Ir para Fila <ArrowRight size={16} />
+              <ArrowRight size={16} /> ENVIAR PARA LISTA DE ESPERA
             </button>
           </div>
         );
@@ -496,13 +613,13 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Nível de Prioridade</label>
               <select 
-                value={data.priority} 
+                value={data.priority || 'padrao'} 
                 onChange={(e) => updateField('priority', e.target.value as WaitlistPriority)}
                 className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase bg-white focus:ring-2 focus:ring-orange-200 outline-none"
               >
-                <option value="geral">Geral (Padrão)</option>
-                <option value="saude">Saúde (Prioritário)</option>
-                <option value="social">Social (Urgência)</option>
+                <option value="social_urgente">1) PRIORIDADE SOCIAL (URGENTE)</option>
+                <option value="dependencia_duvidosa">2) GRAU DE DEPENDÊNCIA DUVIDOSO (REQUER AVALIAÇÃO MÉDICA)</option>
+                <option value="padrao">3) PRIORIDADE PADRÃO</option>
               </select>
             </div>
             <button 
