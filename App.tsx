@@ -14,25 +14,27 @@ import { loadInstitutionSettings } from './lib/settingsStore';
 import { loadUsers } from './lib/usersStore';
 
 const App: React.FC = () => {
-  // Verificação de Setup Inicial
-  const [isSetupNeeded] = React.useState(() => {
-    const settings = loadInstitutionSettings();
-    const users = loadUsers();
-    // Se CNPJ está vazio e só existe o admin padrão (ou nenhum usuário real cadastrado além do dummy de código), pedimos setup
-    // Consideramos setup necessário se o CNPJ ainda não foi configurado.
-    return !settings.cnpj;
-  });
-
   const [session, setSession] = React.useState<{ cnpj: string; username: string; accessLevel: string } | null>(() => {
     const saved = localStorage.getItem('ssvp_session');
     return saved ? JSON.parse(saved) : null;
   });
 
+  const [view, setView] = React.useState<'login' | 'setup' | 'app'>(session ? 'app' : 'login');
   const [activeRoute, setActiveRoute] = React.useState<AppRoute>(AppRoute.RESIDENTS);
   const [activeSubTab, setActiveSubTab] = React.useState<SubTab>('geral');
   const [residents, setResidents] = React.useState<Resident[]>(DUMMY_RESIDENTS);
   const [candidates, setCandidates] = React.useState<Candidate[]>(DUMMY_CANDIDATES);
   const [editingResident, setEditingResident] = React.useState<Resident | null>(null);
+
+  const handleLoginSuccess = (newSession: { cnpj: string; username: string; accessLevel: string }) => {
+    setSession(newSession);
+    setView('app');
+  };
+
+  const handleSetupComplete = (newSession: { cnpj: string; username: string; accessLevel: string }) => {
+    setSession(newSession);
+    setView('app');
+  };
 
   const handleAddResident = () => {
     setEditingResident(INITIAL_RESIDENT);
@@ -73,16 +75,26 @@ const App: React.FC = () => {
   ];
 
   // Ordem de precedência: Setup -> Login -> App
-  if (isSetupNeeded && !session) {
-    return <SetupScreen onSetupComplete={setSession} />;
+  if (view === 'setup') {
+    return <SetupScreen onSetupComplete={handleSetupComplete} onBackToLogin={() => setView('login')} />;
   }
 
-  if (!session) {
-    return <LoginScreen onLoginSuccess={setSession} />;
+  if (view === 'login') {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} onDevSetup={() => setView('setup')} />;
   }
+
+  const settings = loadInstitutionSettings();
+  const councilInfo = settings.entityType === 'obra_unida' 
+    ? `SSVP - ${settings.centralCouncil || 'Conselho'}`
+    : `SSVP - ${settings.councilType || 'Conselho'}`;
 
   return (
-    <Layout activeRoute={activeRoute} setActiveRoute={setActiveRoute}>
+    <Layout 
+      activeRoute={activeRoute} 
+      setActiveRoute={setActiveRoute}
+      institutionName={settings.name}
+      councilInfo={councilInfo}
+    >
       {activeRoute === AppRoute.RESIDENTS && (
         <div className="space-y-6">
           {/* Sub-navigation Tabs */}

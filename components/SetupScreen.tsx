@@ -9,16 +9,19 @@ import {
   ChevronRight, 
   ArrowLeft,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  MapPin,
+  Globe
 } from 'lucide-react';
 import { InstitutionSettings, saveInstitutionSettings } from '../lib/settingsStore';
 import { User, saveUsers } from '../lib/usersStore';
 
 interface SetupScreenProps {
   onSetupComplete: (session: { cnpj: string; username: string; accessLevel: string }) => void;
+  onBackToLogin?: () => void;
 }
 
-const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete }) => {
+const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogin }) => {
   const [step, setStep] = React.useState(1);
   const [error, setError] = React.useState<string | null>(null);
   const [showPassword, setShowPassword] = React.useState(false);
@@ -26,8 +29,10 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete }) => {
 
   // Estado do formulário
   const [institution, setInstitution] = React.useState<InstitutionSettings>({
-    name: 'Lar São Vicente de Paulo',
+    entityType: 'obra_unida',
+    name: '',
     cnpj: '',
+    city: '',
     centralCouncil: '',
     metropolitanCouncil: ''
   });
@@ -43,7 +48,11 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete }) => {
   const handleNextStep = (e: React.FormEvent) => {
     e.preventDefault();
     if (!institution.name || !institution.cnpj) {
-      setError('Nome da Instituição e CNPJ são obrigatórios.');
+      setError('Nome e CNPJ são obrigatórios.');
+      return;
+    }
+    if (institution.entityType === 'obra_unida' && !institution.city) {
+      setError('Cidade é obrigatória para Obras Unidas.');
       return;
     }
     setError(null);
@@ -121,6 +130,14 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete }) => {
             </div>
 
             <div className="hidden md:block">
+              {onBackToLogin && (
+                <button 
+                  onClick={onBackToLogin}
+                  className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-[#004c99] transition-colors mb-6"
+                >
+                  <ArrowLeft size={14} /> Voltar para Login
+                </button>
+              )}
               <p className="text-[9px] font-bold text-gray-300 uppercase leading-relaxed">
                 Bem-vindo ao SSVP GESTÃO. Vamos configurar seu ambiente de trabalho.
               </p>
@@ -132,8 +149,8 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete }) => {
             {step === 1 ? (
               <form onSubmit={handleNextStep} className="space-y-8 animate-in slide-in-from-right duration-300">
                 <div>
-                  <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">Primeira Configuração</h2>
-                  <p className="text-[11px] font-bold text-gray-400 uppercase mt-2 tracking-widest">Dados da Instituição / Unidade</p>
+                  <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">Primeiro Acesso</h2>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase mt-2 tracking-widest">Configuração da Unidade</p>
                 </div>
 
                 {error && (
@@ -144,8 +161,47 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete }) => {
                 )}
 
                 <div className="space-y-5">
+                  <div className="flex p-1 bg-gray-100 rounded-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setInstitution({ ...institution, entityType: 'obra_unida' })}
+                      className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                        institution.entityType === 'obra_unida' ? 'bg-white text-[#004c99] shadow-sm' : 'text-gray-400'
+                      }`}
+                    >
+                      Obra Unida (ILPI)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInstitution({ ...institution, entityType: 'conselho' })}
+                      className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                        institution.entityType === 'conselho' ? 'bg-white text-[#004c99] shadow-sm' : 'text-gray-400'
+                      }`}
+                    >
+                      Conselho
+                    </button>
+                  </div>
+
+                  {institution.entityType === 'conselho' && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Tipo do Conselho *</label>
+                      <select
+                        value={institution.councilType}
+                        onChange={e => setInstitution({ ...institution, councilType: e.target.value as any })}
+                        className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all appearance-none bg-white"
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="nacional">Conselho Nacional</option>
+                        <option value="metropolitano">Conselho Metropolitano</option>
+                        <option value="central">Conselho Central</option>
+                      </select>
+                    </div>
+                  )}
+
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Nome da Instituição *</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">
+                      {institution.entityType === 'obra_unida' ? 'Nome da Instituição *' : 'Nome do Conselho *'}
+                    </label>
                     <div className="relative">
                       <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
                       <input 
@@ -159,38 +215,58 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete }) => {
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">CNPJ *</label>
-                    <input 
-                      type="text"
-                      required
-                      placeholder="00.000.000/0000-00"
-                      value={institution.cnpj}
-                      onChange={e => setInstitution({ ...institution, cnpj: e.target.value })}
-                      className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 transition-all"
-                    />
-                  </div>
-
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Conselho Central</label>
+                      <label className="text-[10px] font-black text-gray-400 uppercase ml-1">CNPJ *</label>
                       <input 
                         type="text"
-                        value={institution.centralCouncil}
-                        onChange={e => setInstitution({ ...institution, centralCouncil: e.target.value })}
-                        className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+                        required
+                        placeholder="00.000.000/0000-00"
+                        value={institution.cnpj}
+                        onChange={e => setInstitution({ ...institution, cnpj: e.target.value })}
+                        className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Conselho Metrop.</label>
-                      <input 
-                        type="text"
-                        value={institution.metropolitanCouncil}
-                        onChange={e => setInstitution({ ...institution, metropolitanCouncil: e.target.value })}
-                        className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all"
-                      />
-                    </div>
+                    {institution.entityType === 'obra_unida' && (
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Cidade *</label>
+                        <div className="relative">
+                          <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                          <input 
+                            type="text"
+                            required
+                            value={institution.city}
+                            onChange={e => setInstitution({ ...institution, city: e.target.value })}
+                            className="w-full pl-12 pr-4 py-4 border border-gray-100 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+                            placeholder="CIDADE"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
+
+                  {institution.entityType === 'obra_unida' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Conselho Central</label>
+                        <input 
+                          type="text"
+                          value={institution.centralCouncil}
+                          onChange={e => setInstitution({ ...institution, centralCouncil: e.target.value })}
+                          className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Conselho Metrop.</label>
+                        <input 
+                          type="text"
+                          value={institution.metropolitanCouncil}
+                          onChange={e => setInstitution({ ...institution, metropolitanCouncil: e.target.value })}
+                          className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <button 

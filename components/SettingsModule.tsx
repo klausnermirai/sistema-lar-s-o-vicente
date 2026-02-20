@@ -146,7 +146,32 @@ const SettingsModule: React.FC = () => {
             <div className="p-8 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase">Nome da Instituição *</label>
+                  <label className="text-[10px] font-black text-gray-400 uppercase">Tipo de Entidade</label>
+                  <select
+                    value={institution.entityType}
+                    onChange={e => setInstitution({ ...institution, entityType: e.target.value as any })}
+                    className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+                  >
+                    <option value="obra_unida">Obra Unida (ILPI)</option>
+                    <option value="conselho">Conselho</option>
+                  </select>
+                </div>
+                {institution.entityType === 'conselho' && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase">Tipo do Conselho</label>
+                    <select
+                      value={institution.councilType}
+                      onChange={e => setInstitution({ ...institution, councilType: e.target.value as any })}
+                      className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+                    >
+                      <option value="nacional">Conselho Nacional</option>
+                      <option value="metropolitano">Conselho Metropolitano</option>
+                      <option value="central">Conselho Central</option>
+                    </select>
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-400 uppercase">Nome *</label>
                   <input
                     type="text"
                     value={institution.name}
@@ -164,24 +189,39 @@ const SettingsModule: React.FC = () => {
                     className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase">Conselho Central Vinculado</label>
-                  <input
-                    type="text"
-                    value={institution.centralCouncil}
-                    onChange={e => setInstitution({ ...institution, centralCouncil: e.target.value })}
-                    className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase">Conselho Metropolitano Vinculado</label>
-                  <input
-                    type="text"
-                    value={institution.metropolitanCouncil}
-                    onChange={e => setInstitution({ ...institution, metropolitanCouncil: e.target.value })}
-                    className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
+                {institution.entityType === 'obra_unida' && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase">Cidade</label>
+                    <input
+                      type="text"
+                      value={institution.city}
+                      onChange={e => setInstitution({ ...institution, city: e.target.value })}
+                      className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                  </div>
+                )}
+                {institution.entityType === 'obra_unida' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase">Conselho Central Vinculado</label>
+                      <input
+                        type="text"
+                        value={institution.centralCouncil}
+                        onChange={e => setInstitution({ ...institution, centralCouncil: e.target.value })}
+                        className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase">Conselho Metropolitano Vinculado</label>
+                      <input
+                        type="text"
+                        value={institution.metropolitanCouncil}
+                        onChange={e => setInstitution({ ...institution, metropolitanCouncil: e.target.value })}
+                        className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
               <div className="pt-4">
                 <button type="submit" className="px-10 py-4 bg-[#004c99] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 flex items-center gap-2 transition-all">

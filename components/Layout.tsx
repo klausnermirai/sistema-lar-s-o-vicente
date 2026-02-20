@@ -7,9 +7,11 @@ interface LayoutProps {
   children: React.ReactNode;
   activeRoute: AppRoute;
   setActiveRoute: (route: AppRoute) => void;
+  institutionName?: string;
+  councilInfo?: string;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, institutionName, councilInfo }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
 
   const menuItems = [
@@ -78,7 +80,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute }
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
         <header className="h-20 bg-white border-b flex items-center justify-between px-10 shadow-sm shrink-0 z-10">
           <div className="flex items-center gap-3 text-[10px] font-black tracking-widest text-gray-400 uppercase">
-            <span>UNIDADE MONTE ALTO</span>
+            <span>{institutionName || 'UNIDADE'}</span>
             <ChevronRight size={14} />
             <span className="text-gray-900">
               {activeRoute === AppRoute.RESIDENTS ? 'Módulo de Residentes' : 
@@ -88,11 +90,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute }
           
           <div className="flex items-center gap-6">
             <div className="flex flex-col text-right">
-              <span className="text-xs font-black text-gray-900 uppercase tracking-tighter">Lar São Vicente de Paulo</span>
-              <span className="text-[10px] text-gray-400 font-bold uppercase">SSVP - Conselho Central</span>
+              <span className="text-xs font-black text-gray-900 uppercase tracking-tighter">{institutionName || 'Lar São Vicente de Paulo'}</span>
+              <span className="text-[10px] text-gray-400 font-bold uppercase">{councilInfo || 'SSVP - Conselho'}</span>
             </div>
             <div className="h-12 w-12 bg-gradient-to-tr from-red-600 to-red-500 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-red-100 transform rotate-3">
-              LS
+              {institutionName ? institutionName.substring(0, 2).toUpperCase() : 'LS'}
             </div>
           </div>
         </header>
