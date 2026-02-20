@@ -9,7 +9,9 @@ import {
   Save, 
   AlertCircle,
   UserCircle,
-  CheckCircle2
+  CheckCircle2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { InstitutionSettings, loadInstitutionSettings, saveInstitutionSettings } from '../lib/settingsStore';
 import { User, loadUsers, saveUsers } from '../lib/usersStore';
@@ -18,8 +20,8 @@ const SettingsModule: React.FC = () => {
   const [activeTab, setActiveTab] = React.useState<'instituicao' | 'acesso'>('instituicao');
   const [institution, setInstitution] = React.useState<InstitutionSettings>(loadInstitutionSettings());
   const [users, setUsers] = React.useState<User[]>(loadUsers());
-  const [isEditingUser, setIsEditingUser] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [showPassword, setShowPassword] = React.useState(false);
 
   // Form de novo usuário
   const [newUser, setNewUser] = React.useState<Partial<User>>({
@@ -70,6 +72,7 @@ const SettingsModule: React.FC = () => {
     setUsers(updatedUsers);
     saveUsers(updatedUsers);
     setNewUser({ username: '', fullName: '', role: '', accessLevel: 'gerencial', password: '' });
+    setShowPassword(false);
     showMessage('Usuário cadastrado com sucesso!', 'success');
   };
 
@@ -271,13 +274,22 @@ const SettingsModule: React.FC = () => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-gray-400 uppercase">Senha *</label>
-                  <input
-                    type="password"
-                    required
-                    value={newUser.password}
-                    onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                    className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={newUser.password}
+                      onChange={e => setNewUser({ ...newUser, password: e.target.value })}
+                      className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
                 <div className="pt-2">
                    <button type="submit" className="w-full py-4 bg-gray-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-black flex items-center justify-center gap-2 transition-all">

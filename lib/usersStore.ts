@@ -20,7 +20,7 @@ export const loadUsers = (): User[] => {
       fullName: 'Administrador Padrão',
       role: 'TI / Gestão',
       accessLevel: 'gerencial',
-      password: 'admin'
+      password: 'admin123'
     }
   ];
 };

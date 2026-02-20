@@ -5,11 +5,29 @@ import ElderlyList from './components/ElderlyList';
 import ElderlyForm from './components/ElderlyForm';
 import ScreeningModule from './components/ScreeningModule';
 import SettingsModule from './components/SettingsModule';
+import LoginScreen from './components/LoginScreen';
+import SetupScreen from './components/SetupScreen';
 import { AppRoute, Resident, SubTab, Candidate } from './types';
 import { DUMMY_RESIDENTS, INITIAL_RESIDENT, DUMMY_CANDIDATES } from './constants';
 import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Briefcase, FileSearch } from 'lucide-react';
+import { loadInstitutionSettings } from './lib/settingsStore';
+import { loadUsers } from './lib/usersStore';
 
 const App: React.FC = () => {
+  // Verificação de Setup Inicial
+  const [isSetupNeeded] = React.useState(() => {
+    const settings = loadInstitutionSettings();
+    const users = loadUsers();
+    // Se CNPJ está vazio e só existe o admin padrão (ou nenhum usuário real cadastrado além do dummy de código), pedimos setup
+    // Consideramos setup necessário se o CNPJ ainda não foi configurado.
+    return !settings.cnpj;
+  });
+
+  const [session, setSession] = React.useState<{ cnpj: string; username: string; accessLevel: string } | null>(() => {
+    const saved = localStorage.getItem('ssvp_session');
+    return saved ? JSON.parse(saved) : null;
+  });
+
   const [activeRoute, setActiveRoute] = React.useState<AppRoute>(AppRoute.RESIDENTS);
   const [activeSubTab, setActiveSubTab] = React.useState<SubTab>('geral');
   const [residents, setResidents] = React.useState<Resident[]>(DUMMY_RESIDENTS);
@@ -53,6 +71,15 @@ const App: React.FC = () => {
     { id: 'medicamentos', label: 'Medicamentos', icon: Stethoscope },
     { id: 'convenio', label: 'Convênios', icon: Briefcase },
   ];
+
+  // Ordem de precedência: Setup -> Login -> App
+  if (isSetupNeeded && !session) {
+    return <SetupScreen onSetupComplete={setSession} />;
+  }
+
+  if (!session) {
+    return <LoginScreen onLoginSuccess={setSession} />;
+  }
 
   return (
     <Layout activeRoute={activeRoute} setActiveRoute={setActiveRoute}>
