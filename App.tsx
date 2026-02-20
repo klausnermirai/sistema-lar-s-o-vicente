@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import ElderlyList from './components/ElderlyList';
 import ElderlyForm from './components/ElderlyForm';
 import ScreeningModule from './components/ScreeningModule';
+import SettingsModule from './components/SettingsModule';
 import { AppRoute, Resident, SubTab, Candidate } from './types';
 import { DUMMY_RESIDENTS, INITIAL_RESIDENT, DUMMY_CANDIDATES } from './constants';
 import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Briefcase, FileSearch } from 'lucide-react';
@@ -117,6 +118,8 @@ const App: React.FC = () => {
           }}
         />
       )}
+
+      {activeRoute === AppRoute.SETTINGS && <SettingsModule />}
     </Layout>
   );
 };

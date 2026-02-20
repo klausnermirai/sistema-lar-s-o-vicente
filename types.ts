@@ -240,7 +240,8 @@ export interface Resident {
 
 export enum AppRoute {
   RESIDENTS = 'residents',
-  SCREENING = 'screening'
+  SCREENING = 'screening',
+  SETTINGS = 'settings'
 }
 
 export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'saude' | 'medicamentos' | 'convenio';

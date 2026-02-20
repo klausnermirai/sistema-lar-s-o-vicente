@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Users, ChevronRight, Menu, FileSearch } from 'lucide-react';
+import { Users, ChevronRight, Menu, FileSearch, Settings } from 'lucide-react';
 import { AppRoute } from '../types';
 
 interface LayoutProps {
@@ -15,6 +15,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute }
   const menuItems = [
     { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
     { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
+    { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
   ];
 
   return (
@@ -80,7 +81,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute }
             <span>UNIDADE MONTE ALTO</span>
             <ChevronRight size={14} />
             <span className="text-gray-900">
-              {activeRoute === AppRoute.RESIDENTS ? 'Módulo de Residentes' : 'Módulo de Triagens Social'}
+              {activeRoute === AppRoute.RESIDENTS ? 'Módulo de Residentes' : 
+               activeRoute === AppRoute.SCREENING ? 'Módulo de Triagens Social' : 'Configurações do Sistema'}
             </span>
           </div>
           
