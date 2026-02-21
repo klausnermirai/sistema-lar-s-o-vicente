@@ -142,7 +142,10 @@ export interface Candidate {
   medicalOpinion?: string;
   medicalStatus?: 'favoravel' | 'desfavoravel';
   integrationDate?: string;
+  integrationReport?: string;
+  integrationObservations?: string;
   contractStatus?: 'pendente' | 'assinado';
+  admissionDate?: string;
 
   // Identificação (Top-level para listas)
   name: string;

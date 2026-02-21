@@ -55,6 +55,37 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
   const [searchTerm, setSearchTerm] = React.useState('');
   const [selectedStage, setSelectedStage] = React.useState<CandidateStage>('agendamentos');
 
+  // MOCK DATA PARA VISUALIZAÇÃO (APENAS EM MEMÓRIA)
+  const mockCandidates: Candidate[] = React.useMemo(() => {
+    const names = ['João Pereira', 'Maria Fernandes', 'Antônio Souza'];
+    const stages: CandidateStage[] = ['aguardando_vaga', 'decisao_diretoria', 'avaliacao_medica', 'integracao'];
+    
+    const mocks: Candidate[] = [];
+    stages.forEach((stage, sIdx) => {
+      names.forEach((name, nIdx) => {
+        mocks.push({
+          ...INITIAL_CANDIDATE,
+          id: `MOCK-${stage}-${nIdx}`,
+          name,
+          age: (70 + nIdx * 5 + sIdx).toString(),
+          address: `Rua Mock ${nIdx + 1}, Bairro Teste`,
+          phone: '(16) 99999-9999',
+          stage,
+          priority: nIdx === 0 ? 'social_urgente' : nIdx === 1 ? 'dependencia_duvidosa' : 'padrao',
+          createdAt: new Date().toISOString(),
+          boardOpinion: stage !== 'aguardando_vaga' ? 'Parecer favorável da diretoria em ata.' : '',
+          medicalStatus: stage === 'integracao' ? 'favoravel' : undefined,
+          medicalOpinion: stage === 'integracao' ? 'Paciente apto para convívio coletivo.' : '',
+          contractStatus: stage === 'integracao' && nIdx === 1 ? 'assinado' : 'pendente',
+          integrationDate: stage === 'integracao' ? new Date().toISOString().split('T')[0] : undefined,
+        });
+      });
+    });
+    return mocks;
+  }, []);
+
+  const allCandidates = React.useMemo(() => [...candidates, ...mockCandidates], [candidates, mockCandidates]);
+
   const stages: { id: CandidateStage; label: string; icon: any; color: string; description: string }[] = [
     { id: 'agendamentos', label: '0. Agendamentos', icon: Calendar, color: 'indigo', description: 'Pessoas aguardando visita ou entrevista inicial.' },
     { id: 'entrevista', label: '1. Entrevistas', icon: ClipboardList, color: 'blue', description: 'Coleta de dados iniciais e visita social.' },
@@ -101,7 +132,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
     `;
 
     allStages.forEach(stage => {
-      const stageCandidates = candidates.filter(c => c.stage === stage.id);
+      const stageCandidates = allCandidates.filter(c => c.stage === stage.id);
       if (stageCandidates.length > 0) {
         html += `
           <div class="stage-section">
@@ -123,8 +154,8 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
         `;
         stageCandidates.forEach(cand => {
           const priorityLabel = cand.priority === 'social_urgente' ? 'SOCIAL (URGENTE)' : 
-                               cand.priority === 'dependencia_duvidosa' ? 'DEP. DUVIDOSA' : 
-                               cand.priority === 'padrao' ? 'PRIORIDADE PADRÃO' : '-';
+                                cand.priority === 'dependencia_duvidosa' ? 'DEP. DUVIDOSA' : 
+                                cand.priority === 'padrao' ? 'PRIORIDADE PADRÃO' : '-';
           html += `
             <tr>
               <td style="font-weight: 800; color: #0f172a; text-transform: uppercase">${cand.name}</td>
@@ -154,10 +185,16 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
   };
 
   const getStageCandidates = (stage: CandidateStage) => 
-    candidates.filter(c => c.stage === stage && c.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    allCandidates.filter(c => {
+      const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
+      if (stage === 'integracao') {
+        return (c.stage === 'integracao' || c.stage === 'acolhido') && matchesSearch;
+      }
+      return c.stage === stage && matchesSearch;
+    });
 
-  const archivedCandidates = candidates.filter(c => c.stage === 'arquivado');
-  const admittedCandidates = candidates.filter(c => c.stage === 'acolhido');
+  const archivedCandidates = allCandidates.filter(c => c.stage === 'arquivado');
+  const admittedCandidates = allCandidates.filter(c => c.stage === 'acolhido');
 
   const handleSaveSimpleAppointment = (data: Partial<Candidate>) => {
     const newCandidate: Candidate = {
@@ -239,7 +276,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
       {/* Tabs de Status */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3 no-print overflow-x-auto pb-2 no-scrollbar">
         {stages.map((stage) => {
-          const count = candidates.filter(c => c.stage === stage.id).length;
+          const count = allCandidates.filter(c => c.stage === stage.id).length;
           const isActive = selectedStage === stage.id;
           const theme = STAGE_THEMES[stage.color];
           const StageIcon = stage.icon;
@@ -610,6 +647,13 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
       case 'aguardando_vaga':
         return (
           <div className="space-y-6">
+            <div className="p-5 bg-orange-50 border border-orange-100 rounded-2xl flex items-start gap-4">
+               <Clock className="text-orange-500 shrink-0" size={20} />
+               <div className="space-y-1">
+                  <p className="text-[11px] font-black text-orange-900 uppercase">Fila de Espera</p>
+                  <p className="text-[10px] text-orange-800 leading-relaxed font-medium">Candidato apto aguardando disponibilidade de vaga para prosseguir.</p>
+               </div>
+            </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Nível de Prioridade</label>
               <select 
@@ -633,6 +677,13 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
       case 'decisao_diretoria':
         return (
           <div className="space-y-6">
+            <div className="p-5 bg-purple-50 border border-purple-100 rounded-2xl flex items-start gap-4">
+               <Scale className="text-purple-500 shrink-0" size={20} />
+               <div className="space-y-1">
+                  <p className="text-[11px] font-black text-purple-900 uppercase">Parecer da Diretoria</p>
+                  <p className="text-[10px] text-purple-800 leading-relaxed font-medium">Registre a decisão oficial da diretoria conforme ata de reunião.</p>
+               </div>
+            </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Relato da Ata / Parecer</label>
               <textarea 
@@ -654,6 +705,13 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
       case 'avaliacao_medica':
         return (
           <div className="space-y-6">
+            <div className="p-5 bg-teal-50 border border-teal-100 rounded-2xl flex items-start gap-4">
+               <HeartPulse className="text-teal-500 shrink-0" size={20} />
+               <div className="space-y-1">
+                  <p className="text-[11px] font-black text-teal-900 uppercase">Parecer Médico</p>
+                  <p className="text-[10px] text-teal-800 leading-relaxed font-medium">Avaliação clínica de compatibilidade com o perfil da unidade.</p>
+               </div>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <button 
                 onClick={() => updateField('medicalStatus', 'favoravel')}
@@ -687,11 +745,131 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
           </div>
         );
       case 'integracao':
+        const handleGenerateFullReport = () => {
+          const printWindow = window.open('', '_blank');
+          if (!printWindow) return;
+
+          const priorityLabel = data.priority === 'social_urgente' ? 'SOCIAL (URGENTE)' : 
+                               data.priority === 'dependencia_duvidosa' ? 'DEP. DUVIDOSA' : 
+                               data.priority === 'padrao' ? 'PRIORIDADE PADRÃO' : 'NÃO DEFINIDA';
+
+          const interview = data.interview;
+
+          let html = `
+            <html>
+              <head>
+                <title>Relatório Geral de Triagem - ${data.name}</title>
+                <style>
+                  body { font-family: 'Inter', system-ui, sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; }
+                  .header { text-align: center; border-bottom: 4px solid #004c99; margin-bottom: 30px; padding-bottom: 20px; }
+                  .header h1 { margin: 0; font-size: 28px; text-transform: uppercase; color: #004c99; font-weight: 900; }
+                  .header p { margin: 5px 0 0; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+                  .section { margin-bottom: 30px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+                  .section-title { background: #f8fafc; padding: 12px 20px; font-size: 14px; font-weight: 900; text-transform: uppercase; color: #004c99; border-bottom: 1px solid #e2e8f0; }
+                  .section-content { padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+                  .full-width { grid-column: span 2; }
+                  .field { margin-bottom: 10px; }
+                  .label { font-size: 10px; font-weight: 900; text-transform: uppercase; color: #64748b; display: block; }
+                  .value { font-size: 13px; font-weight: 600; color: #1e293b; }
+                  .text-block { background: #f1f5f9; padding: 15px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; margin-top: 5px; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
+                  th { background: #f1f5f9; border: 1px solid #e2e8f0; padding: 8px; text-align: left; font-weight: 900; text-transform: uppercase; }
+                  td { border: 1px solid #e2e8f0; padding: 8px; }
+                  .footer { margin-top: 40px; font-size: 10px; text-align: center; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 20px; }
+                  @media print { .no-print { display: none; } }
+                </style>
+              </head>
+              <body>
+                <div class="header">
+                  <h1>Relatório Geral de Triagem</h1>
+                  <p>Candidato: ${data.name} | Emitido em: ${new Date().toLocaleString('pt-BR')}</p>
+                </div>
+
+                <div class="section">
+                  <div class="section-title">Dados do Agendamento</div>
+                  <div class="section-content">
+                    <div class="field"><span class="label">Data do Contato</span><span class="value">${data.scheduledDate ? new Date(data.scheduledDate).toLocaleDateString('pt-BR') : 'N/A'}</span></div>
+                    <div class="field"><span class="label">Telefone</span><span class="value">${data.phone || 'N/A'}</span></div>
+                    <div class="field full-width"><span class="label">Endereço</span><span class="value">${data.address || 'N/A'}</span></div>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="section-title">Entrevista Social</div>
+                  <div class="section-content">
+                    <div class="field"><span class="label">Idade</span><span class="value">${data.age || 'N/A'}</span></div>
+                    <div class="field"><span class="label">Sexo</span><span class="value">${data.gender || 'N/A'}</span></div>
+                    <div class="field"><span class="label">Estado Civil</span><span class="value">${data.maritalStatus || 'N/A'}</span></div>
+                    <div class="field"><span class="label">CPF</span><span class="value">${data.cpf || 'N/A'}</span></div>
+                    <div class="field full-width"><span class="label">Reside com</span><span class="value">${interview.residesWith || 'N/A'}</span></div>
+                    <div class="field full-width"><span class="label">Motivo da Solicitação</span><div class="text-block">${interview.requestReason || 'Não informado'}</div></div>
+                    <div class="field full-width"><span class="label">Parecer da Assistente Social</span><div class="text-block">${interview.socialAnalysis || 'Não informado'}</div></div>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="section-title">Fila de Espera</div>
+                  <div class="section-content">
+                    <div class="field full-width"><span class="label">Nível de Prioridade</span><span class="value">${priorityLabel}</span></div>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="section-title">Parecer da Diretoria</div>
+                  <div class="section-content">
+                    <div class="field full-width"><span class="label">Decisão Oficial / Ata</span><div class="text-block">${data.boardOpinion || 'Não registrado'}</div></div>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="section-title">Parecer Médico</div>
+                  <div class="section-content">
+                    <div class="field"><span class="label">Status Clínico</span><span class="value">${data.medicalStatus === 'favoravel' ? 'APTO' : data.medicalStatus === 'desfavoravel' ? 'INAPTO' : 'PENDENTE'}</span></div>
+                    <div class="field full-width"><span class="label">Observações Médicas</span><div class="text-block">${data.medicalOpinion || 'Não registrado'}</div></div>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="section-title">Integração</div>
+                  <div class="section-content">
+                    <div class="field"><span class="label">Data da Integração</span><span class="value">${data.integrationDate ? new Date(data.integrationDate).toLocaleDateString('pt-BR') : 'N/A'}</span></div>
+                    <div class="field"><span class="label">Status do Contrato</span><span class="value">${data.contractStatus === 'assinado' ? 'ASSINADO' : 'PENDENTE'}</span></div>
+                    <div class="field full-width"><span class="label">Relatório da Integração</span><div class="text-block">${data.integrationReport || 'Não registrado'}</div></div>
+                    <div class="field full-width"><span class="label">Observações Adicionais</span><div class="text-block">${data.integrationObservations || 'Nenhuma'}</div></div>
+                  </div>
+                </div>
+
+                ${data.admissionDate ? `
+                <div class="section">
+                  <div class="section-title">Acolhimento</div>
+                  <div class="section-content">
+                    <div class="field full-width"><span class="label">Data de Efetivação do Acolhimento</span><span class="value" style="color: #16a34a; font-size: 18px;">${new Date(data.admissionDate).toLocaleDateString('pt-BR')}</span></div>
+                  </div>
+                </div>
+                ` : ''}
+
+                <div class="footer">Este documento é de uso interno da SSVP e contém dados sensíveis.</div>
+              </body>
+            </html>
+          `;
+          printWindow.document.write(html);
+          printWindow.document.close();
+          setTimeout(() => printWindow.print(), 500);
+        };
+
         return (
           <div className="space-y-6">
+            <div className="p-5 bg-pink-50 border border-pink-100 rounded-2xl flex items-start gap-4">
+               <Calendar className="text-pink-500 shrink-0" size={20} />
+               <div className="space-y-1">
+                  <p className="text-[11px] font-black text-pink-900 uppercase">Integração e Contratos</p>
+                  <p className="text-[10px] text-pink-800 leading-relaxed font-medium">Finalização de documentação e agendamento da data de entrada.</p>
+               </div>
+            </div>
+            
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Data Agendada Entrada</label>
+                <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Data da Integração</label>
                 <input 
                   type="date" 
                   value={data.integrationDate} 
@@ -711,13 +889,57 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
                 </select>
               </div>
             </div>
-            <button 
-              onClick={onAdmit}
-              disabled={data.contractStatus !== 'assinado'}
-              className="w-full py-5 bg-green-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-2xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              <UserCheck size={20} /> EFETIVAR MATRÍCULA
-            </button>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Relatório da Integração do Idoso</label>
+              <textarea 
+                value={data.integrationReport} 
+                onChange={(e) => updateField('integrationReport', e.target.value)}
+                placeholder="Descreva como foi a tarde de experiência do idoso..."
+                className="w-full p-5 border border-gray-200 rounded-2xl text-xs font-medium h-32 focus:ring-2 focus:ring-pink-200 outline-none uppercase"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Observações Adicionais</label>
+              <textarea 
+                value={data.integrationObservations} 
+                onChange={(e) => updateField('integrationObservations', e.target.value)}
+                placeholder="Outras informações relevantes..."
+                className="w-full p-5 border border-gray-200 rounded-2xl text-xs font-medium h-20 focus:ring-2 focus:ring-pink-200 outline-none uppercase"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3 pt-4">
+              <button 
+                onClick={handleGenerateFullReport}
+                className="w-full py-4 bg-white border-2 border-[#004c99] text-[#004c99] rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-blue-50 transition-all flex items-center justify-center gap-2"
+              >
+                <FileText size={18} /> Gerar Relatório Completo
+              </button>
+
+              {data.stage !== 'acolhido' ? (
+                <button 
+                  onClick={() => {
+                    const updated = { 
+                      ...data, 
+                      stage: 'acolhido' as CandidateStage,
+                      admissionDate: new Date().toISOString().split('T')[0]
+                    };
+                    onSave(updated);
+                  }}
+                  disabled={data.contractStatus !== 'assinado'}
+                  className="w-full py-5 bg-green-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-2xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <UserCheck size={20} /> ACOLHER
+                </button>
+              ) : (
+                <div className="p-4 bg-green-50 border border-green-100 rounded-2xl flex items-center justify-center gap-3 text-green-700">
+                  <CheckCircle2 size={20} />
+                  <span className="text-[11px] font-black uppercase tracking-widest">Candidato Acolhido em {data.admissionDate ? new Date(data.admissionDate).toLocaleDateString('pt-BR') : ''}</span>
+                </div>
+              )}
+            </div>
           </div>
         );
       default:
