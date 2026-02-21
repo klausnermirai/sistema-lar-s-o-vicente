@@ -13,13 +13,25 @@ import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Briefca
 import { loadInstitutionSettings } from './lib/settingsStore';
 import { loadUsers } from './lib/usersStore';
 
+// TEMPORÁRIO PARA PROTOTIPAÇÃO: Pular Login/Setup se true
+const DEV_BYPASS_AUTH = true;
+
 const App: React.FC = () => {
   const [session, setSession] = React.useState<{ cnpj: string; username: string; accessLevel: string } | null>(() => {
     const saved = localStorage.getItem('ssvp_session');
+    
+    if (DEV_BYPASS_AUTH && !saved) {
+      const devSession = { cnpj: '', username: 'dev', accessLevel: 'gerencial' };
+      localStorage.setItem('ssvp_session', JSON.stringify(devSession));
+      return devSession;
+    }
+    
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [view, setView] = React.useState<'login' | 'setup' | 'app'>(session ? 'app' : 'login');
+  const [view, setView] = React.useState<'login' | 'setup' | 'app'>(
+    (session || DEV_BYPASS_AUTH) ? 'app' : 'login'
+  );
   const [activeRoute, setActiveRoute] = React.useState<AppRoute>(AppRoute.RESIDENTS);
   const [activeSubTab, setActiveSubTab] = React.useState<SubTab>('geral');
   const [residents, setResidents] = React.useState<Resident[]>(DUMMY_RESIDENTS);
