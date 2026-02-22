@@ -835,7 +835,6 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
                     <div class="field"><span class="label">Data da Integração</span><span class="value">${data.integrationDate ? new Date(data.integrationDate).toLocaleDateString('pt-BR') : 'N/A'}</span></div>
                     <div class="field"><span class="label">Status do Contrato</span><span class="value">${data.contractStatus === 'assinado' ? 'ASSINADO' : 'PENDENTE'}</span></div>
                     <div class="field full-width"><span class="label">Relatório da Integração</span><div class="text-block">${data.integrationReport || 'Não registrado'}</div></div>
-                    <div class="field full-width"><span class="label">Observações Adicionais</span><div class="text-block">${data.integrationObservations || 'Nenhuma'}</div></div>
                   </div>
                 </div>
 
@@ -897,16 +896,6 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
                 onChange={(e) => updateField('integrationReport', e.target.value)}
                 placeholder="Descreva como foi a tarde de experiência do idoso..."
                 className="w-full p-5 border border-gray-200 rounded-2xl text-xs font-medium h-32 focus:ring-2 focus:ring-pink-200 outline-none uppercase"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">Observações Adicionais</label>
-              <textarea 
-                value={data.integrationObservations} 
-                onChange={(e) => updateField('integrationObservations', e.target.value)}
-                placeholder="Outras informações relevantes..."
-                className="w-full p-5 border border-gray-200 rounded-2xl text-xs font-medium h-20 focus:ring-2 focus:ring-pink-200 outline-none uppercase"
               />
             </div>
 

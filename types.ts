@@ -143,7 +143,6 @@ export interface Candidate {
   medicalStatus?: 'favoravel' | 'desfavoravel';
   integrationDate?: string;
   integrationReport?: string;
-  integrationObservations?: string;
   contractStatus?: 'pendente' | 'assinado';
   admissionDate?: string;
 
