@@ -171,6 +171,7 @@ export interface Candidate {
   interview: InterviewData;
   
   createdAt: string;
+  residentId?: string;
 }
 
 export interface Resident {
@@ -238,6 +239,16 @@ export interface Resident {
   personalItems: PersonalItem[];
   healthUpdates: HealthUpdate[];
   medications: Medication[];
+
+  // Campos importados da Triagem
+  sourceCandidateId?: string;
+  priority?: string;
+  boardOpinion?: string;
+  medicalOpinion?: string;
+  medicalStatus?: string;
+  integrationDate?: string;
+  integrationReport?: string;
+  interview?: InterviewData;
 }
 
 export enum AppRoute {
@@ -246,4 +257,4 @@ export enum AppRoute {
   SETTINGS = 'settings'
 }
 
-export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'saude' | 'medicamentos' | 'convenio';
+export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'saude-cuidados' | 'atendimentos-multidisciplinares' | 'consultas-medicas';

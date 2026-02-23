@@ -186,9 +186,9 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     { id: 'familiares-visitantes', label: 'Familiares e Visitantes', icon: Users },
     { id: 'financeiro', label: 'Financeiro', icon: DollarSign },
     { id: 'itens', label: 'Itens Pessoais', icon: Package },
-    { id: 'saude', label: 'Saúde', icon: HeartPulse },
-    { id: 'medicamentos', label: 'Medicamentos', icon: Stethoscope },
-    { id: 'convenio', label: 'Convênios', icon: Briefcase },
+    { id: 'saude-cuidados', label: 'Saúde e Cuidados', icon: HeartPulse },
+    { id: 'atendimentos-multidisciplinares', label: 'Atendimentos Multidisciplinares', icon: Users },
+    { id: 'consultas-medicas', label: 'Consultas Médicas', icon: Stethoscope },
   ];
 
   return (
@@ -669,63 +669,87 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
           </div>
         )}
 
-        {activeTab === 'saude' && (
-           <div className="p-8 animate-in slide-in-from-right duration-300">
-              <div className="flex justify-between items-center mb-10">
-                 <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Saúde</h3>
-                 <button type="button" onClick={addHealthUpdate} className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase">
-                   <Plus size={18} /> EVOLUÇÃO
-                 </button>
+        {activeTab === 'saude-cuidados' && (
+           <div className="p-8 animate-in slide-in-from-right duration-300 space-y-12">
+              {/* Seção Saúde */}
+              <div>
+                <div className="flex justify-between items-center mb-6">
+                   <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Saúde (Evoluções)</h3>
+                   <button type="button" onClick={addHealthUpdate} className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase">
+                     <Plus size={18} /> EVOLUÇÃO
+                   </button>
+                </div>
+                <div className="space-y-6">
+                   {formData.healthUpdates.map((h) => (
+                      <div key={h.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+                            <FormField label="Data" name={`h-date-${h.id}`} type="date" value={h.date} onChange={(e) => updateListField('healthUpdates', h.id, 'date', e.target.value)} />
+                            <FormField label="Profissional" name={`h-prof-${h.id}`} value={h.professional} onChange={(e) => updateListField('healthUpdates', h.id, 'professional', e.target.value)} className="md:col-span-2" />
+                         </div>
+                         <FormField label="Resumo" name={`h-sum-${h.id}`} value={h.summary} onChange={(e) => updateListField('healthUpdates', h.id, 'summary', e.target.value)} className="mb-4" />
+                         <div className="flex justify-end">
+                            <button type="button" onClick={() => removeFromList('healthUpdates', h.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
+                         </div>
+                      </div>
+                   ))}
+                </div>
               </div>
-              <div className="space-y-6">
-                 {formData.healthUpdates.map((h) => (
-                    <div key={h.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
-                          <FormField label="Data" name={`h-date-${h.id}`} type="date" value={h.date} onChange={(e) => updateListField('healthUpdates', h.id, 'date', e.target.value)} />
-                          <FormField label="Profissional" name={`h-prof-${h.id}`} value={h.professional} onChange={(e) => updateListField('healthUpdates', h.id, 'professional', e.target.value)} className="md:col-span-2" />
-                       </div>
-                       <FormField label="Resumo" name={`h-sum-${h.id}`} value={h.summary} onChange={(e) => updateListField('healthUpdates', h.id, 'summary', e.target.value)} className="mb-4" />
-                       <div className="flex justify-end">
-                          <button type="button" onClick={() => removeFromList('healthUpdates', h.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
-                       </div>
-                    </div>
-                 ))}
+
+              <hr className="border-gray-200" />
+
+              {/* Seção Medicamentos */}
+              <div>
+                <div className="flex justify-between items-center mb-6">
+                   <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Medicamentos</h3>
+                   <button type="button" onClick={addMedication} className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase">
+                     <Plus size={18} /> ADICIONAR
+                   </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   {formData.medications.map((med) => (
+                      <div key={med.id} className="p-6 border rounded-2xl bg-white shadow-sm relative group">
+                         <button type="button" onClick={() => removeFromList('medications', med.id)} className="absolute top-4 right-4 text-gray-300 hover:text-red-500"><Trash2 size={18} /></button>
+                         <div className="space-y-4">
+                            <input type="text" value={med.name} onChange={(e) => updateListField('medications', med.id, 'name', e.target.value)} placeholder="Nome..." className="w-full text-lg font-black focus:outline-none uppercase" />
+                            <div className="grid grid-cols-2 gap-4">
+                               <FormField label="Posologia" name={`m-d-${med.id}`} value={med.dosage} onChange={(e) => updateListField('medications', med.id, 'dosage', e.target.value)} />
+                               <FormField label="Freq." name={`m-f-${med.id}`} value={med.frequency} onChange={(e) => updateListField('medications', med.id, 'frequency', e.target.value)} />
+                            </div>
+                         </div>
+                      </div>
+                   ))}
+                </div>
+              </div>
+
+              <hr className="border-gray-200" />
+
+              {/* Seção Convênios */}
+              <div>
+                <div className="flex flex-col items-center justify-center gap-4 py-10">
+                  <Briefcase size={48} className="text-gray-300" />
+                  <h3 className="text-xl font-black text-gray-800 uppercase">Convênios</h3>
+                  <button type="button" className="bg-[#004c99] text-white px-8 py-2 rounded-xl font-black text-xs uppercase shadow-md">NOVO CONVÊNIO</button>
+                </div>
               </div>
            </div>
         )}
 
-        {activeTab === 'medicamentos' && (
-           <div className="p-8 animate-in slide-in-from-right duration-300">
-              <div className="flex justify-between items-center mb-10">
-                 <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Medicamentos</h3>
-                 <button type="button" onClick={addMedication} className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase">
-                   <Plus size={18} /> ADICIONAR
-                 </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 {formData.medications.map((med) => (
-                    <div key={med.id} className="p-6 border rounded-2xl bg-white shadow-sm relative group">
-                       {/* Fixed typo in 'removeFromList' call: 'medicications' to 'medications' */}
-                       <button type="button" onClick={() => removeFromList('medications', med.id)} className="absolute top-4 right-4 text-gray-300 hover:text-red-500"><Trash2 size={18} /></button>
-                       <div className="space-y-4">
-                          <input type="text" value={med.name} onChange={(e) => updateListField('medications', med.id, 'name', e.target.value)} placeholder="Nome..." className="w-full text-lg font-black focus:outline-none uppercase" />
-                          <div className="grid grid-cols-2 gap-4">
-                             <FormField label="Posologia" name={`m-d-${med.id}`} value={med.dosage} onChange={(e) => updateListField('medications', med.id, 'dosage', e.target.value)} />
-                             <FormField label="Freq." name={`m-f-${med.id}`} value={med.frequency} onChange={(e) => updateListField('medications', med.id, 'frequency', e.target.value)} />
-                          </div>
-                       </div>
-                    </div>
-                 ))}
-              </div>
-           </div>
-        )}
-
-        {activeTab === 'convenio' && (
+        {activeTab === 'atendimentos-multidisciplinares' && (
            <div className="p-20 text-center animate-in zoom-in duration-300">
               <div className="flex flex-col items-center justify-center gap-4">
-                <Briefcase size={48} className="text-gray-300" />
-                <h3 className="text-xl font-black text-gray-800 uppercase">Convênios</h3>
-                <button type="button" className="bg-[#004c99] text-white px-8 py-2 rounded-xl font-black text-xs uppercase shadow-md">NOVO CONVÊNIO</button>
+                <Users size={48} className="text-gray-300" />
+                <h3 className="text-xl font-black text-gray-800 uppercase">Atendimentos Multidisciplinares</h3>
+                <p className="text-sm font-bold text-gray-400 uppercase">Módulo em desenvolvimento</p>
+              </div>
+           </div>
+        )}
+
+        {activeTab === 'consultas-medicas' && (
+           <div className="p-20 text-center animate-in zoom-in duration-300">
+              <div className="flex flex-col items-center justify-center gap-4">
+                <Stethoscope size={48} className="text-gray-300" />
+                <h3 className="text-xl font-black text-gray-800 uppercase">Consultas Médicas</h3>
+                <p className="text-sm font-bold text-gray-400 uppercase">Módulo em desenvolvimento</p>
               </div>
            </div>
         )}

@@ -187,9 +187,6 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
   const getStageCandidates = (stage: CandidateStage) => 
     allCandidates.filter(c => {
       const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
-      if (stage === 'integracao') {
-        return (c.stage === 'integracao' || c.stage === 'acolhido') && matchesSearch;
-      }
       return c.stage === stage && matchesSearch;
     });
 
@@ -452,8 +449,8 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({ candidates, onSave, r
             setEditingCandidate(cand);
             setManagingCandidate(null);
           }}
-          onAdmit={() => {
-            onAdmit(managingCandidate);
+          onAdmit={(cand: Candidate) => {
+            onAdmit(cand);
             setManagingCandidate(null);
           }}
         />
@@ -910,12 +907,10 @@ function StatusManagementModal({ candidate, onClose, onSave, onEdit, onAdmit, on
               {data.stage !== 'acolhido' ? (
                 <button 
                   onClick={() => {
-                    const updated = { 
-                      ...data, 
-                      stage: 'acolhido' as CandidateStage,
-                      admissionDate: new Date().toISOString().split('T')[0]
-                    };
-                    onSave(updated);
+                    if (window.confirm(`Deseja realmente acolher o candidato ${data.name}? Ele será transferido para a lista de Residentes.`)) {
+                      onAdmit(data);
+                      onClose();
+                    }
                   }}
                   disabled={data.contractStatus !== 'assinado'}
                   className="w-full py-5 bg-green-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-2xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"

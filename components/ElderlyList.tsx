@@ -23,9 +23,9 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
       case 'familiares-visitantes': return 'Gerenciar Visitas';
       case 'financeiro': return 'Lançar Financeiro';
       case 'itens': return 'Ver Itens';
-      case 'saude': return 'Ver Saúde';
-      case 'medicamentos': return 'Controle Farmácia';
-      case 'convenio': return 'Ver Convênios';
+      case 'saude-cuidados': return 'Ver Saúde e Cuidados';
+      case 'atendimentos-multidisciplinares': return 'Ver Atendimentos';
+      case 'consultas-medicas': return 'Ver Consultas';
       default: return 'Abrir Ficha Geral';
     }
   };
@@ -61,23 +61,36 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
             <div className="font-bold text-gray-700">{resident.personalItems.length} Itens Catalogados</div>
           </div>
         );
-      case 'saude':
+      case 'saude-cuidados':
         const lastHealth = resident.healthUpdates[0];
-        return (
-          <div className="text-[10px] uppercase">
-            <div className="font-black text-gray-400">Última Evolução:</div>
-            <div className="font-bold text-gray-700">{lastHealth ? lastHealth.date : 'Nenhum registro'}</div>
-          </div>
-        );
-      case 'medicamentos':
         const lowStock = resident.medications.some(m => m.stock <= 5);
         return (
-          <div className="text-[10px] uppercase">
-            <div className="font-black text-gray-400">Medicações:</div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-gray-700">{resident.medications.length} Ativas</span>
-              {lowStock && <AlertCircle size={12} className="text-red-500 animate-pulse" />}
+          <div className="text-[10px] uppercase flex gap-4">
+            <div>
+              <div className="font-black text-gray-400">Última Evolução:</div>
+              <div className="font-bold text-gray-700">{lastHealth ? lastHealth.date : 'Nenhum registro'}</div>
             </div>
+            <div>
+              <div className="font-black text-gray-400">Medicações:</div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-700">{resident.medications.length} Ativas</span>
+                {lowStock && <AlertCircle size={12} className="text-red-500 animate-pulse" />}
+              </div>
+            </div>
+          </div>
+        );
+      case 'atendimentos-multidisciplinares':
+        return (
+          <div className="text-[10px] uppercase">
+            <div className="font-black text-gray-400">Status:</div>
+            <div className="font-bold text-gray-700">Aguardando registros</div>
+          </div>
+        );
+      case 'consultas-medicas':
+        return (
+          <div className="text-[10px] uppercase">
+            <div className="font-black text-gray-400">Status:</div>
+            <div className="font-bold text-gray-700">Aguardando registros</div>
           </div>
         );
       default:

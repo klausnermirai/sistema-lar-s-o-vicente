@@ -81,9 +81,9 @@ const App: React.FC = () => {
     { id: 'familiares-visitantes', label: 'Familiares e Visitantes', icon: Users },
     { id: 'financeiro', label: 'Financeiro', icon: DollarSign },
     { id: 'itens', label: 'Itens Pessoais', icon: Package },
-    { id: 'saude', label: 'Saúde', icon: HeartPulse },
-    { id: 'medicamentos', label: 'Medicamentos', icon: Stethoscope },
-    { id: 'convenio', label: 'Convênios', icon: Briefcase },
+    { id: 'saude-cuidados', label: 'Saúde e Cuidados', icon: HeartPulse },
+    { id: 'atendimentos-multidisciplinares', label: 'Atendimentos Multidisciplinares', icon: Users },
+    { id: 'consultas-medicas', label: 'Consultas Médicas', icon: Stethoscope },
   ];
 
   // Ordem de precedência: Setup -> Login -> App
@@ -151,21 +151,34 @@ const App: React.FC = () => {
           onSave={handleSaveCandidate}
           residents={residents}
           onAdmit={(candidate) => {
-            // Logica básica de transformação de candidato em residente
+            const admissionDate = new Date().toISOString().split('T')[0];
+            const newResId = Date.now().toString();
             const newRes: Resident = {
                ...INITIAL_RESIDENT,
-               id: Date.now().toString(),
+               id: newResId,
                name: candidate.name,
                birthDate: candidate.birthDate,
                cpf: candidate.cpf,
                rg: candidate.rg,
                address: candidate.address,
-               admissionDate: new Date().toISOString().split('T')[0],
-               admissionReason: candidate.admissionReason,
-               observations: `Oriundo da triagem realizada em ${candidate.createdAt}.`
+               gender: candidate.gender as any,
+               maritalStatus: candidate.maritalStatus,
+               admissionDate: admissionDate,
+               admissionReason: candidate.admissionReason || candidate.interview?.requestReason || '',
+               observations: `Oriundo da triagem realizada em ${candidate.createdAt ? new Date(candidate.createdAt).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR')}.`,
+               
+               // Campos importados da Triagem
+               sourceCandidateId: candidate.id,
+               priority: candidate.priority,
+               boardOpinion: candidate.boardOpinion,
+               medicalOpinion: candidate.medicalOpinion,
+               medicalStatus: candidate.medicalStatus,
+               integrationDate: candidate.integrationDate,
+               integrationReport: candidate.integrationReport,
+               interview: candidate.interview
             };
             handleSaveResident(newRes);
-            handleSaveCandidate({ ...candidate, stage: 'acolhido' });
+            handleSaveCandidate({ ...candidate, stage: 'acolhido', admissionDate, residentId: newResId });
           }}
         />
       )}
