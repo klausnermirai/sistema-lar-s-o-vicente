@@ -107,18 +107,25 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
     <div className="space-y-6">
       <div className="flex justify-between items-center bg-white p-6 rounded-2xl border shadow-sm">
         <div>
-          <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">Módulo de Residentes</h1>
+          <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">
+            {activeSubTab === 'saude-cuidados' ? 'Saúde e Cuidados' :
+             activeSubTab === 'atendimentos-multidisciplinares' ? 'Atendimento Multidisciplinar' :
+             activeSubTab === 'consultas-medicas' ? 'Consulta Médica' :
+             'Módulo de Residentes'}
+          </h1>
           <p className="text-[11px] font-bold text-gray-400 uppercase mt-1">
             Visualizando informações de <span className="text-[#004c99]">{activeSubTab.replace('-', ' ')}</span> • {residents.length} Idosos cadastrados
           </p>
         </div>
-        <button
-          onClick={onAdd}
-          className="bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 shadow-xl transition-all font-black text-xs uppercase"
-        >
-          <UserPlus size={18} />
-          <span>Cadastrar Idoso</span>
-        </button>
+        {['geral', 'familiares-visitantes', 'financeiro', 'itens'].includes(activeSubTab) && (
+          <button
+            onClick={onAdd}
+            className="bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 shadow-xl transition-all font-black text-xs uppercase"
+          >
+            <UserPlus size={18} />
+            <span>Cadastrar Idoso</span>
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">

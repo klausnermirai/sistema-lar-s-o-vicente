@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Users, ChevronRight, Menu, FileSearch, Settings } from 'lucide-react';
+import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope } from 'lucide-react';
 import { AppRoute } from '../types';
 
 interface LayoutProps {
@@ -15,8 +15,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, 
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
 
   const menuItems = [
-    { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
     { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
+    { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
+    { id: AppRoute.SAUDE_CUIDADOS, label: 'Saúde e Cuidados', icon: HeartPulse },
+    { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Users },
+    { id: AppRoute.CONSULTAS_MEDICAS, label: 'Consulta Médica', icon: Stethoscope },
     { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
   ];
 
@@ -84,7 +87,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, 
             <ChevronRight size={14} />
             <span className="text-gray-900">
               {activeRoute === AppRoute.RESIDENTS ? 'Módulo de Residentes' : 
-               activeRoute === AppRoute.SCREENING ? 'Módulo de Triagens Social' : 'Configurações do Sistema'}
+               activeRoute === AppRoute.SCREENING ? 'Módulo de Triagens Social' : 
+               activeRoute === AppRoute.SAUDE_CUIDADOS ? 'Saúde e Cuidados' :
+               activeRoute === AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES ? 'Atendimento Multidisciplinar' :
+               activeRoute === AppRoute.CONSULTAS_MEDICAS ? 'Consulta Médica' :
+               'Configurações do Sistema'}
             </span>
           </div>
           

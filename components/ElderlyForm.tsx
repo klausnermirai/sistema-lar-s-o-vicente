@@ -186,9 +186,6 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     { id: 'familiares-visitantes', label: 'Familiares e Visitantes', icon: Users },
     { id: 'financeiro', label: 'Financeiro', icon: DollarSign },
     { id: 'itens', label: 'Itens Pessoais', icon: Package },
-    { id: 'saude-cuidados', label: 'Saúde e Cuidados', icon: HeartPulse },
-    { id: 'atendimentos-multidisciplinares', label: 'Atendimentos Multidisciplinares', icon: Users },
-    { id: 'consultas-medicas', label: 'Consultas Médicas', icon: Stethoscope },
   ];
 
   return (
@@ -394,20 +391,22 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
         </div>
       </div>
 
-      <div className="flex border-b border-gray-200 bg-white rounded-t-xl px-4 overflow-x-auto no-scrollbar no-print">
-        {tabs.map(tab => (
-          <button 
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-4 text-[10px] font-black uppercase transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
-              activeTab === tab.id ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            <tab.icon size={14} />
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {tabs.some(t => t.id === activeTab) && (
+        <div className="flex border-b border-gray-200 bg-white rounded-t-xl px-4 overflow-x-auto no-scrollbar no-print">
+          {tabs.map(tab => (
+            <button 
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-4 text-[10px] font-black uppercase transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
+                activeTab === tab.id ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <tab.icon size={14} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="bg-white rounded-b-xl shadow-md border border-gray-200 overflow-hidden mb-12 no-print">
         {activeTab === 'geral' && (

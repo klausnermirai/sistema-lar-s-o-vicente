@@ -81,9 +81,6 @@ const App: React.FC = () => {
     { id: 'familiares-visitantes', label: 'Familiares e Visitantes', icon: Users },
     { id: 'financeiro', label: 'Financeiro', icon: DollarSign },
     { id: 'itens', label: 'Itens Pessoais', icon: Package },
-    { id: 'saude-cuidados', label: 'Saúde e Cuidados', icon: HeartPulse },
-    { id: 'atendimentos-multidisciplinares', label: 'Atendimentos Multidisciplinares', icon: Users },
-    { id: 'consultas-medicas', label: 'Consultas Médicas', icon: Stethoscope },
   ];
 
   // Ordem de precedência: Setup -> Login -> App
@@ -100,6 +97,16 @@ const App: React.FC = () => {
     ? `SSVP - ${settings.centralCouncil || 'Conselho'}`
     : `SSVP - ${settings.councilType || 'Conselho'}`;
 
+  const isResidentModule = activeRoute === AppRoute.RESIDENTS || 
+                           activeRoute === AppRoute.SAUDE_CUIDADOS || 
+                           activeRoute === AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES || 
+                           activeRoute === AppRoute.CONSULTAS_MEDICAS;
+
+  const currentSubTab = activeRoute === AppRoute.SAUDE_CUIDADOS ? 'saude-cuidados' :
+                        activeRoute === AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES ? 'atendimentos-multidisciplinares' :
+                        activeRoute === AppRoute.CONSULTAS_MEDICAS ? 'consultas-medicas' :
+                        activeSubTab;
+
   return (
     <Layout 
       activeRoute={activeRoute} 
@@ -107,37 +114,39 @@ const App: React.FC = () => {
       institutionName={settings.name}
       councilInfo={councilInfo}
     >
-      {activeRoute === AppRoute.RESIDENTS && (
+      {isResidentModule && (
         <div className="space-y-6">
           {/* Sub-navigation Tabs */}
-          <div className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveSubTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all whitespace-nowrap ${
-                  activeSubTab === tab.id
-                    ? 'bg-[#004c99] text-white shadow-md shadow-blue-200'
-                    : 'text-gray-500 hover:bg-gray-100'
-                }`}
-              >
-                <tab.icon size={16} />
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          {activeRoute === AppRoute.RESIDENTS && (
+            <div className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-1 overflow-x-auto no-scrollbar">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveSubTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all whitespace-nowrap ${
+                    activeSubTab === tab.id
+                      ? 'bg-[#004c99] text-white shadow-md shadow-blue-200'
+                      : 'text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  <tab.icon size={16} />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {editingResident ? (
             <ElderlyForm 
               initialData={editingResident} 
-              initialTab={activeSubTab}
+              initialTab={currentSubTab}
               onSave={handleSaveResident} 
               onCancel={() => setEditingResident(null)} 
             />
           ) : (
             <ElderlyList 
               residents={residents} 
-              activeSubTab={activeSubTab}
+              activeSubTab={currentSubTab}
               onAdd={handleAddResident} 
               onEdit={handleEditResident} 
             />

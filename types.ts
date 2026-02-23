@@ -254,6 +254,9 @@ export interface Resident {
 export enum AppRoute {
   RESIDENTS = 'residents',
   SCREENING = 'screening',
+  SAUDE_CUIDADOS = 'saude-cuidados',
+  ATENDIMENTOS_MULTIDISCIPLINARES = 'atendimentos-multidisciplinares',
+  CONSULTAS_MEDICAS = 'consultas-medicas',
   SETTINGS = 'settings'
 }
 
