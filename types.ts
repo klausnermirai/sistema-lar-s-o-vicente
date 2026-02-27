@@ -174,6 +174,95 @@ export interface Candidate {
   residentId?: string;
 }
 
+export interface InitialNutritionalAssessment {
+  date: string;
+  weight?: number;
+  height?: number;
+  calfCircumference?: number;
+  chronicDiseases: string[];
+  otherChronicDisease?: string;
+  feedingRoute?: string;
+  dietConsistency?: string;
+  oralHealth: string[];
+  foodLikes?: string;
+  foodDislikes?: string;
+  foodAllergies?: string;
+  initialDiagnosis?: string;
+  needsSupplementation: boolean;
+  supplementationDetails?: string;
+  piaGoals?: string;
+}
+
+export interface NutritionalEvolution {
+  id: string;
+  date: string;
+  weight?: number;
+  weightVariationPercent?: number;
+  foodAcceptance?: string;
+  changedConsistencyOrRoute: boolean;
+  changeJustification?: string;
+  piaGoalStatus?: string;
+  newConduct?: string;
+}
+
+export interface NutritionalAttendance {
+  id: string;
+  dateTime: string;
+  reason: string;
+  notes: string;
+  muralNotes?: string;
+  signature: string;
+}
+
+export interface NutritionData {
+  initialAssessment?: InitialNutritionalAssessment;
+  evolutions?: NutritionalEvolution[];
+  attendances?: NutritionalAttendance[];
+}
+
+export interface InitialPsychologicalAssessment {
+  date: string;
+  institutionalizationAwareness?: string;
+  initialEmotionalReaction: string[];
+  recentGriefsAndLosses?: string;
+  traumasAndEmotionalTriggers?: string;
+  orientationLevel?: string;
+  moodScreeningGDS?: string;
+  cognitiveScreeningMMSE?: number;
+  familyBondQuality?: string;
+  visitExpectations?: string;
+  initialPsychologicalSynthesis?: string;
+  piaPsychologicalGoals?: string;
+}
+
+export interface PsychologicalEvolution {
+  id: string;
+  date: string;
+  institutionalAdaptationStatus?: string;
+  moodBehaviorEvolution?: string;
+  currentSocializationQuality: string[];
+  piaGoalStatus?: string;
+  newConduct?: string;
+}
+
+export interface PsychologicalAttendance {
+  id: string;
+  dateTime: string;
+  interventionType: string;
+  attendanceEvolution: string;
+  muralNotes?: string;
+  privateNotes?: string;
+  needsTeamReport: boolean;
+  signature: string;
+}
+
+export interface PsychologyData {
+  initialAssessment?: InitialPsychologicalAssessment;
+  anamnese?: InitialPsychologicalAssessment;
+  evolutions?: PsychologicalEvolution[];
+  attendances?: PsychologicalAttendance[];
+}
+
 export interface Resident {
   id: string;
   photo?: string;
@@ -249,6 +338,8 @@ export interface Resident {
   integrationDate?: string;
   integrationReport?: string;
   interview?: InterviewData;
+  nutrition?: NutritionData;
+  psychology?: PsychologyData;
 }
 
 export enum AppRoute {
@@ -260,4 +351,4 @@ export enum AppRoute {
   SETTINGS = 'settings'
 }
 
-export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'saude-cuidados' | 'atendimentos-multidisciplinares' | 'consultas-medicas';
+export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens';

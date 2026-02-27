@@ -23,9 +23,6 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
       case 'familiares-visitantes': return 'Gerenciar Visitas';
       case 'financeiro': return 'Lançar Financeiro';
       case 'itens': return 'Ver Itens';
-      case 'saude-cuidados': return 'Ver Saúde e Cuidados';
-      case 'atendimentos-multidisciplinares': return 'Ver Atendimentos';
-      case 'consultas-medicas': return 'Ver Consultas';
       default: return 'Abrir Ficha Geral';
     }
   };
@@ -61,38 +58,6 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
             <div className="font-bold text-gray-700">{resident.personalItems.length} Itens Catalogados</div>
           </div>
         );
-      case 'saude-cuidados':
-        const lastHealth = resident.healthUpdates[0];
-        const lowStock = resident.medications.some(m => m.stock <= 5);
-        return (
-          <div className="text-[10px] uppercase flex gap-4">
-            <div>
-              <div className="font-black text-gray-400">Última Evolução:</div>
-              <div className="font-bold text-gray-700">{lastHealth ? lastHealth.date : 'Nenhum registro'}</div>
-            </div>
-            <div>
-              <div className="font-black text-gray-400">Medicações:</div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-gray-700">{resident.medications.length} Ativas</span>
-                {lowStock && <AlertCircle size={12} className="text-red-500 animate-pulse" />}
-              </div>
-            </div>
-          </div>
-        );
-      case 'atendimentos-multidisciplinares':
-        return (
-          <div className="text-[10px] uppercase">
-            <div className="font-black text-gray-400">Status:</div>
-            <div className="font-bold text-gray-700">Aguardando registros</div>
-          </div>
-        );
-      case 'consultas-medicas':
-        return (
-          <div className="text-[10px] uppercase">
-            <div className="font-black text-gray-400">Status:</div>
-            <div className="font-bold text-gray-700">Aguardando registros</div>
-          </div>
-        );
       default:
         return (
           <div className="text-[10px] uppercase">
@@ -107,25 +72,18 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
     <div className="space-y-6">
       <div className="flex justify-between items-center bg-white p-6 rounded-2xl border shadow-sm">
         <div>
-          <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">
-            {activeSubTab === 'saude-cuidados' ? 'Saúde e Cuidados' :
-             activeSubTab === 'atendimentos-multidisciplinares' ? 'Atendimento Multidisciplinar' :
-             activeSubTab === 'consultas-medicas' ? 'Consulta Médica' :
-             'Módulo de Residentes'}
-          </h1>
+          <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">Módulo de Residentes</h1>
           <p className="text-[11px] font-bold text-gray-400 uppercase mt-1">
             Visualizando informações de <span className="text-[#004c99]">{activeSubTab.replace('-', ' ')}</span> • {residents.length} Idosos cadastrados
           </p>
         </div>
-        {['geral', 'familiares-visitantes', 'financeiro', 'itens'].includes(activeSubTab) && (
-          <button
-            onClick={onAdd}
-            className="bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 shadow-xl transition-all font-black text-xs uppercase"
-          >
-            <UserPlus size={18} />
-            <span>Cadastrar Idoso</span>
-          </button>
-        )}
+        <button
+          onClick={onAdd}
+          className="bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 shadow-xl transition-all font-black text-xs uppercase"
+        >
+          <UserPlus size={18} />
+          <span>Cadastrar Idoso</span>
+        </button>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">

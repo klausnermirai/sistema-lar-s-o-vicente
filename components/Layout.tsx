@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope } from 'lucide-react';
+import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity } from 'lucide-react';
 import { AppRoute } from '../types';
 
 interface LayoutProps {
@@ -18,7 +18,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, 
     { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
     { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
     { id: AppRoute.SAUDE_CUIDADOS, label: 'Saúde e Cuidados', icon: HeartPulse },
-    { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Users },
+    { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Activity },
     { id: AppRoute.CONSULTAS_MEDICAS, label: 'Consulta Médica', icon: Stethoscope },
     { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
   ];
