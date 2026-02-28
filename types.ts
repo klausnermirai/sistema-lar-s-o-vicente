@@ -179,6 +179,20 @@ export interface InitialNutritionalAssessment {
   weight?: number;
   height?: number;
   calfCircumference?: number;
+  armCircumference?: number;
+  waistCircumference?: number;
+  abdomenCircumference?: number;
+  hipCircumference?: number;
+  thighCircumference?: number;
+  measurementsNotTakenDueToLimitation?: boolean;
+  tricepsSkinfold?: number;
+  bicepsSkinfold?: number;
+  subscapularSkinfold?: number;
+  suprailiacSkinfold?: number;
+  skinfoldsNotTakenDueToLimitation?: boolean;
+  gender?: string;
+  age?: number;
+  activityLevel?: string;
   chronicDiseases: string[];
   otherChronicDisease?: string;
   feedingRoute?: string;
@@ -191,6 +205,13 @@ export interface InitialNutritionalAssessment {
   needsSupplementation: boolean;
   supplementationDetails?: string;
   piaGoals?: string;
+  appetite?: string;
+  recentWeightLoss?: string;
+  mobility?: string;
+  recentStress?: string;
+  screeningScore?: number;
+  screeningClassification?: string;
+  screeningObservations?: string;
 }
 
 export interface NutritionalEvolution {

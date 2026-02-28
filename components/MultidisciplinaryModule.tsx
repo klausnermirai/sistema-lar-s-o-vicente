@@ -273,6 +273,15 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
     weight: '',
     height: '',
     calfCircumference: '',
+    armCircumference: '',
+    waistCircumference: '',
+    abdomenCircumference: '',
+    hipCircumference: '',
+    thighCircumference: '',
+    measurementsNotTakenDueToLimitation: false,
+    gender: resident.gender || '',
+    age: resident.age ? parseInt(resident.age, 10) : '',
+    activityLevel: '',
     chronicDiseases: [],
     otherChronicDisease: '',
     feedingRoute: '',
@@ -284,7 +293,18 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
     initialDiagnosis: '',
     needsSupplementation: false,
     supplementationDetails: '',
-    piaGoals: ''
+    piaGoals: '',
+    appetite: '',
+    recentWeightLoss: '',
+    mobility: '',
+    recentStress: '',
+    screeningClassification: '',
+    screeningObservations: '',
+    tricepsSkinfold: '',
+    bicepsSkinfold: '',
+    subscapularSkinfold: '',
+    suprailiacSkinfold: '',
+    skinfoldsNotTakenDueToLimitation: false
   };
 
   const [formData, setFormData] = useState<any>(initialData);
@@ -307,6 +327,138 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
     }
   };
 
+  const calculateTMB = () => {
+    const w = parseFloat(formData.weight);
+    const h = parseFloat(formData.height);
+    const a = parseInt(formData.age, 10);
+    const g = formData.gender;
+
+    if (w > 0 && h > 0 && a > 0 && g) {
+      const h_cm = h * 100;
+      if (g === 'Masculino') {
+        return (10 * w) + (6.25 * h_cm) - (5 * a) + 5;
+      } else if (g === 'Feminino') {
+        return (10 * w) + (6.25 * h_cm) - (5 * a) - 161;
+      }
+    }
+    return null;
+  };
+
+  const calculateGET = () => {
+    const tmb = calculateTMB();
+    if (tmb && formData.activityLevel) {
+      const factors: Record<string, number> = {
+        'Sedentário': 1.2,
+        'Leve': 1.375,
+        'Moderado': 1.55,
+        'Intenso': 1.725
+      };
+      return tmb * (factors[formData.activityLevel] || 1);
+    }
+    return null;
+  };
+
+  const getMetabolicSuggestions = () => {
+    const get = calculateGET();
+    if (!get) return null;
+
+    return {
+      maintenance: Math.max(800, Math.round(get)),
+      weightLossMild: Math.max(800, Math.round(get - 300)),
+      weightLossModerate: Math.max(800, Math.round(get - 500)),
+      weightGainMild: Math.max(800, Math.round(get + 300)),
+      weightGainModerate: Math.max(800, Math.round(get + 500))
+    };
+  };
+
+  const calculateScreeningScore = () => {
+    let score = 0;
+    if (formData.appetite !== '') score += parseInt(formData.appetite, 10);
+    if (formData.recentWeightLoss !== '') score += parseInt(formData.recentWeightLoss, 10);
+    if (formData.mobility !== '') score += parseInt(formData.mobility, 10);
+    if (formData.recentStress !== '') score += parseInt(formData.recentStress, 10);
+
+    const bmiStr = calculateBMI();
+    if (bmiStr) {
+      const bmi = parseFloat(bmiStr);
+      if (bmi < 19) score += 2;
+      else if (bmi >= 19 && bmi < 22) score += 1;
+      // >= 22 is 0
+    }
+
+    if (formData.calfCircumference) {
+      const calf = parseFloat(formData.calfCircumference);
+      if (calf < 31) score += 2;
+      // >= 31 is 0
+    }
+
+    return score;
+  };
+
+  const getAutoClassification = (score: number) => {
+    if (score <= 3) return 'Sem risco nutricional';
+    if (score <= 6) return 'Risco nutricional';
+    return 'Alto risco / provável desnutrição';
+  };
+
+  const screeningScore = calculateScreeningScore();
+  const autoClassification = getAutoClassification(screeningScore);
+
+  const calculateBodyFat = () => {
+    const triceps = parseFloat(formData.tricepsSkinfold);
+    const biceps = parseFloat(formData.bicepsSkinfold);
+    const subscapular = parseFloat(formData.subscapularSkinfold);
+    const suprailiac = parseFloat(formData.suprailiacSkinfold);
+    
+    const folds = [triceps, biceps, subscapular, suprailiac].filter(v => !isNaN(v) && v > 0);
+    
+    if (folds.length >= 3 && formData.age && formData.gender) {
+      // Estimate sum of 4 folds if only 3 are provided
+      const sumOfFolds = (folds.reduce((a, b) => a + b, 0) / folds.length) * 4;
+      const logSum = Math.log10(sumOfFolds);
+      const age = parseInt(formData.age, 10);
+      const isMale = formData.gender === 'Masculino';
+      
+      let c = 0;
+      let m = 0;
+      
+      if (isMale) {
+        if (age < 20) { c = 1.1620; m = 0.0630; }
+        else if (age < 30) { c = 1.1631; m = 0.0632; }
+        else if (age < 40) { c = 1.1422; m = 0.0544; }
+        else if (age < 50) { c = 1.1620; m = 0.0700; }
+        else { c = 1.1715; m = 0.0779; }
+      } else {
+        if (age < 20) { c = 1.1549; m = 0.0678; }
+        else if (age < 30) { c = 1.1599; m = 0.0717; }
+        else if (age < 40) { c = 1.1423; m = 0.0632; }
+        else if (age < 50) { c = 1.1333; m = 0.0612; }
+        else { c = 1.1339; m = 0.0645; }
+      }
+      
+      const density = c - (m * logSum);
+      const bodyFat = (4.95 / density - 4.50) * 100;
+      
+      return Math.max(0, Math.min(100, bodyFat));
+    }
+    return null;
+  };
+
+  const getBodyFatClassification = (bf: number) => {
+    const isMale = formData.gender === 'Masculino';
+    if (isMale) {
+      if (bf < 15) return 'baixo peso';
+      if (bf <= 25) return 'adequado';
+      return 'elevado';
+    } else {
+      if (bf < 25) return 'baixo peso';
+      if (bf <= 35) return 'adequado';
+      return 'elevado';
+    }
+  };
+
+  const bodyFat = calculateBodyFat();
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave({
@@ -314,6 +466,18 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
       weight: formData.weight ? parseFloat(formData.weight) : undefined,
       height: formData.height ? parseFloat(formData.height) : undefined,
       calfCircumference: formData.calfCircumference ? parseFloat(formData.calfCircumference) : undefined,
+      armCircumference: formData.armCircumference ? parseFloat(formData.armCircumference) : undefined,
+      waistCircumference: formData.waistCircumference ? parseFloat(formData.waistCircumference) : undefined,
+      abdomenCircumference: formData.abdomenCircumference ? parseFloat(formData.abdomenCircumference) : undefined,
+      hipCircumference: formData.hipCircumference ? parseFloat(formData.hipCircumference) : undefined,
+      thighCircumference: formData.thighCircumference ? parseFloat(formData.thighCircumference) : undefined,
+      age: formData.age ? parseInt(formData.age, 10) : undefined,
+      screeningScore: screeningScore,
+      screeningClassification: formData.screeningClassification || autoClassification,
+      tricepsSkinfold: formData.tricepsSkinfold ? parseFloat(formData.tricepsSkinfold) : undefined,
+      bicepsSkinfold: formData.bicepsSkinfold ? parseFloat(formData.bicepsSkinfold) : undefined,
+      subscapularSkinfold: formData.subscapularSkinfold ? parseFloat(formData.subscapularSkinfold) : undefined,
+      suprailiacSkinfold: formData.suprailiacSkinfold ? parseFloat(formData.suprailiacSkinfold) : undefined,
     });
   };
 
@@ -405,6 +569,81 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
               />
             </div>
           )}
+        </div>
+      </section>
+
+      {/* Avaliação Antropométrica Complementar */}
+      <section>
+        <h3 className="text-sm font-black text-[#004c99] uppercase tracking-widest mb-4 border-b pb-2">Avaliação Antropométrica Complementar</h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Circunf. Braço (cm)</label>
+            <input 
+              type="number" 
+              step="0.1"
+              value={formData.armCircumference} 
+              onChange={(e) => setFormData({ ...formData, armCircumference: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+              disabled={formData.measurementsNotTakenDueToLimitation}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Circunf. Cintura (cm)</label>
+            <input 
+              type="number" 
+              step="0.1"
+              value={formData.waistCircumference} 
+              onChange={(e) => setFormData({ ...formData, waistCircumference: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+              disabled={formData.measurementsNotTakenDueToLimitation}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Circunf. Abdômen (cm)</label>
+            <input 
+              type="number" 
+              step="0.1"
+              value={formData.abdomenCircumference} 
+              onChange={(e) => setFormData({ ...formData, abdomenCircumference: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+              disabled={formData.measurementsNotTakenDueToLimitation}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Circunf. Quadril (cm)</label>
+            <input 
+              type="number" 
+              step="0.1"
+              value={formData.hipCircumference} 
+              onChange={(e) => setFormData({ ...formData, hipCircumference: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+              disabled={formData.measurementsNotTakenDueToLimitation}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Circunf. Coxa (cm)</label>
+            <input 
+              type="number" 
+              step="0.1"
+              value={formData.thighCircumference} 
+              onChange={(e) => setFormData({ ...formData, thighCircumference: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+              disabled={formData.measurementsNotTakenDueToLimitation}
+            />
+          </div>
+        </div>
+
+        <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={formData.measurementsNotTakenDueToLimitation}
+              onChange={(e) => setFormData({ ...formData, measurementsNotTakenDueToLimitation: e.target.checked })}
+              className="w-5 h-5 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+            />
+            <span className="text-sm font-bold text-gray-700 uppercase">Medidas não realizadas por limitação funcional do residente</span>
+          </label>
         </div>
       </section>
 
@@ -504,9 +743,306 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
         </div>
       </section>
 
-      {/* D) Conclusão para o PIA */}
+      {/* D) Cálculo Metabólico (Base para Plano Alimentar) */}
       <section>
-        <h3 className="text-sm font-black text-[#004c99] uppercase tracking-widest mb-4 border-b pb-2">D) Conclusão para o PIA</h3>
+        <h3 className="text-sm font-black text-[#004c99] uppercase tracking-widest mb-4 border-b pb-2">D) Cálculo Metabólico (Base para Plano Alimentar)</h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Sexo</label>
+            <select 
+              value={formData.gender} 
+              onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
+            >
+              <option value="">Selecione...</option>
+              <option value="Feminino">Feminino</option>
+              <option value="Masculino">Masculino</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Idade (anos)</label>
+            <input 
+              type="number" 
+              value={formData.age} 
+              onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nível de Atividade</label>
+            <select 
+              value={formData.activityLevel} 
+              onChange={(e) => setFormData({ ...formData, activityLevel: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
+            >
+              <option value="">Selecione...</option>
+              <option value="Sedentário">Sedentário</option>
+              <option value="Leve">Leve</option>
+              <option value="Moderado">Moderado</option>
+              <option value="Intenso">Intenso</option>
+            </select>
+          </div>
+        </div>
+
+        {(!formData.weight || !formData.height || !formData.age || !formData.gender || !formData.activityLevel) ? (
+          <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-center text-sm text-gray-500 font-medium mb-6">
+            Preencha peso, altura, sexo, idade e nível de atividade para calcular.
+          </div>
+        ) : (
+          <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                <h4 className="text-xs font-black text-[#004c99] uppercase tracking-widest mb-4">Resultados</h4>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-blue-100">
+                    <span className="text-xs font-bold text-gray-600 uppercase">TMB (Mifflin-St Jeor)</span>
+                    <span className="text-sm font-black text-[#004c99]">{Math.round(calculateTMB() || 0)} kcal/dia</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-blue-100">
+                    <span className="text-xs font-bold text-gray-600 uppercase">GET (Gasto Energético Total)</span>
+                    <span className="text-sm font-black text-[#004c99]">{Math.round(calculateGET() || 0)} kcal/dia</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="text-xs font-black text-[#004c99] uppercase tracking-widest mb-4">Sugestões de Meta Calórica</h4>
+                {getMetabolicSuggestions() && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Manutenção:</span>
+                      <span className="font-bold text-gray-800">{getMetabolicSuggestions()?.maintenance} kcal/dia</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Perda de peso (leve):</span>
+                      <span className="font-bold text-gray-800">{getMetabolicSuggestions()?.weightLossMild} kcal/dia</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Perda de peso (moderada):</span>
+                      <span className="font-bold text-gray-800">{getMetabolicSuggestions()?.weightLossModerate} kcal/dia</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Ganho de peso (leve):</span>
+                      <span className="font-bold text-gray-800">{getMetabolicSuggestions()?.weightGainMild} kcal/dia</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Ganho de peso (moderado):</span>
+                      <span className="font-bold text-gray-800">{getMetabolicSuggestions()?.weightGainModerate} kcal/dia</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* E) Triagem / Avaliação Global Nutricional */}
+      <section>
+        <h3 className="text-sm font-black text-[#004c99] uppercase tracking-widest mb-4 border-b pb-2">E) Triagem / Avaliação Global Nutricional</h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Apetite nas últimas 2 semanas</label>
+            <select 
+              value={formData.appetite} 
+              onChange={(e) => setFormData({ ...formData, appetite: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
+            >
+              <option value="">Selecione...</option>
+              <option value="0">Normal (0)</option>
+              <option value="1">Reduzido (1)</option>
+              <option value="2">Muito reduzido/Recusa frequente (2)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Perda de peso recente</label>
+            <select 
+              value={formData.recentWeightLoss} 
+              onChange={(e) => setFormData({ ...formData, recentWeightLoss: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
+            >
+              <option value="">Selecione...</option>
+              <option value="0">Não (0)</option>
+              <option value="1">Sim, leve (1)</option>
+              <option value="2">Sim, importante (2)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Mobilidade</label>
+            <select 
+              value={formData.mobility} 
+              onChange={(e) => setFormData({ ...formData, mobility: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
+            >
+              <option value="">Selecione...</option>
+              <option value="0">Deambula/anda (0)</option>
+              <option value="1">Anda com ajuda (1)</option>
+              <option value="2">Restrito ao leito/cadeira (2)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Estresse/doença aguda recente (últimos 3 meses)</label>
+            <select 
+              value={formData.recentStress} 
+              onChange={(e) => setFormData({ ...formData, recentStress: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
+            >
+              <option value="">Selecione...</option>
+              <option value="0">Não (0)</option>
+              <option value="2">Sim (2)</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+            <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Pontuação do IMC</span>
+            <div className="text-sm font-medium text-gray-700">
+              {calculateBMI() ? (
+                parseFloat(calculateBMI()) >= 22 ? 'IMC >= 22 (0)' :
+                parseFloat(calculateBMI()) >= 19 ? 'IMC 19–21,9 (1)' :
+                'IMC < 19 (2)'
+              ) : 'Preencha peso e altura'}
+            </div>
+          </div>
+          <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+            <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Pontuação da Panturrilha</span>
+            <div className="text-sm font-medium text-gray-700">
+              {formData.calfCircumference ? (
+                parseFloat(formData.calfCircumference) >= 31 ? '>= 31 cm (0)' : '< 31 cm (2)'
+              ) : 'Não informado'}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 mb-6">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+              <h4 className="text-xs font-black text-[#004c99] uppercase tracking-widest mb-1">Resultado da Triagem</h4>
+              <div className="text-3xl font-black text-[#004c99]">{screeningScore} pontos</div>
+            </div>
+            <div className="flex-1 w-full md:w-auto">
+              <label className="block text-[10px] font-black text-[#004c99] uppercase tracking-widest mb-1">Classificação Final</label>
+              <select
+                value={formData.screeningClassification || autoClassification}
+                onChange={(e) => setFormData({ ...formData, screeningClassification: e.target.value })}
+                className={`w-full p-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm font-bold ${
+                  (formData.screeningClassification || autoClassification) === 'Sem risco nutricional' ? 'bg-green-100 border-green-300 text-green-800' :
+                  (formData.screeningClassification || autoClassification) === 'Risco nutricional' ? 'bg-yellow-100 border-yellow-300 text-yellow-800' :
+                  'bg-red-100 border-red-300 text-red-800'
+                }`}
+              >
+                <option value="Sem risco nutricional">Sem risco nutricional</option>
+                <option value="Risco nutricional">Risco nutricional</option>
+                <option value="Alto risco / provável desnutrição">Alto risco / provável desnutrição</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Observações da triagem</label>
+          <textarea 
+            rows={2}
+            value={formData.screeningObservations} 
+            onChange={(e) => setFormData({ ...formData, screeningObservations: e.target.value })}
+            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
+            placeholder="Opcional..."
+          />
+        </div>
+      </section>
+
+      {/* F) Avaliação de Composição Corporal (Opcional) */}
+      <section>
+        <h3 className="text-sm font-black text-[#004c99] uppercase tracking-widest mb-4 border-b pb-2">F) Avaliação de Composição Corporal (Opcional)</h3>
+        
+        <div className="mb-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={formData.skinfoldsNotTakenDueToLimitation}
+              onChange={(e) => setFormData({ ...formData, skinfoldsNotTakenDueToLimitation: e.target.checked })}
+              className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+            />
+            Não foi possível realizar avaliação devido limitação funcional
+          </label>
+        </div>
+
+        <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 transition-opacity ${formData.skinfoldsNotTakenDueToLimitation ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Tricipital (mm)</label>
+            <input 
+              type="number" 
+              step="0.1"
+              value={formData.tricepsSkinfold} 
+              onChange={(e) => setFormData({ ...formData, tricepsSkinfold: e.target.value })}
+              className="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+              disabled={formData.skinfoldsNotTakenDueToLimitation}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Bicipital (mm)</label>
+            <input 
+              type="number" 
+              step="0.1"
+              value={formData.bicepsSkinfold} 
+              onChange={(e) => setFormData({ ...formData, bicepsSkinfold: e.target.value })}
+              className="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+              disabled={formData.skinfoldsNotTakenDueToLimitation}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Subescapular (mm)</label>
+            <input 
+              type="number" 
+              step="0.1"
+              value={formData.subscapularSkinfold} 
+              onChange={(e) => setFormData({ ...formData, subscapularSkinfold: e.target.value })}
+              className="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+              disabled={formData.skinfoldsNotTakenDueToLimitation}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Supra-ilíaca (mm)</label>
+            <input 
+              type="number" 
+              step="0.1"
+              value={formData.suprailiacSkinfold} 
+              onChange={(e) => setFormData({ ...formData, suprailiacSkinfold: e.target.value })}
+              className="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+              disabled={formData.skinfoldsNotTakenDueToLimitation}
+            />
+          </div>
+        </div>
+
+        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+          <h4 className="text-xs font-black text-[#004c99] uppercase tracking-widest mb-2">Resultado (Durnin & Womersley)</h4>
+          {bodyFat !== null ? (
+            <div className="flex items-center gap-4">
+              <div className="text-2xl font-black text-[#004c99]">{bodyFat.toFixed(1)}%</div>
+              <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                getBodyFatClassification(bodyFat) === 'baixo peso' ? 'bg-yellow-100 text-yellow-800' :
+                getBodyFatClassification(bodyFat) === 'adequado' ? 'bg-green-100 text-green-800' :
+                'bg-red-100 text-red-800'
+              }`}>
+                {getBodyFatClassification(bodyFat)}
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500 font-medium">
+              {formData.skinfoldsNotTakenDueToLimitation 
+                ? 'Avaliação não realizada por limitação funcional.' 
+                : 'Dados insuficientes para cálculo (preencha ao menos 3 dobras, idade e sexo).'}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* G) Conclusão para o PIA */}
+      <section>
+        <h3 className="text-sm font-black text-[#004c99] uppercase tracking-widest mb-4 border-b pb-2">G) Conclusão para o PIA</h3>
         
         <div className="space-y-4">
           <div>
