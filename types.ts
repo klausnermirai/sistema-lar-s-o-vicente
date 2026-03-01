@@ -394,13 +394,22 @@ export interface Resident {
   pia?: PiaData;
 }
 
+export interface MuralMessage {
+  id: string;
+  institutionId: string;
+  author: string;
+  text: string;
+  timestamp: number;
+}
+
 export enum AppRoute {
   RESIDENTS = 'residents',
   SCREENING = 'screening',
   SAUDE_CUIDADOS = 'saude-cuidados',
   ATENDIMENTOS_MULTIDISCIPLINARES = 'atendimentos-multidisciplinares',
   CONSULTAS_MEDICAS = 'consultas-medicas',
-  SETTINGS = 'settings'
+  SETTINGS = 'settings',
+  MURAL = 'mural'
 }
 
 export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'prontuario' | 'pia';

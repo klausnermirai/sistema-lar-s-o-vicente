@@ -6,6 +6,7 @@ import ElderlyForm from './components/ElderlyForm';
 import ScreeningModule from './components/ScreeningModule';
 import SettingsModule from './components/SettingsModule';
 import MultidisciplinaryModule from './components/MultidisciplinaryModule';
+import MuralModule from './components/MuralModule';
 import LoginScreen from './components/LoginScreen';
 import SetupScreen from './components/SetupScreen';
 import { AppRoute, Resident, SubTab, Candidate } from './types';
@@ -106,6 +107,8 @@ const App: React.FC = () => {
       setActiveRoute={setActiveRoute}
       institutionName={settings.name}
       councilInfo={councilInfo}
+      username={session?.username}
+      institutionId={session?.cnpj}
     >
       {activeRoute === AppRoute.RESIDENTS && (
         <div className="space-y-6">
@@ -204,6 +207,10 @@ const App: React.FC = () => {
           <h2 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">Consulta Médica</h2>
           <p className="text-gray-500 font-bold uppercase mt-2">Módulo em desenvolvimento</p>
         </div>
+      )}
+
+      {activeRoute === AppRoute.MURAL && session && (
+        <MuralModule institutionId={session.cnpj} username={session.username} />
       )}
 
       {activeRoute === AppRoute.SETTINGS && <SettingsModule />}

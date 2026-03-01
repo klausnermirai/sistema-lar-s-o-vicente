@@ -1,7 +1,8 @@
 
-import React from 'react';
-import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity, MessageCircle } from 'lucide-react';
 import { AppRoute } from '../types';
+import { getUnreadCount } from '../lib/muralStore';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -9,10 +10,30 @@ interface LayoutProps {
   setActiveRoute: (route: AppRoute) => void;
   institutionName?: string;
   councilInfo?: string;
+  username?: string;
+  institutionId?: string;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, institutionName, councilInfo }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, institutionName, councilInfo, username, institutionId }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const [unreadMural, setUnreadMural] = useState(0);
+
+  useEffect(() => {
+    if (!institutionId || !username) return;
+
+    const updateUnread = () => {
+      setUnreadMural(getUnreadCount(institutionId, username));
+    };
+
+    updateUnread();
+    window.addEventListener('mural_updated', updateUnread);
+    window.addEventListener('mural_read_updated', updateUnread);
+
+    return () => {
+      window.removeEventListener('mural_updated', updateUnread);
+      window.removeEventListener('mural_read_updated', updateUnread);
+    };
+  }, [institutionId, username]);
 
   const menuItems = [
     { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
@@ -91,11 +112,24 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, 
                activeRoute === AppRoute.SAUDE_CUIDADOS ? 'Saúde e Cuidados' :
                activeRoute === AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES ? 'Atendimento Multidisciplinar' :
                activeRoute === AppRoute.CONSULTAS_MEDICAS ? 'Consulta Médica' :
+               activeRoute === AppRoute.MURAL ? 'Mural Institucional' :
                'Configurações do Sistema'}
             </span>
           </div>
           
           <div className="flex items-center gap-6">
+            <button 
+              onClick={() => setActiveRoute(AppRoute.MURAL)}
+              className="relative p-2 text-gray-500 hover:text-[#004c99] transition-colors"
+              title="Mural Institucional"
+            >
+              <MessageCircle size={24} />
+              {unreadMural > 0 && (
+                <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
+                  {unreadMural > 99 ? '99+' : unreadMural}
+                </span>
+              )}
+            </button>
             <div className="flex flex-col text-right">
               <span className="text-xs font-black text-gray-900 uppercase tracking-tighter">{institutionName || 'Lar São Vicente de Paulo'}</span>
               <span className="text-[10px] text-gray-400 font-bold uppercase">{councilInfo || 'SSVP - Conselho'}</span>
@@ -106,7 +140,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, 
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-10 bg-gray-50/50">
+        <div className={`flex-1 ${activeRoute === AppRoute.MURAL ? 'overflow-hidden p-0' : 'overflow-y-auto p-10'} bg-gray-50/50`}>
           {children}
         </div>
       </main>
