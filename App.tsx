@@ -10,7 +10,7 @@ import LoginScreen from './components/LoginScreen';
 import SetupScreen from './components/SetupScreen';
 import { AppRoute, Resident, SubTab, Candidate } from './types';
 import { DUMMY_RESIDENTS, INITIAL_RESIDENT, DUMMY_CANDIDATES } from './constants';
-import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Briefcase, FileSearch } from 'lucide-react';
+import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Briefcase, FileSearch, FileText, ClipboardList } from 'lucide-react';
 import { loadInstitutionSettings } from './lib/settingsStore';
 import { loadUsers } from './lib/usersStore';
 
@@ -82,6 +82,8 @@ const App: React.FC = () => {
     { id: 'familiares-visitantes', label: 'Familiares e Visitantes', icon: Users },
     { id: 'financeiro', label: 'Financeiro', icon: DollarSign },
     { id: 'itens', label: 'Itens Pessoais', icon: Package },
+    { id: 'prontuario', label: 'Prontuário Multidisciplinar', icon: FileText },
+    { id: 'pia', label: 'PIA', icon: ClipboardList },
   ];
 
   // Ordem de precedência: Setup -> Login -> App

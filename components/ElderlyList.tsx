@@ -23,6 +23,8 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
       case 'familiares-visitantes': return 'Gerenciar Visitas';
       case 'financeiro': return 'Lançar Financeiro';
       case 'itens': return 'Ver Itens';
+      case 'prontuario': return 'Ver Prontuário Multidisciplinar';
+      case 'pia': return 'Ver PIA';
       default: return 'Abrir Ficha Geral';
     }
   };

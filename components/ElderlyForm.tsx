@@ -23,7 +23,8 @@ import {
   MapPin,
   CreditCard,
   FileText,
-  Printer
+  Printer,
+  ClipboardList
 } from 'lucide-react';
 import { 
   Resident, 
@@ -35,6 +36,8 @@ import {
   VisitRecord,
   SubTab
 } from '../types';
+import ProntuarioTab from './ProntuarioTab';
+import PiaTab from './PiaTab';
 
 interface ElderlyFormProps {
   initialData: Resident;
@@ -186,6 +189,8 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     { id: 'familiares-visitantes', label: 'Familiares e Visitantes', icon: Users },
     { id: 'financeiro', label: 'Financeiro', icon: DollarSign },
     { id: 'itens', label: 'Itens Pessoais', icon: Package },
+    { id: 'prontuario', label: 'Prontuário Multidisciplinar', icon: FileText },
+    { id: 'pia', label: 'PIA', icon: ClipboardList },
   ];
 
   return (
@@ -643,7 +648,7 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
           </div>
         )}
 
-        {activeTab === 'itens' && (
+         {activeTab === 'itens' && (
           <div className="p-8 animate-in slide-in-from-right duration-300">
              <div className="flex justify-between items-center mb-10">
                 <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Itens Pessoais</h3>
@@ -664,6 +669,14 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
                 ))}
              </div>
           </div>
+        )}
+
+        {activeTab === 'prontuario' && (
+          <ProntuarioTab resident={formData} />
+        )}
+
+        {activeTab === 'pia' && (
+          <PiaTab resident={formData} onChange={(newPia) => setFormData({ ...formData, pia: newPia })} />
         )}
 
       </form>

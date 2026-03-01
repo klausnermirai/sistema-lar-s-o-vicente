@@ -284,6 +284,36 @@ export interface PsychologyData {
   attendances?: PsychologicalAttendance[];
 }
 
+export interface PiaGoalStatus {
+  status: 'Em andamento' | 'Atingida' | 'Não atingida' | '';
+  reviewDate: string;
+  observation: string;
+}
+
+export interface PiaRevision {
+  id: string;
+  date: string;
+  changes: string;
+  professional: string;
+  observation: string;
+}
+
+export interface PiaData {
+  createdAt?: string;
+  status: 'Ativo' | 'Em revisão' | 'Encerrado';
+  generalSynthesis: string;
+  interventions: {
+    nutrition: string;
+    psychology: string;
+    medical: string;
+  };
+  goalsStatus: {
+    nutrition: PiaGoalStatus;
+    psychology: PiaGoalStatus;
+  };
+  revisions: PiaRevision[];
+}
+
 export interface Resident {
   id: string;
   photo?: string;
@@ -361,6 +391,7 @@ export interface Resident {
   interview?: InterviewData;
   nutrition?: NutritionData;
   psychology?: PsychologyData;
+  pia?: PiaData;
 }
 
 export enum AppRoute {
@@ -372,4 +403,4 @@ export enum AppRoute {
   SETTINGS = 'settings'
 }
 
-export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens';
+export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'prontuario' | 'pia';
