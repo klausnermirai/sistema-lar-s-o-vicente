@@ -101,6 +101,28 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident }) => {
       });
     });
 
+    resident.nutrition?.groupActivities?.forEach(ga => {
+      allEvents.push({
+        id: `nutri-ga-${ga.id}`,
+        date: ga.date,
+        time: ga.time,
+        competence: 'Nutrição',
+        type: `Atividade em grupo - ${ga.type}`,
+        professional: ga.responsibleProfessional,
+        summary: ga.description.substring(0, 100) + '...',
+        fullContent: (
+          <div className="space-y-2 text-sm">
+            <p><strong>Descrição:</strong> {ga.description}</p>
+            <p><strong>Resultado:</strong> {ga.result}</p>
+            {ga.observations && <p><strong>Observações:</strong> {ga.observations}</p>}
+            {ga.involvedProfessionals.length > 0 && <p><strong>Profissionais envolvidos:</strong> {ga.involvedProfessionals.join(', ')}</p>}
+          </div>
+        ),
+        isShared: ga.sharedToMural,
+        timestamp: new Date(`${ga.date}T${ga.time}`).getTime()
+      });
+    });
+
     // --- Psicologia ---
     if (resident.psychology?.anamnese) {
       const anamnesis = resident.psychology.anamnese;
@@ -161,6 +183,115 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident }) => {
         isShared: !!att.muralNotes,
         isPrivate: !!att.privateNotes,
         timestamp: new Date(att.dateTime).getTime()
+      });
+    });
+
+    resident.psychology?.groupActivities?.forEach(ga => {
+      allEvents.push({
+        id: `psico-ga-${ga.id}`,
+        date: ga.date,
+        time: ga.time,
+        competence: 'Psicologia',
+        type: `Atividade em grupo - ${ga.type}`,
+        professional: ga.responsibleProfessional,
+        summary: ga.description.substring(0, 100) + '...',
+        fullContent: (
+          <div className="space-y-2 text-sm">
+            <p><strong>Descrição:</strong> {ga.description}</p>
+            <p><strong>Resultado:</strong> {ga.result}</p>
+            {ga.observations && <p><strong>Observações:</strong> {ga.observations}</p>}
+            {ga.involvedProfessionals.length > 0 && <p><strong>Profissionais envolvidos:</strong> {ga.involvedProfessionals.join(', ')}</p>}
+          </div>
+        ),
+        isShared: ga.sharedToMural,
+        timestamp: new Date(`${ga.date}T${ga.time}`).getTime()
+      });
+    });
+
+    // --- Terapia Ocupacional ---
+    if (resident.occupationalTherapy?.initialAssessment) {
+      const assess = resident.occupationalTherapy.initialAssessment;
+      allEvents.push({
+        id: `to-assess-${assess.date}`,
+        date: assess.date,
+        competence: 'Terapeuta Ocupacional',
+        type: 'Primeira Avaliação',
+        professional: 'Terapeuta Ocupacional',
+        summary: assess.functionalSynthesis ? assess.functionalSynthesis.substring(0, 100) + '...' : 'Avaliação ocupacional inicial realizada.',
+        fullContent: (
+          <div className="space-y-2 text-sm">
+            <p><strong>Síntese Funcional:</strong> {assess.functionalSynthesis}</p>
+            <p><strong>Metas PIA:</strong> {assess.piaGoals}</p>
+            <p><strong>Nível de Independência:</strong> {assess.independenceLevel}</p>
+            <p><strong>Mobilidade:</strong> {assess.mobility}</p>
+          </div>
+        ),
+        timestamp: new Date(assess.date).getTime()
+      });
+    }
+
+    resident.occupationalTherapy?.evolutions?.forEach(ev => {
+      allEvents.push({
+        id: `to-evo-${ev.id}`,
+        date: ev.date,
+        competence: 'Terapeuta Ocupacional',
+        type: 'Evolução',
+        professional: 'Terapeuta Ocupacional',
+        summary: ev.newConduct ? ev.newConduct.substring(0, 100) + '...' : 'Evolução ocupacional registrada.',
+        fullContent: (
+          <div className="space-y-2 text-sm">
+            <p><strong>Conduta:</strong> {ev.newConduct}</p>
+            <p><strong>Evolução Funcional:</strong> {ev.functionalEvolution}</p>
+            <p><strong>Participação:</strong> {ev.participationEvolution}</p>
+          </div>
+        ),
+        timestamp: new Date(ev.date).getTime()
+      });
+    });
+
+    resident.occupationalTherapy?.attendances?.forEach(att => {
+      const datePart = att.dateTime.split('T')[0];
+      const timePart = att.dateTime.includes('T') ? att.dateTime.split('T')[1].substring(0, 5) : undefined;
+      allEvents.push({
+        id: `to-att-${att.id}`,
+        date: datePart,
+        time: timePart,
+        competence: 'Terapeuta Ocupacional',
+        type: 'Atendimento',
+        professional: att.signature || 'Terapeuta Ocupacional',
+        summary: att.attendanceEvolution ? att.attendanceEvolution.substring(0, 100) + '...' : 'Atendimento ocupacional registrado.',
+        fullContent: (
+          <div className="space-y-2 text-sm">
+            <p><strong>Tipo:</strong> {att.attendanceType}</p>
+            <p><strong>Evolução:</strong> {att.attendanceEvolution}</p>
+            {att.prontuarioNotes && <p><strong>Anotação Interna:</strong> {att.prontuarioNotes}</p>}
+            {att.muralNotes && <p><strong>Mural:</strong> {att.muralNotes}</p>}
+          </div>
+        ),
+        isShared: !!att.muralNotes,
+        timestamp: new Date(att.dateTime).getTime()
+      });
+    });
+
+    resident.occupationalTherapy?.groupActivities?.forEach(ga => {
+      allEvents.push({
+        id: `to-ga-${ga.id}`,
+        date: ga.date,
+        time: ga.time,
+        competence: 'Terapeuta Ocupacional',
+        type: `Atividade em grupo - ${ga.type}`,
+        professional: ga.responsibleProfessional,
+        summary: ga.description.substring(0, 100) + '...',
+        fullContent: (
+          <div className="space-y-2 text-sm">
+            <p><strong>Descrição:</strong> {ga.description}</p>
+            <p><strong>Resultado:</strong> {ga.result}</p>
+            {ga.observations && <p><strong>Observações:</strong> {ga.observations}</p>}
+            {ga.involvedProfessionals.length > 0 && <p><strong>Profissionais envolvidos:</strong> {ga.involvedProfessionals.join(', ')}</p>}
+          </div>
+        ),
+        isShared: ga.sharedToMural,
+        timestamp: new Date(`${ga.date}T${ga.time}`).getTime()
       });
     });
 
@@ -300,6 +431,9 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident }) => {
         } else if (ev.type === 'Atendimento' && ev.competence === 'Nutrição') {
            const att = resident.nutrition?.attendances?.find(a => a.dateTime.startsWith(ev.date));
            if(att) contentText = `Motivo: ${att.reason}\nAnotação: ${att.notes}`;
+        } else if (ev.type.startsWith('Atividade em grupo') && ev.competence === 'Nutrição') {
+           const ga = resident.nutrition?.groupActivities?.find(a => a.date === ev.date);
+           if(ga) contentText = `Descrição: ${ga.description}\nResultado: ${ga.result}\nObservações: ${ga.observations}`;
         } else if (ev.type === 'Anamnese' && ev.competence === 'Psicologia') {
            const anamnesis = resident.psychology?.anamnese;
            if(anamnesis) contentText = `Síntese Inicial: ${anamnesis.initialPsychologicalSynthesis}\nMetas PIA: ${anamnesis.piaPsychologicalGoals}`;
@@ -314,6 +448,21 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident }) => {
                 contentText += `\n\nNotas Privadas: ${att.privateNotes}`;
              }
            }
+        } else if (ev.type.startsWith('Atividade em grupo') && ev.competence === 'Psicologia') {
+           const ga = resident.psychology?.groupActivities?.find(a => a.date === ev.date);
+           if(ga) contentText = `Descrição: ${ga.description}\nResultado: ${ga.result}\nObservações: ${ga.observations}`;
+        } else if (ev.type === 'Primeira Avaliação' && ev.competence === 'Terapeuta Ocupacional') {
+           const assess = resident.occupationalTherapy?.initialAssessment;
+           if(assess) contentText = `Nível de Independência: ${assess.independenceLevel}\nMobilidade: ${assess.mobility}\nMetas PIA: ${assess.piaGoals}`;
+        } else if (ev.type === 'Evolução' && ev.competence === 'Terapeuta Ocupacional') {
+           const evo = resident.occupationalTherapy?.evolutions?.find(e => e.date === ev.date);
+           if(evo) contentText = `Conduta: ${evo.newConduct}\nStatus Meta PIA: ${evo.piaGoalStatus}`;
+        } else if (ev.type === 'Atendimento' && ev.competence === 'Terapeuta Ocupacional') {
+           const att = resident.occupationalTherapy?.attendances?.find(a => a.dateTime.startsWith(ev.date));
+           if(att) contentText = `Tipo: ${att.attendanceType}\nEvolução: ${att.attendanceEvolution}`;
+        } else if (ev.type.startsWith('Atividade em grupo') && ev.competence === 'Terapeuta Ocupacional') {
+           const ga = resident.occupationalTherapy?.groupActivities?.find(a => a.date === ev.date);
+           if(ga) contentText = `Descrição: ${ga.description}\nResultado: ${ga.result}\nObservações: ${ga.observations}`;
         } else if (ev.type === 'Parecer de Integração') {
            contentText = resident.integrationReport || '';
         } else if (ev.type === 'Parecer Médico') {
@@ -334,6 +483,9 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident }) => {
              if(att) muralNotes = att.muralNotes || '';
           } else if (ev.competence === 'Psicologia') {
              const att = resident.psychology?.attendances?.find(a => a.dateTime.startsWith(ev.date));
+             if(att) muralNotes = att.muralNotes || '';
+          } else if (ev.competence === 'Terapeuta Ocupacional') {
+             const att = resident.occupationalTherapy?.attendances?.find(a => a.dateTime.startsWith(ev.date));
              if(att) muralNotes = att.muralNotes || '';
           }
 

@@ -20,11 +20,13 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
     interventions: {
       nutrition: '',
       psychology: '',
-      medical: ''
+      medical: '',
+      occupationalTherapy: ''
     },
     goalsStatus: {
       nutrition: { status: '', reviewDate: '', observation: '' },
-      psychology: { status: '', reviewDate: '', observation: '' }
+      psychology: { status: '', reviewDate: '', observation: '' },
+      occupationalTherapy: { status: '', reviewDate: '', observation: '' }
     },
     revisions: []
   };
@@ -66,6 +68,7 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
   // Extract data from competences
   const nutInitial = resident.nutrition?.initialAssessment;
   const psyInitial = resident.psychology?.initialAssessment || resident.psychology?.anamnese;
+  const otInitial = resident.occupationalTherapy?.initialAssessment;
   const medStatus = resident.medicalStatus || resident.medicalOpinion || 'Sem registro médico';
 
   const handleGeneratePDF = () => {
@@ -148,6 +151,13 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
     yPos += 3;
 
     doc.setFont('helvetica', 'bold');
+    doc.text('Terapia Ocupacional:', 14, yPos);
+    yPos += 5;
+    addText('Síntese Funcional', otInitial?.functionalSynthesis || 'N/A');
+    addText('Metas Principais', otInitial?.piaGoals || 'N/A');
+    yPos += 3;
+
+    doc.setFont('helvetica', 'bold');
     doc.text('Médico:', 14, yPos);
     yPos += 5;
     addText('Status/Parecer', medStatus);
@@ -180,6 +190,15 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
     addText('Observação', localPia.goalsStatus.psychology.observation || 'N/A');
     yPos += 5;
 
+    doc.setFont('helvetica', 'bold');
+    doc.text('Terapia Ocupacional:', 14, yPos);
+    yPos += 5;
+    addText('Metas Definidas', otInitial?.piaGoals || 'N/A');
+    addText('Status', localPia.goalsStatus.occupationalTherapy?.status || 'N/A');
+    addText('Previsão de Revisão', localPia.goalsStatus.occupationalTherapy?.reviewDate || 'N/A');
+    addText('Observação', localPia.goalsStatus.occupationalTherapy?.observation || 'N/A');
+    yPos += 5;
+
     // 4. Plano de Intervenções
     addSectionTitle('4. Plano de Intervenções');
     doc.setFont('helvetica', 'bold');
@@ -192,6 +211,12 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
     doc.text('Psicologia:', 14, yPos);
     yPos += 5;
     addText('', localPia.interventions.psychology || 'N/A', false);
+    yPos += 3;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Terapia Ocupacional:', 14, yPos);
+    yPos += 5;
+    addText('', localPia.interventions.occupationalTherapy || 'N/A', false);
     yPos += 3;
 
     doc.setFont('helvetica', 'bold');
@@ -348,6 +373,18 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
               </div>
             ) : (
               <p className="text-xs text-gray-500 italic">Sem avaliação psicológica inicial.</p>
+            )}
+          </div>
+
+          <div className="bg-teal-50/50 p-4 rounded-xl border border-teal-100">
+            <h4 className="text-[10px] font-black text-teal-700 uppercase mb-2">Terapia Ocupacional</h4>
+            {otInitial ? (
+              <div className="space-y-2 text-sm">
+                <p><span className="font-bold">Síntese Funcional:</span> {otInitial.functionalSynthesis || 'Não informada'}</p>
+                <p><span className="font-bold">Metas Principais:</span> {otInitial.piaGoals || 'Não informadas'}</p>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 italic">Sem avaliação ocupacional inicial.</p>
             )}
           </div>
 
@@ -588,6 +625,25 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
             ) : (
               <div className="p-3 bg-gray-50 rounded-lg text-sm border border-gray-100 min-h-[40px] whitespace-pre-wrap">
                 {localPia.interventions.psychology || <span className="text-gray-400 italic">Nenhuma intervenção registrada.</span>}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-teal-700 uppercase tracking-tighter mb-2">Intervenções - Terapia Ocupacional</label>
+            {isEditing ? (
+              <textarea
+                value={localPia.interventions.occupationalTherapy || ''}
+                onChange={(e) => setLocalPia({
+                  ...localPia,
+                  interventions: { ...localPia.interventions, occupationalTherapy: e.target.value }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 text-sm font-medium min-h-[80px]"
+                placeholder="Descreva o plano de intervenção ocupacional..."
+              />
+            ) : (
+              <div className="p-3 bg-gray-50 rounded-lg text-sm border border-gray-100 min-h-[40px] whitespace-pre-wrap">
+                {localPia.interventions.occupationalTherapy || <span className="text-gray-400 italic">Nenhuma intervenção registrada.</span>}
               </div>
             )}
           </div>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Resident, NutritionalEvolution, NutritionalAttendance, PsychologicalEvolution, PsychologicalAttendance } from '../types';
 import { Search, Save, AlertTriangle, Plus, ChevronRight, ArrowLeft } from 'lucide-react';
+import OccupationalTherapyTab from './OccupationalTherapyTab';
+import GroupActivityTab from './GroupActivityTab';
 
 interface MultidisciplinaryModuleProps {
   residents: Resident[];
@@ -9,8 +11,8 @@ interface MultidisciplinaryModuleProps {
 
 const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ residents, onSaveResident }) => {
   const [selectedResidentId, setSelectedResidentId] = useState<string>('');
-  const [activeCompetence, setActiveCompetence] = useState<'nutricionista' | 'psicologia'>('nutricionista');
-  const [activeTab, setActiveTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos' | 'anamnese'>('avaliacao');
+  const [activeCompetence, setActiveCompetence] = useState<'nutricionista' | 'psicologia' | 'terapeuta_ocupacional'>('nutricionista');
+  const [activeTab, setActiveTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos' | 'anamnese' | 'grupo'>('avaliacao');
   
   const selectedResident = residents.find(r => r.id === selectedResidentId);
 
@@ -68,6 +70,16 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                 >
                   Psicologia
                 </button>
+                <button
+                  onClick={() => setActiveCompetence('terapeuta_ocupacional')}
+                  className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold uppercase transition-all ${
+                    activeCompetence === 'terapeuta_ocupacional'
+                      ? 'bg-[#004c99] text-white shadow-md'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Terapeuta Ocupacional
+                </button>
                 {/* Outras competências podem ser adicionadas aqui no futuro */}
               </div>
             </div>
@@ -101,6 +113,14 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                     }`}
                   >
                     Atendimentos
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('grupo')}
+                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
+                      activeTab === 'grupo' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    Atividade em Grupo
                   </button>
                 </div>
 
@@ -150,6 +170,13 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                       }} 
                     />
                   )}
+                  {activeTab === 'grupo' && (
+                    <GroupActivityTab
+                      competence="nutricionista"
+                      residents={residents}
+                      onSaveResident={onSaveResident}
+                    />
+                  )}
                 </div>
               </>
             )}
@@ -187,6 +214,14 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                     }`}
                   >
                     Atendimentos
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('grupo')}
+                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
+                      activeTab === 'grupo' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    Atividade em Grupo
                   </button>
                 </div>
 
@@ -252,8 +287,31 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                       }} 
                     />
                   )}
+                  {activeTab === 'grupo' && (
+                    <GroupActivityTab
+                      competence="psicologia"
+                      residents={residents}
+                      onSaveResident={onSaveResident}
+                    />
+                  )}
                 </div>
               </>
+            )}
+            {activeCompetence === 'terapeuta_ocupacional' && (
+              <div className="p-6">
+                <OccupationalTherapyTab 
+                  resident={selectedResident}
+                  onChange={(otData) => {
+                    const updatedResident = {
+                      ...selectedResident,
+                      occupationalTherapy: otData
+                    };
+                    onSaveResident(updatedResident);
+                  }}
+                  residents={residents}
+                  onSaveResident={onSaveResident}
+                />
+              </div>
             )}
           </div>
         </div>

@@ -239,6 +239,7 @@ export interface NutritionData {
   initialAssessment?: InitialNutritionalAssessment;
   evolutions?: NutritionalEvolution[];
   attendances?: NutritionalAttendance[];
+  groupActivities?: GroupActivity[];
 }
 
 export interface InitialPsychologicalAssessment {
@@ -282,6 +283,54 @@ export interface PsychologyData {
   anamnese?: InitialPsychologicalAssessment;
   evolutions?: PsychologicalEvolution[];
   attendances?: PsychologicalAttendance[];
+  groupActivities?: GroupActivity[];
+}
+
+export interface OccupationalTherapyAssessment {
+  date: string;
+  independenceLevel: string;
+  mobility: string;
+  feeding: string;
+  personalHygiene: string;
+  clothing: string;
+  bathing: string;
+  orientation: string;
+  attentionAndMemory: string;
+  participation: string;
+  occupationalInterest: string;
+  motorLimitations: string;
+  fallRisk: string;
+  deviceUsage: string;
+  environmentalAdaptationNeeds: string;
+  functionalSynthesis: string;
+  piaGoals: string;
+}
+
+export interface OccupationalTherapyEvolution {
+  id: string;
+  date: string;
+  functionalEvolution: string;
+  participationEvolution: string;
+  currentIndependenceLevel: string;
+  piaGoalStatus: string;
+  newConduct: string;
+}
+
+export interface OccupationalTherapyAttendance {
+  id: string;
+  dateTime: string;
+  attendanceType: string;
+  attendanceEvolution: string;
+  prontuarioNotes: string;
+  muralNotes: string;
+  signature: string;
+}
+
+export interface OccupationalTherapyData {
+  initialAssessment?: OccupationalTherapyAssessment;
+  evolutions?: OccupationalTherapyEvolution[];
+  attendances?: OccupationalTherapyAttendance[];
+  groupActivities?: GroupActivity[];
 }
 
 export interface PiaGoalStatus {
@@ -306,10 +355,12 @@ export interface PiaData {
     nutrition: string;
     psychology: string;
     medical: string;
+    occupationalTherapy?: string;
   };
   goalsStatus: {
     nutrition: PiaGoalStatus;
     psychology: PiaGoalStatus;
+    occupationalTherapy?: PiaGoalStatus;
   };
   revisions: PiaRevision[];
 }
@@ -391,6 +442,7 @@ export interface Resident {
   interview?: InterviewData;
   nutrition?: NutritionData;
   psychology?: PsychologyData;
+  occupationalTherapy?: OccupationalTherapyData;
   pia?: PiaData;
 }
 
@@ -399,6 +451,24 @@ export interface MuralMessage {
   institutionId: string;
   author: string;
   text: string;
+  timestamp: number;
+}
+
+export interface GroupActivity {
+  id: string;
+  institutionId: string;
+  competence: 'nutricionista' | 'psicologia' | 'terapeuta_ocupacional';
+  date: string;
+  time: string;
+  type: string;
+  description: string;
+  participationType: 'Todos os residentes' | 'Grupo específico' | 'Participação parcial';
+  selectedResidents: string[]; // IDs of residents
+  responsibleProfessional: string;
+  involvedProfessionals: string[];
+  result: 'Excelente' | 'Boa' | 'Regular' | 'Baixa adesão';
+  observations: string;
+  sharedToMural: boolean;
   timestamp: number;
 }
 
