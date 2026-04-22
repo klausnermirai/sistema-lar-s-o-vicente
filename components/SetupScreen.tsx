@@ -13,11 +13,11 @@ import {
   MapPin,
   Globe
 } from 'lucide-react';
-import { InstitutionSettings, saveInstitutionSettings } from '../lib/settingsStore';
-import { User, saveUsers } from '../lib/usersStore';
+import { setup } from '../lib/api';
+import { InstitutionSettings } from '../types';
 
 interface SetupScreenProps {
-  onSetupComplete: (session: { cnpj: string; username: string; accessLevel: string }) => void;
+  onSetupComplete: (session: { cnpj: string; username: string; accessLevel: string; institutionId?: string }) => void;
   onBackToLogin?: () => void;
 }
 
@@ -33,8 +33,11 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogi
     name: '',
     cnpj: '',
     city: '',
-    centralCouncil: '',
-    metropolitanCouncil: ''
+    nacionalId: '',
+    metropolitanoId: '',
+    centralId: '',
+    particularId: '',
+    conferenciaId: ''
   });
 
   const [admin, setAdmin] = React.useState({
@@ -59,7 +62,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogi
     setStep(2);
   };
 
-  const handleFinalize = (e: React.FormEvent) => {
+  const handleFinalize = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -73,28 +76,35 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogi
       return;
     }
 
-    // 1. Salvar Instituição
-    saveInstitutionSettings(institution);
+    try {
+      const data = await setup({
+        institution: {
+          ...institution,
+          type: institution.entityType
+        },
+        admin: {
+          username: admin.username.toLowerCase(),
+          fullName: admin.fullName,
+          role: admin.role,
+          accessLevel: 'administrador',
+          password: admin.password
+        }
+      });
 
-    // 2. Criar e Salvar Usuário Admin
-    const userToAdd: User = {
-      id: 'admin',
-      username: admin.username.toLowerCase(),
-      fullName: admin.fullName,
-      role: admin.role,
-      accessLevel: 'gerencial',
-      password: admin.password
-    };
-    saveUsers([userToAdd]);
-
-    // 3. Criar Sessão e Finalizar
-    const session = { 
-      cnpj: institution.cnpj, 
-      username: userToAdd.username, 
-      accessLevel: 'gerencial' 
-    };
-    localStorage.setItem('ssvp_session', JSON.stringify(session));
-    onSetupComplete(session);
+      if (data.success) {
+        const session = { 
+          cnpj: institution.cnpj, 
+          username: admin.username.toLowerCase(), 
+          accessLevel: 'administrador',
+          institutionId: data.institutionId,
+          hierarchy: data.hierarchy // Pass hierarchy from backend
+        };
+        localStorage.setItem('ssvp_session', JSON.stringify(session));
+        onSetupComplete(session);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Erro ao configurar instituição.');
+    }
   };
 
   return (
@@ -161,46 +171,28 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogi
                 )}
 
                 <div className="space-y-5">
-                  <div className="flex p-1 bg-gray-100 rounded-2xl">
-                    <button
-                      type="button"
-                      onClick={() => setInstitution({ ...institution, entityType: 'obra_unida' })}
-                      className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                        institution.entityType === 'obra_unida' ? 'bg-white text-[#004c99] shadow-sm' : 'text-gray-400'
-                      }`}
-                    >
-                      Obra Unida (ILPI)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setInstitution({ ...institution, entityType: 'conselho' })}
-                      className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                        institution.entityType === 'conselho' ? 'bg-white text-[#004c99] shadow-sm' : 'text-gray-400'
-                      }`}
-                    >
-                      Conselho
-                    </button>
-                  </div>
-
-                  {institution.entityType === 'conselho' && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Tipo do Conselho *</label>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Tipo de Unidade / Entidade *</label>
+                    <div className="relative">
                       <select
-                        value={institution.councilType}
-                        onChange={e => setInstitution({ ...institution, councilType: e.target.value as any })}
-                        className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all appearance-none bg-white"
+                        value={institution.entityType}
+                        onChange={e => setInstitution({ ...institution, entityType: e.target.value as any })}
+                        className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all appearance-none bg-white pr-10"
                       >
-                        <option value="">Selecione...</option>
-                        <option value="nacional">Conselho Nacional</option>
-                        <option value="metropolitano">Conselho Metropolitano</option>
+                        <option value="obra_unida">Obra Unida (ILPI)</option>
+                        <option value="conferencia">Conferência</option>
+                        <option value="particular">Conselho Particular</option>
                         <option value="central">Conselho Central</option>
+                        <option value="metropolitano">Conselho Metropolitano</option>
+                        <option value="nacional">Conselho Nacional</option>
                       </select>
+                      <Building2 className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" size={18} />
                     </div>
-                  )}
+                  </div>
 
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">
-                      {institution.entityType === 'obra_unida' ? 'Nome da Instituição *' : 'Nome do Conselho *'}
+                      Nome da Entidade *
                     </label>
                     <div className="relative">
                       <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
@@ -245,25 +237,68 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogi
                     )}
                   </div>
 
-                  {institution.entityType === 'obra_unida' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Conselho Central</label>
-                        <input 
-                          type="text"
-                          value={institution.centralCouncil}
-                          onChange={e => setInstitution({ ...institution, centralCouncil: e.target.value })}
-                          className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Conselho Metrop.</label>
-                        <input 
-                          type="text"
-                          value={institution.metropolitanCouncil}
-                          onChange={e => setInstitution({ ...institution, metropolitanCouncil: e.target.value })}
-                          className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all"
-                        />
+                  {institution.entityType !== 'nacional' && (
+                    <div className="p-5 bg-blue-50 border border-blue-100 rounded-3xl space-y-4">
+                      <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest text-center border-b border-blue-100 pb-2 mb-2">Vínculos de Hierarquia (Opcional)</p>
+                      
+                      <div className="grid grid-cols-1 gap-3 text-[10px] font-bold uppercase text-blue-900/60">
+                        <div className="space-y-1">
+                          <label>Conselho Nacional (ID) - Opcional</label>
+                          <input 
+                            value={institution.nacionalId}
+                            onChange={e => setInstitution({ ...institution, nacionalId: e.target.value })}
+                            className="w-full px-4 py-3 bg-white border border-blue-100 rounded-xl outline-none focus:ring-1 focus:ring-blue-200"
+                            placeholder="ID NACIONAL (SE HOUVER)"
+                          />
+                        </div>
+                        
+                        {['metropolitano', 'central', 'particular', 'conferencia', 'obra_unida'].includes(institution.entityType) && (
+                          <div className="space-y-1">
+                            <label>Conselho Metropolitano (ID) - Opcional</label>
+                            <input 
+                              value={institution.metropolitanoId}
+                              onChange={e => setInstitution({ ...institution, metropolitanoId: e.target.value })}
+                              className="w-full px-4 py-3 bg-white border border-blue-100 rounded-xl outline-none focus:ring-1 focus:ring-blue-200"
+                              placeholder="ID METROPOLITANO (SE HOUVER)"
+                            />
+                          </div>
+                        )}
+
+                        {['central', 'particular', 'conferencia', 'obra_unida'].includes(institution.entityType) && (
+                          <div className="space-y-1">
+                            <label>Conselho Central (ID) - Opcional</label>
+                            <input 
+                              value={institution.centralId}
+                              onChange={e => setInstitution({ ...institution, centralId: e.target.value })}
+                              className="w-full px-4 py-3 bg-white border border-blue-100 rounded-xl outline-none focus:ring-1 focus:ring-blue-200"
+                              placeholder="ID CENTRAL (SE HOUVER)"
+                            />
+                          </div>
+                        )}
+
+                        {['particular', 'conferencia', 'obra_unida'].includes(institution.entityType) && (
+                          <div className="space-y-1">
+                            <label>Conselho Particular (ID) - Opcional</label>
+                            <input 
+                              value={institution.particularId}
+                              onChange={e => setInstitution({ ...institution, particularId: e.target.value })}
+                              className="w-full px-4 py-3 bg-white border border-blue-100 rounded-xl outline-none focus:ring-1 focus:ring-blue-200"
+                              placeholder="ID PARTICULAR (SE HOUVER)"
+                            />
+                          </div>
+                        )}
+                        
+                        {['conferencia', 'obra_unida'].includes(institution.entityType) && (
+                          <div className="space-y-1">
+                            <label>Conferência (ID) - Opcional</label>
+                            <input 
+                              value={institution.conferenciaId}
+                              onChange={e => setInstitution({ ...institution, conferenciaId: e.target.value })}
+                              className="w-full px-4 py-3 bg-white border border-blue-100 rounded-xl outline-none focus:ring-1 focus:ring-blue-200"
+                              placeholder="ID CONFERÊNCIA (SE HOUVER)"
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -298,10 +333,11 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogi
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Usuário (Login) *</label>
+                      <label className="text-[10px] font-black text-gray-400 uppercase ml-1">E-mail de Acesso *</label>
                       <input 
-                        type="text"
+                        type="email"
                         required
+                        placeholder="admin@ssvp.com"
                         value={admin.username}
                         onChange={e => setAdmin({ ...admin, username: e.target.value.toLowerCase().replace(/\s/g, '') })}
                         className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 transition-all"

@@ -27,6 +27,9 @@ export const INITIAL_CANDIDATE: Candidate = {
   admissionReason: '',
   socialOpinion: '',
   priority: 'padrao',
+  requestOrigin: 'CONTATO DIRETO',
+  requestDescription: '',
+  institutionId: '',
   createdAt: new Date().toISOString(),
   interview: {
     residesWith: '',
@@ -110,6 +113,7 @@ export const INITIAL_RESIDENT: Resident = {
   stayType: 'Residente',
   admissionDate: '',
   room: '',
+  bedNumber: '',
   income: '',
   admissionReason: '',
   residentGroup: '',
@@ -123,6 +127,7 @@ export const INITIAL_RESIDENT: Resident = {
   personalItems: [],
   healthUpdates: [],
   medications: [],
+  institutionId: '',
 };
 
 export const DUMMY_CANDIDATES: Candidate[] = [

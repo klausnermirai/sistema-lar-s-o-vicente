@@ -1,55 +1,73 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MuralMessage } from '../types';
-import { loadMuralMessages, saveMuralMessage, setLastReadTimestamp } from '../lib/muralStore';
+import { fetchMural, saveMuralMessage as apiSaveMuralMessage } from '../lib/api';
+import { setLastReadTimestamp } from '../lib/muralStore';
 import { Send, Search, Calendar as CalendarIcon, Download, Copy, MessageCircle } from 'lucide-react';
 
 interface MuralModuleProps {
   institutionId: string;
   username: string;
+  hideHeader?: boolean;
 }
 
-const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username }) => {
+const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hideHeader = false }) => {
   const [messages, setMessages] = useState<MuralMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [filterDate, setFilterDate] = useState('');
   const [searchText, setSearchText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const fetchMessages = () => {
-    const loaded = loadMuralMessages(institutionId);
-    setMessages(loaded);
-    setLastReadTimestamp(institutionId, username, Date.now());
+  const fetchMessages = async () => {
+    if (!institutionId) return;
+    setIsLoading(true);
+    try {
+      const loaded = await fetchMural(institutionId);
+      setMessages(loaded);
+      
+      // Marcar como lidas
+      if (loaded.length > 0) {
+        const lastTimestamp = Math.max(...loaded.map(m => m.timestamp));
+        setLastReadTimestamp(institutionId, username, lastTimestamp);
+      }
+    } catch (err) {
+      console.error('Failed to load mural:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchMessages();
     
-    const handleUpdate = () => {
-      fetchMessages();
-    };
-
-    window.addEventListener('mural_updated', handleUpdate);
-    return () => window.removeEventListener('mural_updated', handleUpdate);
-  }, [institutionId, username]);
+    // Polling as a simple real-time substitute if needed, 
+    // or we can just rely on manual refresh for now.
+    const interval = setInterval(fetchMessages, 30000); 
+    return () => clearInterval(interval);
+  }, [institutionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    const msg: MuralMessage = {
-      id: Date.now().toString(),
+    const msg: Partial<MuralMessage> = {
       institutionId,
       author: username,
       text: newMessage.trim(),
       timestamp: Date.now(),
     };
 
-    saveMuralMessage(msg);
-    setNewMessage('');
+    try {
+      const saved = await apiSaveMuralMessage(msg);
+      setMessages(prev => [...prev, saved]);
+      setNewMessage('');
+    } catch (err) {
+      alert('Erro ao enviar mensagem');
+    }
   };
 
   const filteredMessages = messages.filter(msg => {
@@ -110,66 +128,68 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username }) =>
   return (
     <div className="flex flex-col h-full bg-gray-50 animate-in fade-in duration-300">
       {/* Header & Filters */}
-      <div className="bg-white p-6 border-b shadow-sm shrink-0">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-3">
-            <div className="bg-[#004c99] p-3 rounded-xl text-white">
-              <MessageCircle size={24} />
+      {!hideHeader && (
+        <div className="bg-white p-6 border-b shadow-sm shrink-0">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+              <div className="bg-[#004c99] p-3 rounded-xl text-white">
+                <MessageCircle size={24} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">Mural Institucional</h2>
+                <p className="text-sm text-gray-500 font-bold uppercase">Comunicação interna da equipe</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">Mural Institucional</h2>
-              <p className="text-sm text-gray-500 font-bold uppercase">Comunicação interna da equipe</p>
-            </div>
+            
+            {filterDate && (
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => handleExportDay('copy')}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-xs font-bold uppercase hover:bg-gray-200 transition-colors"
+                >
+                  <Copy size={14} /> Copiar Dia
+                </button>
+                <button 
+                  onClick={() => handleExportDay('whatsapp')}
+                  className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg text-xs font-bold uppercase hover:bg-green-700 transition-colors"
+                >
+                  <Download size={14} /> WhatsApp Dia
+                </button>
+              </div>
+            )}
           </div>
-          
-          {filterDate && (
-            <div className="flex gap-2">
-              <button 
-                onClick={() => handleExportDay('copy')}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-xs font-bold uppercase hover:bg-gray-200 transition-colors"
-              >
-                <Copy size={14} /> Copiar Dia
-              </button>
-              <button 
-                onClick={() => handleExportDay('whatsapp')}
-                className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg text-xs font-bold uppercase hover:bg-green-700 transition-colors"
-              >
-                <Download size={14} /> WhatsApp Dia
-              </button>
-            </div>
-          )}
-        </div>
 
-        <div className="flex gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Buscar mensagens..." 
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
-            />
+          <div className="flex gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Buscar mensagens..." 
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
+              />
+            </div>
+            <div className="relative">
+              <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                type="date" 
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
+              />
+            </div>
+            {filterDate && (
+              <button 
+                onClick={() => setFilterDate('')}
+                className="px-4 py-2 text-xs font-bold text-gray-500 uppercase hover:text-gray-800"
+              >
+                Limpar Data
+              </button>
+            )}
           </div>
-          <div className="relative">
-            <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input 
-              type="date" 
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
-            />
-          </div>
-          {filterDate && (
-            <button 
-              onClick={() => setFilterDate('')}
-              className="px-4 py-2 text-xs font-bold text-gray-500 uppercase hover:text-gray-800"
-            >
-              Limpar Data
-            </button>
-          )}
         </div>
-      </div>
+      )}
 
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">

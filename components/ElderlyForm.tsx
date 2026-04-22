@@ -34,7 +34,8 @@ import {
   HealthUpdate, 
   Medication,
   VisitRecord,
-  SubTab
+  SubTab,
+  InstitutionSettings
 } from '../types';
 import ProntuarioTab from './ProntuarioTab';
 import PiaTab from './PiaTab';
@@ -42,6 +43,7 @@ import PiaTab from './PiaTab';
 interface ElderlyFormProps {
   initialData: Resident;
   initialTab?: SubTab;
+  settings: InstitutionSettings | null;
   onSave: (data: Resident) => void;
   onCancel: () => void;
 }
@@ -94,7 +96,7 @@ const FormField: React.FC<{
   </div>
 );
 
-const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'geral', onSave, onCancel }) => {
+const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'geral', settings, onSave, onCancel }) => {
   const [formData, setFormData] = React.useState<Resident>(initialData);
   const [activeTab, setActiveTab] = React.useState<SubTab>(initialTab);
 
@@ -511,7 +513,24 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
             <div className="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4 mb-8">
               <FormField label="Estadia" name="stayType" type="select" options={['Residente / Mensalista', 'Residente', 'Pernoite', 'Temporário']} value={formData.stayType} onChange={handleChange} />
               <FormField label="Data do Acolhimento" name="admissionDate" type="date" value={formData.admissionDate} onChange={handleChange} />
-              <FormField label="Ocupação do Residente" name="room" value={formData.room} onChange={handleChange} placeholder="Ex: Apartamento 6" />
+              <FormField 
+                label="Ocupação do Residente" 
+                name="room" 
+                type="select" 
+                options={Array.from({ length: 100 }, (_, i) => `Q${(i + 1).toString().padStart(2, '0')}`)}
+                value={formData.room} 
+                onChange={handleChange} 
+                placeholder="Selecione o Quarto" 
+              />
+              <FormField 
+                label="Número do Leito" 
+                name="bedNumber" 
+                type="select"
+                options={['L01', 'L02', 'L03', 'L04', 'L05', 'L06']}
+                value={formData.bedNumber} 
+                onChange={handleChange} 
+                placeholder="Selecione o Leito" 
+              />
               <FormField label="Rendimento" name="income" value={formData.income} onChange={handleChange} />
               
               <FormField label="Motivo do Acolhimento" name="admissionReason" value={formData.admissionReason} onChange={handleChange} />

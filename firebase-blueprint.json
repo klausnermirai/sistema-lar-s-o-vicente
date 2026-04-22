@@ -1,0 +1,146 @@
+{
+  "entities": {
+    "Institution": {
+      "title": "Institution",
+      "description": "Information about the institution or council using the system.",
+      "type": "object",
+      "properties": {
+        "cnpj": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["nacional", "metropolitano", "central", "particular", "conferencia", "obra_unida"] },
+        "parentId": { "type": "string" },
+        "nacionalId": { "type": "string" },
+        "metropolitanoId": { "type": "string" },
+        "centralId": { "type": "string" },
+        "particularId": { "type": "string" },
+        "conferenciaId": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["cnpj", "name", "type"]
+    },
+    "User": {
+      "title": "User",
+      "description": "System users for a specific institution.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "fullName": { "type": "string" },
+        "role": { "type": "string" },
+        "accessLevel": { "type": "string", "enum": ["gerencial", "equipe"] }
+      },
+      "required": ["institutionId", "username", "password", "accessLevel"]
+    },
+    "Resident": {
+      "title": "Resident",
+      "description": "Elderly resident in the institution.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "nacionalId": { "type": "string" },
+        "metropolitanoId": { "type": "string" },
+        "centralId": { "type": "string" },
+        "particularId": { "type": "string" },
+        "conferenciaId": { "type": "string" },
+        "name": { "type": "string" },
+        "birthDate": { "type": "string" },
+        "cpf": { "type": "string" },
+        "gender": { "type": "string" }
+      },
+      "required": ["institutionId", "name"]
+    },
+    "Candidate": {
+      "title": "Candidate",
+      "description": "Elderly candidate in the waitlist.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "nacionalId": { "type": "string" },
+        "metropolitanoId": { "type": "string" },
+        "centralId": { "type": "string" },
+        "particularId": { "type": "string" },
+        "conferenciaId": { "type": "string" },
+        "name": { "type": "string" },
+        "stage": { "type": "string" }
+      },
+      "required": ["institutionId", "name", "stage"]
+    },
+    "MuralMessage": {
+      "title": "MuralMessage",
+      "description": "Messages posted on the mural.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "author": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["institutionId", "author", "text", "timestamp"]
+    },
+    "GroupActivity": {
+      "title": "GroupActivity",
+      "description": "Records of collective activities.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "competence": { "type": "string" },
+        "description": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["institutionId", "competence", "description", "timestamp"]
+    },
+    "AssistedFamily": {
+      "title": "AssistedFamily",
+      "description": "Family assisted by a Conference.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "nacionalId": { "type": "string" },
+        "metropolitanoId": { "type": "string" },
+        "centralId": { "type": "string" },
+        "particularId": { "type": "string" },
+        "conferenciaId": { "type": "string" },
+        "representativeName": { "type": "string" },
+        "cpf": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "membersCount": { "type": "number" },
+        "situation": { "type": "string" }
+      },
+      "required": ["institutionId", "representativeName", "cpf"]
+    }
+  },
+  "firestore": {
+    "institutions/{institutionId}": {
+      "schema": "Institution",
+      "description": "Institution settings and info."
+    },
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User accounts."
+    },
+    "residents/{residentId}": {
+      "schema": "Resident",
+      "description": "Resident records."
+    },
+    "candidates/{candidateId}": {
+      "schema": "Candidate",
+      "description": "Waitlist candidates."
+    },
+    "muralMessages/{messageId}": {
+      "schema": "MuralMessage",
+      "description": "Mural messages."
+    },
+    "groupActivities/{activityId}": {
+      "schema": "GroupActivity",
+      "description": "Group activity records."
+    },
+    "assistedFamilies/{familyId}": {
+      "schema": "AssistedFamily",
+      "description": "Families assisted by conferences."
+    }
+  }
+}

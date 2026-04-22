@@ -6,29 +6,36 @@ import ElderlyForm from './components/ElderlyForm';
 import ScreeningModule from './components/ScreeningModule';
 import SettingsModule from './components/SettingsModule';
 import MultidisciplinaryModule from './components/MultidisciplinaryModule';
+import { PlanningEmendasModule } from './components/PlanningEmendasModule';
 import MuralModule from './components/MuralModule';
 import LoginScreen from './components/LoginScreen';
 import SetupScreen from './components/SetupScreen';
-import { AppRoute, Resident, SubTab, Candidate } from './types';
+import { AppRoute, Resident, SubTab, Candidate, InstitutionSettings } from './types';
 import { DUMMY_RESIDENTS, INITIAL_RESIDENT, DUMMY_CANDIDATES } from './constants';
 import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Briefcase, FileSearch, FileText, ClipboardList } from 'lucide-react';
 import { loadInstitutionSettings } from './lib/settingsStore';
 import { loadUsers } from './lib/usersStore';
 
+import { fetchResidents, fetchCandidates, saveResident as apiSaveResident, saveCandidate as apiSaveCandidate, bulkSaveCandidates as apiBulkSaveCandidates, bulkSaveResidents as apiBulkSaveResidents, deleteCandidate as apiDeleteCandidate, fetchSettings, Session } from './lib/api';
+
 // TEMPORÁRIO PARA PROTOTIPAÇÃO: Pular Login/Setup se true
 const DEV_BYPASS_AUTH = true;
 
 const App: React.FC = () => {
-  const [session, setSession] = React.useState<{ cnpj: string; username: string; accessLevel: string } | null>(() => {
+  const [session, setSession] = React.useState<Session | null>(() => {
     const saved = localStorage.getItem('ssvp_session');
-    
-    if (DEV_BYPASS_AUTH && !saved) {
-      const devSession = { cnpj: '', username: 'dev', accessLevel: 'gerencial' };
-      localStorage.setItem('ssvp_session', JSON.stringify(devSession));
-      return devSession;
+    if (saved) return JSON.parse(saved);
+
+    if (DEV_BYPASS_AUTH) {
+      return {
+        cnpj: '52.853.397/0001-68',
+        username: 'kwarizaya@gmail.com',
+        accessLevel: 'administrador',
+        institutionId: '52.853.397/0001-68', // O backend traduzirá o CNPJ para o ID real
+        hierarchy: { type: 'obra_unida' }
+      };
     }
-    
-    return saved ? JSON.parse(saved) : null;
+    return null;
   });
 
   const [view, setView] = React.useState<'login' | 'setup' | 'app'>(
@@ -36,18 +43,80 @@ const App: React.FC = () => {
   );
   const [activeRoute, setActiveRoute] = React.useState<AppRoute>(AppRoute.RESIDENTS);
   const [activeSubTab, setActiveSubTab] = React.useState<SubTab>('geral');
-  const [residents, setResidents] = React.useState<Resident[]>(DUMMY_RESIDENTS);
-  const [candidates, setCandidates] = React.useState<Candidate[]>(DUMMY_CANDIDATES);
+  const [residents, setResidents] = React.useState<Resident[]>([]);
+  const [candidates, setCandidates] = React.useState<Candidate[]>([]);
   const [editingResident, setEditingResident] = React.useState<Resident | null>(null);
+  const [settings, setSettings] = React.useState<InstitutionSettings | null>(null);
+  const [isLoading, setIsLoading] = React.useState(false);
 
-  const handleLoginSuccess = (newSession: { cnpj: string; username: string; accessLevel: string }) => {
+  React.useEffect(() => {
+    if (session && view === 'app') {
+      loadData();
+    }
+  }, [session?.cnpj, session?.institutionId, view]);
+
+  const loadData = async () => {
+    if (!session) return;
+    const idToFetch = session.institutionId || session.cnpj;
+    if (!idToFetch) return;
+
+    setIsLoading(true);
+    try {
+      const [residentsData, candidatesData, settingsData] = await Promise.all([
+        fetchResidents(idToFetch, session.hierarchy?.type).catch((err) => {
+          console.error("Residents fetch error:", err);
+          return [];
+        }),
+        fetchCandidates(idToFetch, session.hierarchy?.type).catch((err) => {
+          console.error("Candidates fetch error:", err);
+          return [];
+        }),
+        fetchSettings(idToFetch).catch((err) => {
+          console.error("Settings fetch error:", err);
+          return null;
+        }),
+      ]);
+
+      setResidents(residentsData || []);
+      setCandidates(candidatesData || []);
+      setSettings(settingsData);
+
+      // Se não há configurações e não estamos em bypass, ir para setup
+      if (!settingsData && !DEV_BYPASS_AUTH) {
+        setView("setup");
+      }
+
+      // Migração automática de sessão se o institutionId estava ausente ou era o CNPJ
+      if (
+        settingsData &&
+        settingsData.id &&
+        session.institutionId !== settingsData.id
+      ) {
+        const updatedSession = { ...session, institutionId: settingsData.id };
+        setSession(updatedSession);
+        localStorage.setItem("ssvp_session", JSON.stringify(updatedSession));
+      }
+    } catch (error) {
+      console.error("Failed to load data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLoginSuccess = (newSession: Session) => {
     setSession(newSession);
     setView('app');
   };
 
-  const handleSetupComplete = (newSession: { cnpj: string; username: string; accessLevel: string }) => {
+  const handleSetupComplete = (newSession: Session) => {
     setSession(newSession);
     setView('app');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('ssvp_session');
+    setSession(null);
+    setView('login');
   };
 
   const handleAddResident = () => {
@@ -58,24 +127,110 @@ const App: React.FC = () => {
     setEditingResident(resident);
   };
 
-  const handleSaveResident = (data: Resident) => {
-    if (data.id) {
-      setResidents(prev => prev.map(r => r.id === data.id ? data : r));
-    } else {
-      const newResident = { ...data, id: Date.now().toString() };
-      setResidents(prev => [...prev, newResident]);
+  const handleSaveResident = async (data: Resident) => {
+    try {
+      const saved = await apiSaveResident({ 
+        ...data, 
+        institutionId: session?.institutionId,
+        nacionalId: session?.hierarchy?.nacionalId,
+        metropolitanoId: session?.hierarchy?.metropolitanoId,
+        centralId: session?.hierarchy?.centralId,
+        particularId: session?.hierarchy?.particularId,
+        conferenciaId: session?.hierarchy?.conferenciaId
+      });
+      if (data.id) {
+        setResidents(prev => prev.map(r => r.id === saved.id ? saved : r));
+      } else {
+        setResidents(prev => [...prev, saved]);
+      }
+      setEditingResident(null);
+    } catch (error) {
+      alert('Erro ao salvar residente');
     }
-    setEditingResident(null);
   };
 
-  const handleSaveCandidate = (candidate: Candidate) => {
-    setCandidates(prev => {
-      const exists = prev.find(c => c.id === candidate.id);
-      if (exists) {
-        return prev.map(c => c.id === candidate.id ? candidate : c);
+  const handleSaveCandidate = async (candidate: Candidate) => {
+    try {
+      const saved = await apiSaveCandidate({ 
+        ...candidate, 
+        institutionId: session?.institutionId,
+        nacionalId: session?.hierarchy?.nacionalId,
+        metropolitanoId: session?.hierarchy?.metropolitanoId,
+        centralId: session?.hierarchy?.centralId,
+        particularId: session?.hierarchy?.particularId,
+        conferenciaId: session?.hierarchy?.conferenciaId
+      });
+      setCandidates(prev => {
+        const exists = prev.find(c => c.id === saved.id);
+        if (exists) {
+          return prev.map(c => c.id === saved.id ? saved : c);
+        }
+        return [...prev, saved];
+      });
+    } catch (error) {
+      alert('Erro ao salvar candidato');
+    }
+  };
+
+  const handleBulkSaveCandidates = async (candidatesToSave: Candidate[]) => {
+    try {
+      setIsLoading(true);
+      const enriched = candidatesToSave.map(c => ({
+        ...c,
+        institutionId: session?.institutionId,
+        nacionalId: session?.hierarchy?.nacionalId,
+        metropolitanoId: session?.hierarchy?.metropolitanoId,
+        centralId: session?.hierarchy?.centralId,
+        particularId: session?.hierarchy?.particularId,
+        conferenciaId: session?.hierarchy?.conferenciaId
+      }));
+      await apiBulkSaveCandidates(enriched);
+      // Recarregar dados para garantir consistência
+      const idToFetch = session?.institutionId || session?.cnpj;
+      if (idToFetch) {
+        const candidatesData = await fetchCandidates(idToFetch, session?.hierarchy?.type);
+        setCandidates(candidatesData || []);
       }
-      return [...prev, { ...candidate, id: Date.now().toString() }];
-    });
+    } catch (error) {
+      alert('Erro ao importar candidatos em massa');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteCandidate = async (candidateId: string) => {
+    try {
+      if (!window.confirm('Deseja realmente excluir este cadastro permanentemente?')) return;
+      await apiDeleteCandidate(candidateId);
+      setCandidates(prev => prev.filter(c => c.id !== candidateId));
+    } catch (error) {
+      alert('Erro ao excluir candidato');
+    }
+  };
+
+  const handleBulkSaveResidents = async (residentsToSave: Resident[]) => {
+    try {
+      setIsLoading(true);
+      const enriched = residentsToSave.map(r => ({
+        ...r,
+        institutionId: session?.institutionId,
+        nacionalId: session?.hierarchy?.nacionalId,
+        metropolitanoId: session?.hierarchy?.metropolitanoId,
+        centralId: session?.hierarchy?.centralId,
+        particularId: session?.hierarchy?.particularId,
+        conferenciaId: session?.hierarchy?.conferenciaId
+      }));
+      await apiBulkSaveResidents(enriched);
+      const idToFetch = session?.institutionId || session?.cnpj;
+      if (idToFetch) {
+        const residentsData = await fetchResidents(idToFetch, session?.hierarchy?.type);
+        setResidents(residentsData || []);
+      }
+    } catch (error) {
+      alert('Erro ao importar residentes em massa');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const tabs: { id: SubTab; label: string; icon: any }[] = [
@@ -93,22 +248,43 @@ const App: React.FC = () => {
   }
 
   if (view === 'login') {
-    return <LoginScreen onLoginSuccess={handleLoginSuccess} onDevSetup={() => setView('setup')} />;
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} onDevSetup={() => setView('setup')} logoUrl={settings?.logoUrl} />;
   }
 
-  const settings = loadInstitutionSettings();
-  const councilInfo = settings.entityType === 'obra_unida' 
-    ? `SSVP - ${settings.centralCouncil || 'Conselho'}`
-    : `SSVP - ${settings.councilType || 'Conselho'}`;
+  const getCouncilInfo = () => {
+    if (!settings) return 'SSVP - Conselho';
+    const type = settings.entityType || settings.type || 'obra_unida';
+    const typeMap: Record<string, string> = {
+      nacional: 'Conselho Nacional',
+      metropolitano: 'Conselho Metropolitano',
+      central: 'Conselho Central',
+      particular: 'Conselho Particular',
+      conferencia: 'Conferência',
+      obra_unida: settings.centralId ? `Central: ${settings.centralId}` : 'Obra Unida'
+    };
+    return `SSVP - ${typeMap[type] || 'Conselho'}`;
+  };
+
+  const councilInfo = getCouncilInfo();
 
   return (
-    <Layout 
+    <div className="relative min-h-screen">
+      {isLoading && (
+        <div className="fixed inset-0 bg-white/60 backdrop-blur-sm z-[200] flex flex-col items-center justify-center gap-4">
+          <div className="w-12 h-12 border-4 border-blue-100 border-t-[#004c99] rounded-full animate-spin"></div>
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Carregando Dados...</p>
+        </div>
+      )}
+      
+      <Layout 
       activeRoute={activeRoute} 
       setActiveRoute={setActiveRoute}
-      institutionName={settings.name}
+      institutionName={settings?.name || 'Carregando...'}
       councilInfo={councilInfo}
+      logoUrl={settings?.logoUrl}
       username={session?.username}
       institutionId={session?.cnpj}
+      onLogout={handleLogout}
     >
       {activeRoute === AppRoute.RESIDENTS && (
         <div className="space-y-6">
@@ -134,6 +310,7 @@ const App: React.FC = () => {
             <ElderlyForm 
               initialData={editingResident} 
               initialTab={activeSubTab}
+              settings={settings}
               onSave={handleSaveResident} 
               onCancel={() => setEditingResident(null)} 
             />
@@ -143,6 +320,7 @@ const App: React.FC = () => {
               activeSubTab={activeSubTab}
               onAdd={handleAddResident} 
               onEdit={handleEditResident} 
+              onBulkSave={handleBulkSaveResidents}
             />
           )}
         </div>
@@ -152,7 +330,10 @@ const App: React.FC = () => {
         <ScreeningModule 
           candidates={candidates} 
           onSave={handleSaveCandidate}
+          onBulkSave={handleBulkSaveCandidates}
+          onDelete={handleDeleteCandidate}
           residents={residents}
+          settings={settings}
           onAdmit={(candidate) => {
             const admissionDate = new Date().toISOString().split('T')[0];
             const newResId = Date.now().toString();
@@ -209,12 +390,19 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {activeRoute === AppRoute.MURAL && session && (
-        <MuralModule institutionId={session.cnpj} username={session.username} />
+      {activeRoute === AppRoute.AMENDMENTS && session && (
+        <PlanningEmendasModule institutionId={session.institutionId || session.cnpj} />
       )}
 
-      {activeRoute === AppRoute.SETTINGS && <SettingsModule />}
+      {activeRoute === AppRoute.SETTINGS && session && (
+        <SettingsModule 
+          institutionId={session.institutionId!} 
+          onLogout={handleLogout} 
+          onSettingsChange={(newSettings) => setSettings(newSettings)}
+        />
+      )}
     </Layout>
+    </div>
   );
 };
 

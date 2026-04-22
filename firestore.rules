@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function belongsToInstitution(institutionId) {
+      return isSignedIn() && getUserData().institutionId == institutionId;
+    }
+
+    function hasAccessTo(institutionId, data) {
+      return isSignedIn() && (
+        getUserData().institutionId == institutionId || 
+        getUserData().institutionId == data.institutionId ||
+        (
+          getUserData().institutionId != null &&
+          get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type != null &&
+          (
+            (get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type == 'nacional' && data.nacionalId == getUserData().institutionId) ||
+            (get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type == 'metropolitano' && data.metropolitanoId == getUserData().institutionId) ||
+            (get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type == 'central' && data.centralId == getUserData().institutionId) ||
+            (get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type == 'particular' && data.particularId == getUserData().institutionId) ||
+            (get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type == 'conferencia' && data.conferenciaId == getUserData().institutionId)
+          )
+        )
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Institutions
+    match /institutions/{institutionId} {
+      allow read: if belongsToInstitution(institutionId);
+      allow write: if false; 
+    }
+
+    // Users
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false; 
+    }
+
+    // Residents
+    match /residents/{residentId} {
+      allow read: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+      allow create: if isSignedIn() && hasAccessTo(incoming().institutionId, incoming());
+      allow update: if isSignedIn() && (hasAccessTo(incoming().institutionId, incoming()) || hasAccessTo(resource.data.institutionId, resource.data));
+      allow delete: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+    }
+
+    // Candidates
+    match /candidates/{candidateId} {
+      allow read: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+      allow create: if isSignedIn() && hasAccessTo(incoming().institutionId, incoming());
+      allow update: if isSignedIn() && (hasAccessTo(incoming().institutionId, incoming()) || hasAccessTo(resource.data.institutionId, resource.data));
+      allow delete: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+    }
+
+    // Mural Messages
+    match /muralMessages/{messageId} {
+      allow read: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+      allow create: if isSignedIn() && hasAccessTo(incoming().institutionId, incoming());
+      allow update: if isSignedIn() && (hasAccessTo(incoming().institutionId, incoming()) || hasAccessTo(resource.data.institutionId, resource.data));
+      allow delete: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+    }
+
+    // Group Activities
+    match /groupActivities/{activityId} {
+      allow read: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+      allow create: if isSignedIn() && hasAccessTo(incoming().institutionId, incoming());
+      allow update: if isSignedIn() && (hasAccessTo(incoming().institutionId, incoming()) || hasAccessTo(resource.data.institutionId, resource.data));
+      allow delete: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+    }
+
+    // Assisted Families (Conferences)
+    match /assistedFamilies/{familyId} {
+      allow read: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+      allow create: if isSignedIn() && hasAccessTo(incoming().institutionId, incoming());
+      allow update: if isSignedIn() && (hasAccessTo(incoming().institutionId, incoming()) || hasAccessTo(resource.data.institutionId, resource.data));
+      allow delete: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+    }
+  }
+}

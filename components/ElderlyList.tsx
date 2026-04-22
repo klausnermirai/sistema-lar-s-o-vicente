@@ -1,7 +1,8 @@
 
 import React from 'react';
 import { Search, Plus, Filter, UserPlus, ChevronRight, AlertCircle, Calendar } from 'lucide-react';
-import { Resident, SubTab } from '../types';
+import { Resident, SubTab, Relative } from '../types';
+import { INITIAL_RESIDENT } from '../constants';
 
 interface ElderlyListProps {
   residents: Resident[];
@@ -63,8 +64,10 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
       default:
         return (
           <div className="text-[10px] uppercase">
-            <div className="font-black text-gray-400">Unidade:</div>
-            <div className="font-bold text-red-600">{resident.room || 'Não Alocado'}</div>
+            <div className="font-black text-gray-400">Ocupação:</div>
+            <div className="font-bold text-red-600">
+              {resident.room || 'Não Alocado'} {resident.bedNumber ? ` - Leito: ${resident.bedNumber}` : ''}
+            </div>
           </div>
         );
     }
@@ -79,13 +82,15 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
             Visualizando informações de <span className="text-[#004c99]">{activeSubTab.replace('-', ' ')}</span> • {residents.length} Idosos cadastrados
           </p>
         </div>
-        <button
-          onClick={onAdd}
-          className="bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 shadow-xl transition-all font-black text-xs uppercase"
-        >
-          <UserPlus size={18} />
-          <span>Cadastrar Idoso</span>
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={onAdd}
+            className="bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 shadow-xl transition-all font-black text-xs uppercase"
+          >
+            <UserPlus size={18} />
+            <span>Cadastrar Idoso</span>
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">

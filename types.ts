@@ -1,4 +1,79 @@
 
+export type InstitutionType = 'nacional' | 'metropolitano' | 'central' | 'particular' | 'conferencia' | 'obra_unida';
+
+export interface Institution {
+  id: string;
+  cnpj: string;
+  name: string;
+  type: InstitutionType;
+  parentId?: string; // ID do conselho imediatamente superior
+  nacionalId?: string;
+  metropolitanoId?: string;
+  centralId?: string;
+  particularId?: string;
+  conferenciaId?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  capacityMale?: number;
+  capacityFemale?: number;
+  capacityGeneral?: number;
+  roomsMale?: number;
+  roomsFemale?: number;
+}
+
+export interface InstitutionSettings {
+  entityType: 'nacional' | 'metropolitano' | 'central' | 'particular' | 'conferencia' | 'obra_unida';
+  name: string;
+  cnpj: string;
+  city?: string;
+  
+  // Hierarchy
+  nacionalId?: string;
+  metropolitanoId?: string;
+  centralId?: string;
+  particularId?: string;
+  conferenciaId?: string;
+
+  // Capacity
+  capacityMale?: number;
+  capacityFemale?: number;
+  capacityGeneral?: number;
+  roomsMale?: number;
+  roomsFemale?: number;
+  logoUrl?: string;
+}
+
+export interface AssistedFamily {
+  id: string;
+  institutionId: string; // ID da Conferência
+  nacionalId?: string;
+  metropolitanoId?: string;
+  centralId?: string;
+  particularId?: string;
+  conferenciaId?: string;
+  
+  representativeName: string;
+  cpf: string;
+  address: string;
+  phone: string;
+  membersCount: number;
+  situation: string;
+  lastVisitDate: string;
+  createdAt: string;
+}
+
+export interface User {
+  id: string;
+  institutionId: string;
+  username: string;
+  password?: string;
+  fullName: string;
+  role: string;
+  accessLevel: 'gerencial' | 'equipe';
+  institutionType?: InstitutionType; // Cache for easy access
+}
+
 export interface Relative {
   id: string;
   name: string;
@@ -136,6 +211,8 @@ export interface Candidate {
   scheduledDate?: string;
   scheduledPeriod?: 'manha' | 'tarde' | 'noite';
   scheduledNotes?: string;
+  requestOrigin?: 'CREAS/PREFEITURA' | 'JUDICIAL' | 'CONFERÊNCIAS' | 'CONTATO DIRETO';
+  requestDescription?: string;
 
   // Níveis de Decisão
   boardOpinion?: string;
@@ -172,6 +249,14 @@ export interface Candidate {
   
   createdAt: string;
   residentId?: string;
+  
+  // Hierarchy fields for querying
+  nacionalId?: string;
+  metropolitanoId?: string;
+  centralId?: string;
+  particularId?: string;
+  conferenciaId?: string;
+  institutionId: string;
 }
 
 export interface InitialNutritionalAssessment {
@@ -416,6 +501,7 @@ export interface Resident {
   stayType: string;
   admissionDate: string;
   room: string;
+  bedNumber: string;
   income: string;
   admissionReason: string;
   residentGroup: string;
@@ -430,6 +516,14 @@ export interface Resident {
   personalItems: PersonalItem[];
   healthUpdates: HealthUpdate[];
   medications: Medication[];
+
+  // Hierarchy fields for querying
+  nacionalId?: string;
+  metropolitanoId?: string;
+  centralId?: string;
+  particularId?: string;
+  conferenciaId?: string;
+  institutionId: string;
 
   // Campos importados da Triagem
   sourceCandidateId?: string;
@@ -479,7 +573,7 @@ export enum AppRoute {
   ATENDIMENTOS_MULTIDISCIPLINARES = 'atendimentos-multidisciplinares',
   CONSULTAS_MEDICAS = 'consultas-medicas',
   SETTINGS = 'settings',
-  MURAL = 'mural'
+  AMENDMENTS = 'amendments'
 }
 
 export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'prontuario' | 'pia';

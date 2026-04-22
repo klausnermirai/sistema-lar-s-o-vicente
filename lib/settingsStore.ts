@@ -1,13 +1,5 @@
 
-export interface InstitutionSettings {
-  entityType: 'obra_unida' | 'conselho';
-  councilType?: 'nacional' | 'metropolitano' | 'central';
-  name: string;
-  cnpj: string;
-  city?: string;
-  centralCouncil?: string;
-  metropolitanCouncil?: string;
-}
+import { InstitutionSettings } from '../types';
 
 const STORAGE_KEY = 'ssvp_institution_settings';
 
@@ -26,8 +18,11 @@ export const loadInstitutionSettings = (): InstitutionSettings => {
     name: 'Lar São Vicente de Paulo',
     cnpj: '',
     city: '',
-    centralCouncil: 'Monte Alto',
-    metropolitanCouncil: 'Jaboticabal'
+    nacionalId: '',
+    metropolitanoId: '',
+    centralId: '',
+    particularId: '',
+    conferenciaId: ''
   };
 };
 
