@@ -158,6 +158,13 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
     yPos += 3;
 
     doc.setFont('helvetica', 'bold');
+    doc.text('Fisioterapia:', 14, yPos);
+    yPos += 5;
+    addText('Diagnóstico Funcional', resident.physiotherapy?.initialAssessment?.kineticFunctionalDiagnosis || 'N/A');
+    addText('Metas Principais', resident.physiotherapy?.initialAssessment?.objectives || 'N/A');
+    yPos += 3;
+
+    doc.setFont('helvetica', 'bold');
     doc.text('Médico:', 14, yPos);
     yPos += 5;
     addText('Status/Parecer', medStatus);
@@ -199,6 +206,15 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
     addText('Observação', localPia.goalsStatus.occupationalTherapy?.observation || 'N/A');
     yPos += 5;
 
+    doc.setFont('helvetica', 'bold');
+    doc.text('Fisioterapia:', 14, yPos);
+    yPos += 5;
+    addText('Metas Definidas', resident.physiotherapy?.initialAssessment?.objectives || 'N/A');
+    addText('Status', localPia.goalsStatus.physiotherapy?.status || 'N/A');
+    addText('Previsão de Revisão', localPia.goalsStatus.physiotherapy?.reviewDate || 'N/A');
+    addText('Observação', localPia.goalsStatus.physiotherapy?.observation || 'N/A');
+    yPos += 5;
+
     // 4. Plano de Intervenções
     addSectionTitle('4. Plano de Intervenções');
     doc.setFont('helvetica', 'bold');
@@ -217,6 +233,12 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
     doc.text('Terapia Ocupacional:', 14, yPos);
     yPos += 5;
     addText('', localPia.interventions.occupationalTherapy || 'N/A', false);
+    yPos += 3;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Fisioterapia:', 14, yPos);
+    yPos += 5;
+    addText('', localPia.interventions.physiotherapy || 'N/A', false);
     yPos += 3;
 
     doc.setFont('helvetica', 'bold');
@@ -583,6 +605,172 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
               </div>
             )}
           </div>
+
+          {/* Terapia Ocupacional Metas */}
+          <div className="border rounded-xl p-4">
+            <h4 className="text-[10px] font-black text-teal-700 uppercase mb-4 flex items-center gap-2">
+              <CheckCircle size={14} /> Metas - Terapia Ocupacional
+            </h4>
+            {otInitial?.piaGoals ? (
+              <div className="space-y-4">
+                <div className="p-3 bg-teal-50/50 rounded-lg text-sm border border-teal-100 whitespace-pre-wrap mb-4">
+                  <span className="font-bold block mb-1 text-xs text-teal-800">Metas Definidas:</span>
+                  {otInitial.piaGoals}
+                </div>
+                
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1">Status</label>
+                    {isEditing ? (
+                      <select
+                        value={localPia.goalsStatus.occupationalTherapy?.status || ''}
+                        onChange={(e) => setLocalPia({
+                          ...localPia,
+                          goalsStatus: {
+                            ...localPia.goalsStatus,
+                            occupationalTherapy: { ...localPia.goalsStatus.occupationalTherapy, status: e.target.value as any } as any
+                          }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 text-sm font-medium"
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="Em andamento">Em andamento</option>
+                        <option value="Atingida">Atingida</option>
+                        <option value="Não atingida">Não atingida</option>
+                      </select>
+                    ) : (
+                      <div className="font-bold text-sm">{localPia.goalsStatus.occupationalTherapy?.status || '-'}</div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1">Previsão de Revisão</label>
+                    {isEditing ? (
+                      <input
+                        type="date"
+                        value={localPia.goalsStatus.occupationalTherapy?.reviewDate || ''}
+                        onChange={(e) => setLocalPia({
+                          ...localPia,
+                          goalsStatus: {
+                            ...localPia.goalsStatus,
+                            occupationalTherapy: { ...localPia.goalsStatus.occupationalTherapy, reviewDate: e.target.value } as any
+                          }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 text-sm font-medium"
+                      />
+                    ) : (
+                      <div className="font-bold text-sm">{localPia.goalsStatus.occupationalTherapy?.reviewDate || '-'}</div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1">Observação</label>
+                    {isEditing ? (
+                      <textarea
+                        value={localPia.goalsStatus.occupationalTherapy?.observation || ''}
+                        onChange={(e) => setLocalPia({
+                          ...localPia,
+                          goalsStatus: {
+                            ...localPia.goalsStatus,
+                            occupationalTherapy: { ...localPia.goalsStatus.occupationalTherapy, observation: e.target.value } as any
+                          }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 text-sm font-medium"
+                        rows={2}
+                      />
+                    ) : (
+                      <div className="text-sm">{localPia.goalsStatus.occupationalTherapy?.observation || '-'}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-gray-50 text-center rounded-lg text-xs text-gray-500 italic">
+                Sem metas registradas nesta competência.
+              </div>
+            )}
+          </div>
+
+          {/* Fisioterapia Metas */}
+          <div className="border rounded-xl p-4">
+            <h4 className="text-[10px] font-black text-indigo-700 uppercase mb-4 flex items-center gap-2">
+              <CheckCircle size={14} /> Metas - Fisioterapia
+            </h4>
+            {resident.physiotherapy?.initialAssessment?.objectives ? (
+              <div className="space-y-4">
+                <div className="p-3 bg-indigo-50/50 rounded-lg text-sm border border-indigo-100 whitespace-pre-wrap mb-4">
+                  <span className="font-bold block mb-1 text-xs text-indigo-800">Metas Definidas:</span>
+                  {resident.physiotherapy.initialAssessment.objectives}
+                </div>
+                
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1">Status</label>
+                    {isEditing ? (
+                      <select
+                        value={localPia.goalsStatus.physiotherapy?.status || ''}
+                        onChange={(e) => setLocalPia({
+                          ...localPia,
+                          goalsStatus: {
+                            ...localPia.goalsStatus,
+                            physiotherapy: { ...localPia.goalsStatus.physiotherapy, status: e.target.value as any } as any
+                          }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 text-sm font-medium"
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="Em andamento">Em andamento</option>
+                        <option value="Atingida">Atingida</option>
+                        <option value="Não atingida">Não atingida</option>
+                      </select>
+                    ) : (
+                      <div className="font-bold text-sm">{localPia.goalsStatus.physiotherapy?.status || '-'}</div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1">Previsão de Revisão</label>
+                    {isEditing ? (
+                      <input
+                        type="date"
+                        value={localPia.goalsStatus.physiotherapy?.reviewDate || ''}
+                        onChange={(e) => setLocalPia({
+                          ...localPia,
+                          goalsStatus: {
+                            ...localPia.goalsStatus,
+                            physiotherapy: { ...localPia.goalsStatus.physiotherapy, reviewDate: e.target.value } as any
+                          }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 text-sm font-medium"
+                      />
+                    ) : (
+                      <div className="font-bold text-sm">{localPia.goalsStatus.physiotherapy?.reviewDate || '-'}</div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1">Observação</label>
+                    {isEditing ? (
+                      <textarea
+                        value={localPia.goalsStatus.physiotherapy?.observation || ''}
+                        onChange={(e) => setLocalPia({
+                          ...localPia,
+                          goalsStatus: {
+                            ...localPia.goalsStatus,
+                            physiotherapy: { ...localPia.goalsStatus.physiotherapy, observation: e.target.value } as any
+                          }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 text-sm font-medium"
+                        rows={2}
+                      />
+                    ) : (
+                      <div className="text-sm">{localPia.goalsStatus.physiotherapy?.observation || '-'}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-gray-50 text-center rounded-lg text-xs text-gray-500 italic">
+                Sem metas registradas nesta competência.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -644,6 +832,25 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
             ) : (
               <div className="p-3 bg-gray-50 rounded-lg text-sm border border-gray-100 min-h-[40px] whitespace-pre-wrap">
                 {localPia.interventions.occupationalTherapy || <span className="text-gray-400 italic">Nenhuma intervenção registrada.</span>}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-indigo-700 uppercase tracking-tighter mb-2">Intervenções - Fisioterapia</label>
+            {isEditing ? (
+              <textarea
+                value={localPia.interventions.physiotherapy || ''}
+                onChange={(e) => setLocalPia({
+                  ...localPia,
+                  interventions: { ...localPia.interventions, physiotherapy: e.target.value }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 text-sm font-medium min-h-[80px]"
+                placeholder="Descreva o plano de intervenção de fisioterapia..."
+              />
+            ) : (
+              <div className="p-3 bg-gray-50 rounded-lg text-sm border border-gray-100 min-h-[40px] whitespace-pre-wrap">
+                {localPia.interventions.physiotherapy || <span className="text-gray-400 italic">Nenhuma intervenção registrada.</span>}
               </div>
             )}
           </div>

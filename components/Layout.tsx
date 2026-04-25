@@ -1,10 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity, MessageCircle, LogOut, DollarSign, Package, BarChart3, HelpCircle } from 'lucide-react';
+import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity, MessageCircle, LogOut, DollarSign, Package, BarChart3, HelpCircle, Key } from 'lucide-react';
 import { AppRoute } from '../types';
-import { getUnreadCount } from '../lib/muralStore';
+import { getLastReadTimestamp } from '../lib/muralStore';
 import { SupportChat } from './SupportChat';
 import { MuralChatPanel } from './MuralChatPanel';
+import { ChangePasswordModal } from './ChangePasswordModal';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,51 +18,144 @@ interface LayoutProps {
   logoUrl?: string;
   username?: string;
   institutionId?: string;
+  cnpj?: string;
+  userId?: string;
   onLogout?: () => void;
+  accessLevel?: string;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, institutionName, councilInfo, logoUrl, username, institutionId, onLogout }) => {
+const Layout: React.FC<LayoutProps> = ({ 
+  children, 
+  activeRoute, 
+  setActiveRoute, 
+  institutionName, 
+  councilInfo, 
+  logoUrl, 
+  username, 
+  institutionId, 
+  cnpj,
+  userId, 
+  onLogout, 
+  accessLevel 
+}) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [unreadMural, setUnreadMural] = useState(0);
   const [activeCategory, setActiveCategory] = useState<'atendimento' | 'gestao'>('atendimento');
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isTeamChatOpen, setIsTeamChatOpen] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+
+  const hasGestaoAccess = accessLevel === 'administrador' || accessLevel === 'gerencial';
+  
+  // Specific restrictions
+  const isAssistenteSocial = accessLevel === 'assistente_social';
+  const isPsicologia = accessLevel === 'psicologia';
+  const isTerapeutaOcupacional = accessLevel === 'terapeuta_ocupacional';
+  const isFisioterapeuta = accessLevel === 'fisioterapeuta';
+  const isNutricionista = accessLevel === 'nutricionista';
+  const isMedico = accessLevel === 'medico';
 
   useEffect(() => {
-    // Mural logic
-    if (institutionId && username) {
-      const updateUnread = () => {
-        setUnreadMural(getUnreadCount(institutionId, username));
+    // Mural real-time unread count
+    const idToSearch = institutionId || cnpj;
+    if (idToSearch && username) {
+      const ids = [idToSearch];
+      if (institutionId && cnpj && institutionId !== cnpj) {
+        ids.push(cnpj);
+      }
+
+      const q = query(
+        collection(db, 'muralMessages'),
+        where('institutionId', 'in', ids)
+      );
+
+      const docsRef = { current: [] as any[] };
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        docsRef.current = snapshot.docs;
+        const lastRead = getLastReadTimestamp(institutionId, username);
+        const unread = snapshot.docs.filter(doc => {
+          const data = doc.data();
+          const ts = data.timestamp?.toDate?.()?.getTime() || data.timestamp || 0;
+          return ts > lastRead;
+        }).length;
+        setUnreadMural(unread);
+      });
+
+      const updateOnRead = () => {
+        const lastRead = getLastReadTimestamp(institutionId, username);
+        const unread = docsRef.current.filter(doc => {
+          const data = doc.data();
+          const ts = data.timestamp?.toDate?.()?.getTime() || data.timestamp || 0;
+          return ts > lastRead;
+        }).length;
+        setUnreadMural(unread);
       };
 
-      updateUnread();
-      window.addEventListener('mural_updated', updateUnread);
-      window.addEventListener('mural_read_updated', updateUnread);
+      window.addEventListener('mural_read_updated', updateOnRead);
 
       return () => {
-        window.removeEventListener('mural_updated', updateUnread);
-        window.removeEventListener('mural_read_updated', updateUnread);
+        unsubscribe();
+        window.removeEventListener('mural_read_updated', updateOnRead);
       };
     }
   }, [institutionId, username]);
 
   useEffect(() => {
     // Current route dictates the initial category
-    const gestaoRoutes = [AppRoute.SETTINGS];
-    if (gestaoRoutes.includes(activeRoute)) {
+    // Settings is now in both, so don't force switch if already in one that has it
+    const gestaoRoutes = [AppRoute.AMENDMENTS, AppRoute.SETTINGS];
+    const atendimentoRoutes = [
+      AppRoute.SCREENING, 
+      AppRoute.RESIDENTS, 
+      AppRoute.SAUDE_CUIDADOS, 
+      AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, 
+      AppRoute.CONSULTAS_MEDICAS,
+      AppRoute.SETTINGS
+    ];
+
+    if (activeCategory === 'gestao' && gestaoItems.some(i => i.id === activeRoute)) {
+      return;
+    }
+    if (activeCategory === 'atendimento' && atendimentoItems.some(i => i.id === activeRoute)) {
+      return;
+    }
+
+    if (gestaoRoutes.includes(activeRoute) && !atendimentoRoutes.includes(activeRoute)) {
       setActiveCategory('gestao');
-    } else {
+    } else if (atendimentoRoutes.includes(activeRoute) && !gestaoRoutes.includes(activeRoute)) {
       setActiveCategory('atendimento');
     }
   }, [activeRoute]);
 
-  const atendimentoItems = [
+  let atendimentoItems = [
     { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
     { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
     { id: AppRoute.SAUDE_CUIDADOS, label: 'Saúde e Cuidados', icon: HeartPulse },
     { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Activity },
     { id: AppRoute.CONSULTAS_MEDICAS, label: 'Consulta Médica', icon: Stethoscope },
+    { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
   ];
+
+  if (isMedico) {
+    atendimentoItems = [
+      { id: AppRoute.CONSULTAS_MEDICAS, label: 'Consulta Médica', icon: Stethoscope },
+      { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+    ];
+  } else if (isAssistenteSocial) {
+    atendimentoItems = [
+      { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
+      { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
+      { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Activity },
+      { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+    ];
+  } else if (isPsicologia || isTerapeutaOcupacional || isFisioterapeuta || isNutricionista) {
+    atendimentoItems = [
+      { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
+      { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Activity },
+      { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+    ];
+  }
 
   const gestaoItems = [
     { id: AppRoute.AMENDMENTS, label: 'Planejamento de Emendas', icon: BarChart3 },
@@ -99,8 +195,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, 
           </div>
         </div>
 
-        {/* Sidebar Category Tabs */}
-        {isSidebarOpen && (
+        {/* Sidebar Category Tabs - Only show Gestão if user has access */}
+        {isSidebarOpen && hasGestaoAccess && (
           <div className="mt-8 px-4 flex gap-1">
             <button 
               onClick={() => {
@@ -135,6 +231,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, 
             >
               Gestão
             </button>
+          </div>
+        )}
+
+        {isSidebarOpen && !hasGestaoAccess && (
+          <div className="mt-8 px-4 flex gap-1">
+            <div className="flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-t-xl bg-white text-[#004c99] shadow-inner text-center">
+              Atendimento
+            </div>
           </div>
         )}
 
@@ -225,19 +329,32 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, 
               <span className="text-xs font-black text-gray-900 uppercase tracking-tighter">{institutionName || 'Lar São Vicente de Paulo'}</span>
               <span className="text-[10px] text-gray-400 font-bold uppercase">{councilInfo || 'SSVP - Conselho'}</span>
             </div>
-            <div className="h-12 w-12 bg-gradient-to-tr from-red-600 to-red-500 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-red-100 transform rotate-3">
-              {institutionName ? institutionName.substring(0, 2).toUpperCase() : 'LS'}
+            <div className="h-12 w-12 bg-gradient-to-tr from-red-600 to-red-500 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-red-100 transform rotate-3 overflow-hidden">
+              {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1 bg-white" title={institutionName} />
+              ) : (
+                institutionName ? institutionName.substring(0, 2).toUpperCase() : 'LS'
+              )}
             </div>
             
-            {onLogout && (
+            <div className="flex items-center gap-1 border-l border-gray-100 pl-6">
                <button 
-                 onClick={onLogout}
-                 className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                 title="Sair do Sistema"
+                 onClick={() => setIsPasswordModalOpen(true)}
+                 className="p-2.5 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
+                 title="Alterar Senha"
                >
-                 <LogOut size={20} />
+                 <Key size={20} />
                </button>
-            )}
+              {onLogout && (
+                 <button 
+                   onClick={onLogout}
+                   className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                   title="Sair do Sistema"
+                 >
+                   <LogOut size={20} />
+                 </button>
+              )}
+            </div>
           </div>
         </header>
 
@@ -248,15 +365,23 @@ const Layout: React.FC<LayoutProps> = ({ children, activeRoute, setActiveRoute, 
         <SupportChat 
           isOpen={isSupportOpen} 
           onClose={() => setIsSupportOpen(false)} 
-          institutionId={institutionId || ''} 
+          institutionId={institutionId || cnpj || ''} 
           username={username || ''} 
         />
 
         <MuralChatPanel 
           isOpen={isTeamChatOpen} 
           onClose={() => setIsTeamChatOpen(false)} 
-          institutionId={institutionId || ''} 
+          institutionId={institutionId || cnpj || ''} 
+          cnpj={cnpj}
           username={username || ''} 
+        />
+
+        <ChangePasswordModal
+          isOpen={isPasswordModalOpen}
+          onClose={() => setIsPasswordModalOpen(false)}
+          userId={userId}
+          institutionId={institutionId}
         />
       </main>
     </div>

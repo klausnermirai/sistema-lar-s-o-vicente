@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Resident, OccupationalTherapyData, OccupationalTherapyAssessment, OccupationalTherapyEvolution, OccupationalTherapyAttendance } from '../types';
-import { Plus, Save, Edit2, CheckCircle, Clock } from 'lucide-react';
+import { Resident, OccupationalTherapyData, OccupationalTherapyAssessment, OccupationalTherapyEvolution, OccupationalTherapyAttendance, MuralMessage } from '../types';
+import { Plus, Save, Edit2, CheckCircle, Clock, Printer, FileSpreadsheet } from 'lucide-react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import GroupActivityTab from './GroupActivityTab';
 
 interface OccupationalTherapyTabProps {
@@ -8,10 +10,109 @@ interface OccupationalTherapyTabProps {
   onChange: (data: OccupationalTherapyData) => void;
   residents: Resident[];
   onSaveResident: (resident: Resident) => void;
+  onPostToMural?: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
 }
 
-const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ resident, onChange, residents, onSaveResident }) => {
+const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ resident, onChange, residents, onSaveResident, onPostToMural }) => {
   const [activeSubTab, setActiveSubTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos' | 'grupo'>('avaliacao');
+  
+  const handleExportAssessmentPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Avaliação de Terapia Ocupacional', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data da Avaliação: ${assessment.date}`, 14, 35);
+
+    const tableData = [
+      ['Independência', assessment.independenceLevel || 'N/A', 'Mobilidade', assessment.mobility || 'N/A'],
+      ['Alimentação', assessment.feeding || 'N/A', 'Higiene', assessment.personalHygiene || 'N/A'],
+      ['Vestuário', assessment.clothing || 'N/A', 'Banho', assessment.bathing || 'N/A'],
+      ['Orientação', assessment.orientation || 'N/A', 'Memória', assessment.attentionAndMemory || 'N/A'],
+      ['Participação', assessment.participation || 'N/A', 'Interesse', assessment.occupationalInterest || 'N/A'],
+      ['Limitações', { content: assessment.motorLimitations || 'N/A', colSpan: 3 }],
+      ['Síntese', { content: assessment.functionalSynthesis || 'N/A', colSpan: 3 }],
+      ['Metas PIA', { content: assessment.piaGoals || 'N/A', colSpan: 3 }]
+    ];
+
+    (doc as any).autoTable({
+      startY: 45,
+      body: tableData,
+      theme: 'grid',
+      styles: { fontSize: 8 }
+    });
+
+    doc.save(`Avaliacao_TO_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+  const handleExportEvolutionPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Histórico de Evoluções - Terapia Ocupacional', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
+
+    const tableData = (otData.evolutions || []).map(ev => [
+      new Date(ev.date).toLocaleDateString('pt-BR'),
+      ev.functionalEvolution || 'N/A',
+      ev.currentIndependenceLevel || 'N/A'
+    ]);
+
+    (doc as any).autoTable({
+      startY: 45,
+      head: [['Data', 'Evolução Funcional', 'Nível Independência']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillStyle: '#004c99', textColor: 255 },
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Evolucoes_TO_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+
+  const handleExportAttendancePDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Histórico de Atendimentos - Terapia Ocupacional', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
+
+    const tableData = (otData.attendances || []).map(at => [
+      new Date(at.dateTime).toLocaleString('pt-BR'),
+      at.attendanceType || 'N/A',
+      at.signature || 'N/A'
+    ]);
+
+    (doc as any).autoTable({
+      startY: 45,
+      head: [['Data/Hora', 'Tipo', 'Assinatura']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillStyle: '#004c99', textColor: 255 },
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Atendimentos_TO_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
   
   const otData = resident.occupationalTherapy || {
     evolutions: [],
@@ -105,12 +206,21 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         attendanceEvolution: newAttendance.attendanceEvolution,
         prontuarioNotes: newAttendance.prontuarioNotes || '',
         muralNotes: newAttendance.muralNotes || '',
+        notifyFamily: newAttendance.notifyFamily || false,
         signature: newAttendance.signature
       };
       onChange({
         ...otData,
         attendances: [attendance, ...(otData.attendances || [])]
       });
+
+      if (attendance.muralNotes && onPostToMural) {
+        onPostToMural({
+          author: attendance.signature || 'Terapeuta Ocupacional',
+          text: `[T.O.] ${resident.name}: ${attendance.muralNotes}`,
+        });
+      }
+
       setIsAddingAttendance(false);
       setNewAttendance({
         dateTime: new Date().toISOString().slice(0, 16),
@@ -118,6 +228,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         attendanceEvolution: '',
         prontuarioNotes: '',
         muralNotes: '',
+        notifyFamily: false,
         signature: ''
       });
     }
@@ -174,25 +285,35 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         <div className="space-y-6 animate-in fade-in duration-300">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-black text-gray-800 uppercase">Avaliação Inicial</h3>
-            {!isEditingAssessment ? (
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsEditingAssessment(true)}
-                className="bg-[#004c99] hover:bg-blue-800 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
+                onClick={handleExportAssessmentPDF}
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-all font-black text-[10px] uppercase border"
               >
-                <Edit2 size={14} />
-                Editar Avaliação
+                <Printer size={14} />
+                Exportar PDF
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleSaveAssessment}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
-              >
-                <Save size={14} />
-                Salvar Avaliação
-              </button>
-            )}
+              {!isEditingAssessment ? (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingAssessment(true)}
+                  className="bg-[#004c99] hover:bg-blue-800 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
+                >
+                  <Edit2 size={14} />
+                  Editar Avaliação
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSaveAssessment}
+                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
+                >
+                  <Save size={14} />
+                  Salvar Avaliação
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-8">
@@ -456,16 +577,26 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         <div className="space-y-6 animate-in fade-in duration-300">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-black text-gray-800 uppercase">Evoluções Terapêuticas</h3>
-            {!isAddingEvolution && (
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsAddingEvolution(true)}
-                className="bg-[#004c99] hover:bg-blue-800 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
+                onClick={handleExportEvolutionPDF}
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-all font-black text-[10px] uppercase border"
               >
-                <Plus size={14} />
-                Nova Evolução
+                <Printer size={14} />
+                Exportar PDF
               </button>
-            )}
+              {!isAddingEvolution && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingEvolution(true)}
+                  className="bg-[#004c99] hover:bg-blue-800 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
+                >
+                  <Plus size={14} />
+                  Nova Evolução
+                </button>
+              )}
+            </div>
           </div>
 
           {isAddingEvolution && (
@@ -556,6 +687,14 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 </button>
                 <button
                   type="button"
+                  onClick={handleExportEvolutionPDF}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-all font-black text-[10px] uppercase border"
+                >
+                  <Printer size={14} />
+                  Exportar PDF
+                </button>
+                <button
+                  type="button"
                   onClick={handleSaveEvolution}
                   disabled={!newEvolution.functionalEvolution || !newEvolution.newConduct}
                   className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
@@ -615,16 +754,26 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         <div className="space-y-6 animate-in fade-in duration-300">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-black text-gray-800 uppercase">Registro de Atendimentos</h3>
-            {!isAddingAttendance && (
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsAddingAttendance(true)}
-                className="bg-[#004c99] hover:bg-blue-800 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
+                onClick={handleExportAttendancePDF}
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-all font-black text-[10px] uppercase border"
               >
-                <Plus size={14} />
-                Novo Atendimento
+                <Printer size={14} />
+                Exportar PDF
               </button>
-            )}
+              {!isAddingAttendance && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingAttendance(true)}
+                  className="bg-[#004c99] hover:bg-blue-800 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
+                >
+                  <Plus size={14} />
+                  Novo Atendimento
+                </button>
+              )}
+            </div>
           </div>
 
           {isAddingAttendance && (
@@ -682,11 +831,34 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Compartilhar no mural (Visível para todos)</label>
                   <textarea
                     value={newAttendance.muralNotes || ''}
-                    onChange={(e) => setNewAttendance({ ...newAttendance, muralNotes: e.target.value })}
+                    onChange={(e) => setNewAttendance({ ...newAttendance, muralNotes: e.target.value.slice(0, 150) })}
+                    maxLength={150}
                     rows={2}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
                   />
+                  <div className="flex justify-between items-center mt-1 text-[10px] font-bold uppercase tracking-widest">
+                    <span className="text-gray-400">
+                      {newAttendance.muralNotes?.length || 0}/150 caracteres
+                    </span>
+                    <span className="text-[#004c99]">
+                      Limite de 150 caracteres para o mural e notificação familiar
+                    </span>
+                  </div>
                 </div>
+
+                <div className="flex items-center gap-3 bg-green-50 p-4 rounded-xl border border-green-100 mt-4">
+                  <input 
+                    type="checkbox"
+                    id="notifyFamily"
+                    checked={newAttendance.notifyFamily || false}
+                    onChange={(e) => setNewAttendance({ ...newAttendance, notifyFamily: e.target.checked })}
+                    className="w-5 h-5 text-green-600 rounded focus:ring-green-500"
+                  />
+                  <label htmlFor="notifyFamily" className="text-sm font-bold text-green-900 cursor-pointer">
+                    Notificação Familiar - Incluir este atendimento no resumo mensal de repasse à familia
+                  </label>
+                </div>
+
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Assinatura (Nome do profissional)</label>
                   <input
@@ -705,6 +877,14 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                   className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-xl font-black text-[10px] uppercase transition-colors"
                 >
                   Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportAttendancePDF}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-all font-black text-[10px] uppercase border"
+                >
+                  <Printer size={14} />
+                  Exportar PDF
                 </button>
                 <button
                   type="button"

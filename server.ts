@@ -149,7 +149,7 @@ async function startServer() {
         if (username === 'admin' && password === 'admin123' && cnpj === '') {
            return res.json({
              success: true,
-             user: { username: 'admin', fullName: 'Administrador Padrão', role: 'TI / Gestão', accessLevel: 'gerencial' },
+             user: { username: 'admin', fullName: 'Administrador Padrão', role: 'TI / Gestão', accessLevel: 'administrador' },
              cnpj: ''
            });
         }
@@ -555,7 +555,9 @@ async function startServer() {
       if (institutionId === 'demo-institution-id') {
         const demoUsers = [
           { id: 'demo-u1', username: 'demonstracao@ssvp.com', fullName: 'Administrador Demo', accessLevel: 'administrador', role: 'Gestor' },
-          { id: 'demo-u2', username: 'operador@ssvp.com', fullName: 'Maria Silva', accessLevel: 'operacional', role: 'Assistente Social' }
+          { id: 'demo-u2', username: 'operador@ssvp.com', fullName: 'Maria Silva', accessLevel: 'assistente_social', role: 'Assistente Social' },
+          { id: 'demo-u3', username: 'psico@ssvp.com', fullName: 'Ana Psicóloga', accessLevel: 'psicologia', role: 'Psicóloga' },
+          { id: 'demo-u4', username: 'to@ssvp.com', fullName: 'Carlos Terapeuta', accessLevel: 'terapeuta_ocupacional', role: 'Terapeuta Ocupacional' }
         ];
         finalUsers = [...demoUsers, ...dbUsers];
       }

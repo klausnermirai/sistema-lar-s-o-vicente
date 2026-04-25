@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Resident, GroupActivity } from '../types';
+import { Resident, GroupActivity, MuralMessage } from '../types';
 import { Plus, Save, ArrowLeft, Users, Calendar, CheckCircle } from 'lucide-react';
 import { loadGroupActivities, saveGroupActivity } from '../lib/groupActivityStore';
-import { saveMuralMessage } from '../lib/muralStore';
 
 interface GroupActivityTabProps {
   competence: 'nutricionista' | 'psicologia' | 'terapeuta_ocupacional';
   residents: Resident[];
   onSaveResident: (resident: Resident) => void;
+  onPostToMural?: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
 }
 
 const ACTIVITY_TYPES = [
@@ -26,7 +26,7 @@ const RESULTS = [
   'Baixa adesão'
 ];
 
-const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residents, onSaveResident }) => {
+const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residents, onSaveResident, onPostToMural }) => {
   const currentUser = { name: 'Profissional Logado', institutionId: 'default-inst' }; // Mock user
   const [activities, setActivities] = useState<GroupActivity[]>([]);
   const [isCreating, setIsCreating] = useState(false);
@@ -116,13 +116,10 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
     setActivities(prev => [newActivity, ...prev]);
 
     // Save to Mural if checked
-    if (newActivity.sharedToMural && currentUser?.institutionId) {
-      saveMuralMessage({
-        id: Date.now().toString(),
-        institutionId: currentUser.institutionId,
+    if (newActivity.sharedToMural && onPostToMural) {
+      onPostToMural({
         author: newActivity.responsibleProfessional,
         text: `Atividade em Grupo (${newActivity.type}): ${newActivity.description}. Resultado: ${newActivity.result}.`,
-        timestamp: Date.now()
       });
     }
 

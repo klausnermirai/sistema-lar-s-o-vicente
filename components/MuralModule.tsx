@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MuralMessage } from '../types';
-import { fetchMural, saveMuralMessage as apiSaveMuralMessage } from '../lib/api';
 import { setLastReadTimestamp } from '../lib/muralStore';
 import { Send, Search, Calendar as CalendarIcon, Download, Copy, MessageCircle } from 'lucide-react';
+import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface MuralModuleProps {
   institutionId: string;
   username: string;
   hideHeader?: boolean;
+  cnpj?: string;
 }
 
-const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hideHeader = false }) => {
+const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hideHeader = false, cnpj }) => {
   const [messages, setMessages] = useState<MuralMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [filterDate, setFilterDate] = useState('');
@@ -18,33 +20,44 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const fetchMessages = async () => {
+  useEffect(() => {
     if (!institutionId) return;
     setIsLoading(true);
-    try {
-      const loaded = await fetchMural(institutionId);
-      setMessages(loaded);
+
+    const ids = [institutionId];
+    if (cnpj && cnpj !== institutionId) {
+      ids.push(cnpj);
+    }
+
+    const q = query(
+      collection(db, 'muralMessages'),
+      where('institutionId', 'in', ids)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          id: doc.id,
+          timestamp: data.timestamp?.toDate?.()?.getTime() || data.timestamp || Date.now()
+        } as MuralMessage;
+      }).sort((a, b) => a.timestamp - b.timestamp);
       
-      // Marcar como lidas
-      if (loaded.length > 0) {
-        const lastTimestamp = Math.max(...loaded.map(m => m.timestamp));
+      setMessages(msgs);
+      setIsLoading(false);
+
+      if (msgs.length > 0) {
+        const lastTimestamp = Math.max(...msgs.map(m => m.timestamp));
         setLastReadTimestamp(institutionId, username, lastTimestamp);
       }
-    } catch (err) {
-      console.error('Failed to load mural:', err);
-    } finally {
+    }, (error) => {
+      console.error("Error listening to mural messages:", error);
       setIsLoading(false);
-    }
-  };
+    });
 
-  useEffect(() => {
-    fetchMessages();
-    
-    // Polling as a simple real-time substitute if needed, 
-    // or we can just rely on manual refresh for now.
-    const interval = setInterval(fetchMessages, 30000); 
-    return () => clearInterval(interval);
-  }, [institutionId]);
+    return () => unsubscribe();
+  }, [institutionId, username]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -54,18 +67,16 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    const msg: Partial<MuralMessage> = {
-      institutionId,
-      author: username,
-      text: newMessage.trim(),
-      timestamp: Date.now(),
-    };
-
     try {
-      const saved = await apiSaveMuralMessage(msg);
-      setMessages(prev => [...prev, saved]);
+      await addDoc(collection(db, 'muralMessages'), {
+        institutionId,
+        author: username,
+        text: newMessage.trim(),
+        timestamp: serverTimestamp(),
+      });
       setNewMessage('');
     } catch (err) {
+      console.error('Error sending to mural:', err);
       alert('Erro ao enviar mensagem');
     }
   };

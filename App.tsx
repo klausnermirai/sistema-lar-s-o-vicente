@@ -6,17 +6,20 @@ import ElderlyForm from './components/ElderlyForm';
 import ScreeningModule from './components/ScreeningModule';
 import SettingsModule from './components/SettingsModule';
 import MultidisciplinaryModule from './components/MultidisciplinaryModule';
+import HealthCareModule from './components/HealthCareModule';
 import { PlanningEmendasModule } from './components/PlanningEmendasModule';
 import MuralModule from './components/MuralModule';
+import MedicalModule from './components/MedicalModule';
 import LoginScreen from './components/LoginScreen';
 import SetupScreen from './components/SetupScreen';
-import { AppRoute, Resident, SubTab, Candidate, InstitutionSettings } from './types';
+import { AppRoute, Resident, SubTab, Candidate, InstitutionSettings, MuralMessage } from './types';
 import { DUMMY_RESIDENTS, INITIAL_RESIDENT, DUMMY_CANDIDATES } from './constants';
-import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Briefcase, FileSearch, FileText, ClipboardList } from 'lucide-react';
+import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Pill, Briefcase, FileSearch, FileText, ClipboardList } from 'lucide-react';
 import { loadInstitutionSettings } from './lib/settingsStore';
 import { loadUsers } from './lib/usersStore';
 
-import { fetchResidents, fetchCandidates, saveResident as apiSaveResident, saveCandidate as apiSaveCandidate, bulkSaveCandidates as apiBulkSaveCandidates, bulkSaveResidents as apiBulkSaveResidents, deleteCandidate as apiDeleteCandidate, fetchSettings, Session } from './lib/api';
+
+import { fetchResidents, fetchCandidates, saveResident as apiSaveResident, saveCandidate as apiSaveCandidate, bulkSaveCandidates as apiBulkSaveCandidates, bulkSaveResidents as apiBulkSaveResidents, deleteCandidate as apiDeleteCandidate, deleteResident as apiDeleteResident, fetchSettings, Session, saveMuralMessage as apiSaveMuralMessage } from './lib/api';
 
 // TEMPORÁRIO PARA PROTOTIPAÇÃO: Pular Login/Setup se true
 const DEV_BYPASS_AUTH = true;
@@ -41,7 +44,15 @@ const App: React.FC = () => {
   const [view, setView] = React.useState<'login' | 'setup' | 'app'>(
     (session || DEV_BYPASS_AUTH) ? 'app' : 'login'
   );
-  const [activeRoute, setActiveRoute] = React.useState<AppRoute>(AppRoute.RESIDENTS);
+  const [activeRoute, setActiveRoute] = React.useState<AppRoute>(
+    session?.accessLevel === 'medico' ? AppRoute.CONSULTAS_MEDICAS : AppRoute.RESIDENTS
+  );
+
+  React.useEffect(() => {
+    if (session?.accessLevel === 'medico' && activeRoute !== AppRoute.CONSULTAS_MEDICAS) {
+      setActiveRoute(AppRoute.CONSULTAS_MEDICAS);
+    }
+  }, [session?.accessLevel]);
   const [activeSubTab, setActiveSubTab] = React.useState<SubTab>('geral');
   const [residents, setResidents] = React.useState<Resident[]>([]);
   const [candidates, setCandidates] = React.useState<Candidate[]>([]);
@@ -138,11 +149,14 @@ const App: React.FC = () => {
         particularId: session?.hierarchy?.particularId,
         conferenciaId: session?.hierarchy?.conferenciaId
       });
-      if (data.id) {
-        setResidents(prev => prev.map(r => r.id === saved.id ? saved : r));
-      } else {
-        setResidents(prev => [...prev, saved]);
-      }
+      
+      setResidents(prev => {
+        const exists = prev.find(r => r.id === saved.id);
+        if (exists) {
+          return prev.map(r => r.id === saved.id ? saved : r);
+        }
+        return [...prev, saved];
+      });
       setEditingResident(null);
     } catch (error) {
       alert('Erro ao salvar residente');
@@ -208,6 +222,16 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDeleteResident = async (residentId: string) => {
+    try {
+      if (!window.confirm('Deseja realmente excluir este residente permanentemente? Esta ação não pode ser desfeita e todo o histórico será perdido.')) return;
+      await apiDeleteResident(residentId);
+      setResidents(prev => prev.filter(r => r.id !== residentId));
+    } catch (error) {
+      alert('Erro ao excluir residente');
+    }
+  };
+
   const handleBulkSaveResidents = async (residentsToSave: Resident[]) => {
     try {
       setIsLoading(true);
@@ -233,14 +257,34 @@ const App: React.FC = () => {
     }
   };
 
-  const tabs: { id: SubTab; label: string; icon: any }[] = [
+  const handlePostToMural = async (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => {
+    const fullMessage = {
+      ...message,
+      institutionId: session?.institutionId || session?.cnpj || 'default',
+      timestamp: Date.now()
+    };
+    try {
+      await apiSaveMuralMessage(fullMessage);
+      // Optional: window.dispatchEvent(new Event('mural_updated'));
+    } catch (error) {
+      console.error("Error posting to mural:", error);
+    }
+  };
+
+  let tabs: { id: SubTab; label: string; icon: any }[] = [
     { id: 'geral', label: 'Geral', icon: ImageIcon },
     { id: 'familiares-visitantes', label: 'Familiares e Visitantes', icon: Users },
     { id: 'financeiro', label: 'Financeiro', icon: DollarSign },
     { id: 'itens', label: 'Itens Pessoais', icon: Package },
     { id: 'prontuario', label: 'Prontuário Multidisciplinar', icon: FileText },
+    { id: 'prontuario-medico', label: 'Prontuário Clínico', icon: Stethoscope },
+    { id: 'medicamentos', label: 'Medicamentos', icon: Pill },
     { id: 'pia', label: 'PIA', icon: ClipboardList },
   ];
+
+  if (session?.accessLevel === 'psicologia' || session?.accessLevel === 'terapeuta_ocupacional' || session?.accessLevel === 'fisioterapeuta' || session?.accessLevel === 'nutricionista') {
+    tabs = tabs.filter(t => t.id !== 'financeiro' && t.id !== 'itens');
+  }
 
   // Ordem de precedência: Setup -> Login -> App
   if (view === 'setup') {
@@ -283,8 +327,11 @@ const App: React.FC = () => {
       councilInfo={councilInfo}
       logoUrl={settings?.logoUrl}
       username={session?.username}
-      institutionId={session?.cnpj}
+      institutionId={session?.institutionId}
+      cnpj={session?.cnpj}
+      userId={session?.id}
       onLogout={handleLogout}
+      accessLevel={session?.accessLevel}
     >
       {activeRoute === AppRoute.RESIDENTS && (
         <div className="space-y-6">
@@ -320,6 +367,8 @@ const App: React.FC = () => {
               activeSubTab={activeSubTab}
               onAdd={handleAddResident} 
               onEdit={handleEditResident} 
+              onSave={handleSaveResident}
+              onDelete={handleDeleteResident}
               onBulkSave={handleBulkSaveResidents}
             />
           )}
@@ -334,7 +383,7 @@ const App: React.FC = () => {
           onDelete={handleDeleteCandidate}
           residents={residents}
           settings={settings}
-          onAdmit={(candidate) => {
+          onAdmit={async (candidate) => {
             const admissionDate = new Date().toISOString().split('T')[0];
             const newResId = Date.now().toString();
             const newRes: Resident = {
@@ -359,35 +408,67 @@ const App: React.FC = () => {
                medicalStatus: candidate.medicalStatus,
                integrationDate: candidate.integrationDate,
                integrationReport: candidate.integrationReport,
-               interview: candidate.interview
+               interview: candidate.interview,
+               per: candidate.nursingScreening ? {
+                 lastUpdated: new Date().toISOString(),
+                 nursingAdmissionSummary: `Triagem realizada por ${candidate.nursingScreening.professionalName || 'não informado'} em ${new Date(candidate.nursingScreening.date).toLocaleDateString('pt-BR')}.`,
+                 vitalSignsHistory: [{
+                   date: candidate.nursingScreening.date,
+                   ...candidate.nursingScreening.vitalSigns
+                 }],
+                 diagnoses: candidate.nursingScreening.clinicalHistory.comorbidities,
+                 allergies: candidate.nursingScreening.clinicalHistory.allergies,
+                 clinicalHistory: candidate.nursingScreening.clinicalHistory.medications,
+                 functionalStatus: {
+                   mobility: candidate.nursingScreening.functionalAssessment.mobility,
+                   continence: candidate.nursingScreening.functionalAssessment.continence,
+                   consciousness: candidate.nursingScreening.functionalAssessment.consciousness,
+                   dependencyLevel: candidate.nursingScreening.functionalAssessment.dependencyLevel
+                 },
+                 surgeryHistory: candidate.nursingScreening.clinicalHistory.surgeries,
+                 habits: candidate.nursingScreening.clinicalHistory.habits,
+                 currentMedications: candidate.nursingScreening.clinicalHistory.medications,
+                 healthSupport: {
+                   susCard: candidate.nursingScreening.healthSupport.susCard,
+                   ubs: candidate.nursingScreening.healthSupport.referenceUBS,
+                   doctor: candidate.nursingScreening.healthSupport.referenceDoctor
+                 }
+               } : undefined
             };
-            handleSaveResident(newRes);
-            handleSaveCandidate({ ...candidate, stage: 'acolhido', admissionDate, residentId: newResId });
+            await handleSaveResident(newRes);
+            await handleSaveCandidate({ ...candidate, stage: 'acolhido', admissionDate, residentId: newResId });
+            
+            // Post notification to mural
+            handlePostToMural({
+              author: 'Sistema',
+              text: `NOVO RESIDENTE: ${newRes.name} foi admitido(a) hoje.`
+            });
           }}
         />
       )}
 
       {activeRoute === AppRoute.SAUDE_CUIDADOS && (
-        <div className="bg-white p-20 rounded-2xl border border-gray-200 shadow-sm flex flex-col items-center justify-center text-center">
-          <HeartPulse size={48} className="text-gray-300 mb-4" />
-          <h2 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">Saúde e Cuidados</h2>
-          <p className="text-gray-500 font-bold uppercase mt-2">Módulo em desenvolvimento</p>
-        </div>
+        <HealthCareModule 
+          residents={residents} 
+          onSaveResident={handleSaveResident} 
+          onPostToMural={handlePostToMural}
+        />
       )}
 
       {activeRoute === AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES && (
         <MultidisciplinaryModule 
           residents={residents} 
           onSaveResident={handleSaveResident} 
+          accessLevel={session?.accessLevel}
+          onPostToMural={handlePostToMural}
         />
       )}
 
       {activeRoute === AppRoute.CONSULTAS_MEDICAS && (
-        <div className="bg-white p-20 rounded-2xl border border-gray-200 shadow-sm flex flex-col items-center justify-center text-center">
-          <Stethoscope size={48} className="text-gray-300 mb-4" />
-          <h2 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">Consulta Médica</h2>
-          <p className="text-gray-500 font-bold uppercase mt-2">Módulo em desenvolvimento</p>
-        </div>
+        <MedicalModule 
+          residents={residents}
+          onSaveResident={handleSaveResident}
+        />
       )}
 
       {activeRoute === AppRoute.AMENDMENTS && session && (
@@ -396,9 +477,11 @@ const App: React.FC = () => {
 
       {activeRoute === AppRoute.SETTINGS && session && (
         <SettingsModule 
-          institutionId={session.institutionId!} 
+          institutionId={session.institutionId || session.cnpj} 
           onLogout={handleLogout} 
           onSettingsChange={(newSettings) => setSettings(newSettings)}
+          accessLevel={session.accessLevel}
+          currentUserId={session.id}
         />
       )}
     </Layout>

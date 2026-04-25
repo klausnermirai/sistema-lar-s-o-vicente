@@ -37,8 +37,9 @@ import {
   Resident,
   InterviewData,
   InstitutionSettings,
+  NursingScreening,
 } from "../types";
-import { INITIAL_CANDIDATE } from "../constants";
+import { INITIAL_CANDIDATE, INITIAL_NURSING_SCREENING } from "../constants";
 
 interface ScreeningModuleProps {
   candidates: Candidate[];
@@ -327,14 +328,22 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
         </body>
       </html>
     `;
-    printWindow.document.write(html);
-    printWindow.document.close();
+      printWindow.document.write(html);
+      printWindow.document.close();
+      
+      printWindow.onload = () => {
+        printWindow.focus();
+        printWindow.print();
+      };
 
-    // Pequeno delay para carregar estilos se necessário
-    setTimeout(() => {
-      printWindow.print();
-    }, 500);
-  };
+      // Fallback
+      setTimeout(() => {
+        if (printWindow) {
+          printWindow.focus();
+          printWindow.print();
+        }
+      }, 1000);
+    };
 
   const getStageCandidates = (stage: CandidateStage) =>
     allCandidates.filter((c) => {
@@ -819,30 +828,30 @@ function SimpleAppointmentModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
-      <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden flex flex-col">
-        <div className="p-8 border-b bg-indigo-50/50 flex items-center justify-between">
+      <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="p-6 md:p-8 border-b bg-indigo-50/50 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-xl border border-indigo-100">
+            <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-xl border border-indigo-100 flex-shrink-0">
               <Calendar size={24} />
             </div>
             <div>
               <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">
                 Novo Agendamento
               </h3>
-              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">
+              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest hidden sm:block">
                 Pré-Triagem / Registro Inicial
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-300 hover:text-gray-900 rounded-xl transition-all"
+            className="p-2 text-gray-300 hover:text-gray-900 rounded-xl transition-all ml-2"
           >
             <X size={24} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-10 space-y-6">
+        <form onSubmit={handleSubmit} className="p-6 md:p-10 space-y-6 overflow-y-auto flex-1">
           <div className="space-y-2">
             <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
               Nome do Idoso *
@@ -985,6 +994,7 @@ function StatusManagementModal({
 }: any) {
   const [data, setData] = React.useState<Candidate>(candidate);
   const [view, setView] = React.useState<"update" | "archive">("update");
+  const [isNursingModalOpen, setIsNursingModalOpen] = React.useState(false);
 
   const updateField = (field: keyof Candidate, value: any) => {
     setData((prev) => ({ ...prev, [field]: value }));
@@ -1215,6 +1225,22 @@ function StatusManagementModal({
                 className="w-full p-5 border border-gray-200 rounded-2xl text-xs font-medium h-32 focus:ring-2 focus:ring-teal-200 outline-none uppercase"
               />
             </div>
+
+            <div className="pt-2">
+              <button
+                onClick={() => setIsNursingModalOpen(true)}
+                className="w-full py-4 border-2 border-dashed border-teal-200 text-teal-600 rounded-2xl text-[10px] font-black uppercase hover:bg-teal-50 transition-all flex items-center justify-center gap-2"
+              >
+                <ClipboardList size={16} /> 
+                {data.nursingScreening ? 'Editar Triagem de Enfermagem' : 'Realizar Triagem de Enfermagem'}
+              </button>
+              {data.nursingScreening && (
+                <p className="text-[9px] font-bold text-teal-500 text-center mt-2 uppercase">
+                  Triagem realizada em {new Date(data.nursingScreening.date).toLocaleDateString('pt-BR')}
+                </p>
+              )}
+            </div>
+
             {data.medicalStatus === "favoravel" && (
               <button
                 onClick={() => advanceStage("integracao")}
@@ -1343,7 +1369,19 @@ function StatusManagementModal({
           `;
           printWindow.document.write(html);
           printWindow.document.close();
-          setTimeout(() => printWindow.print(), 500);
+          
+          printWindow.onload = () => {
+            printWindow.focus();
+            printWindow.print();
+          };
+
+          // Fallback para navegadores onde onload pode não disparar para document.write
+          setTimeout(() => {
+            if (printWindow) {
+              printWindow.focus();
+              printWindow.print();
+            }
+          }, 1000);
         };
 
         return (
@@ -1560,9 +1598,8 @@ function StatusManagementModal({
                     Perfil Financeiro incompatível
                   </option>
                   <option value="Falta de Vagas">Sem vagas na unidade</option>
-                  <option value="Desistência Familiar">
-                    Familiar Desistiu
-                  </option>
+                  <option value="Desistência da Família">Desistência da Família</option>
+                  <option value="Desistência do Idoso">Desistência do Idoso</option>
                   <option value="Falecimento">Falecimento</option>
                 </select>
               </div>
@@ -1592,11 +1629,64 @@ function StatusManagementModal({
           )}
         </div>
       </div>
+
+      {isNursingModalOpen && (
+        <NursingScreeningModal
+          candidateName={data.name}
+          onClose={() => setIsNursingModalOpen(false)}
+          initialData={data.nursingScreening}
+          onSave={(nursingData) => {
+            updateField("nursingScreening", nursingData);
+            setIsNursingModalOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 // --- NOVO FORMULÁRIO DE CANDIDATO (ENTREVISTA SOCIAL OFICIAL) ---
+
+// Subcomponents for CandidateForm to avoid re-rendering loss of focus
+const FormSection = ({ num, title, children }: any) => (
+  <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-8">
+    <div className="bg-gray-50/50 p-6 border-b flex items-center gap-4">
+      <div className="w-10 h-10 bg-[#004c99] text-white rounded-2xl flex items-center justify-center font-black">
+        {num}
+      </div>
+      <h3 className="text-sm font-black uppercase tracking-widest text-[#004c99]">
+        {title}
+      </h3>
+    </div>
+    <div className="p-8">{children}</div>
+  </div>
+);
+
+const FormLabel = ({ children }: any) => (
+  <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1 block">
+    {children}
+  </label>
+);
+
+const FormInput = (props: any) => (
+  <input
+    {...props}
+    className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase bg-transparent"
+  />
+);
+
+const FormChoice = ({ label, value, current, onClick }: any) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border-2 transition-all flex items-center gap-2 ${current === value ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-100 text-gray-400 hover:border-gray-200"}`}
+  >
+    <div
+      className={`w-3 h-3 rounded-full border-2 ${current === value ? "bg-white border-white" : "bg-transparent border-gray-200"}`}
+    ></div>
+    {label}
+  </button>
+);
 
 function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
   const [data, setData] = React.useState<Candidate>(candidate);
@@ -1638,48 +1728,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
     );
   };
 
-  const Section = ({ num, title, children }: any) => (
-    <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-8">
-      <div className="bg-gray-50/50 p-6 border-b flex items-center gap-4">
-        <div className="w-10 h-10 bg-[#004c99] text-white rounded-2xl flex items-center justify-center font-black">
-          {num}
-        </div>
-        <h3 className="text-sm font-black uppercase tracking-widest text-[#004c99]">
-          {title}
-        </h3>
-      </div>
-      <div className="p-8">{children}</div>
-    </div>
-  );
-
-  const Label = ({ children }: any) => (
-    <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1 block">
-      {children}
-    </label>
-  );
-
-  const Input = (props: any) => (
-    <input
-      {...props}
-      className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase bg-transparent"
-    />
-  );
-
-  const Choice = ({ label, value, current, onClick }: any) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border-2 transition-all flex items-center gap-2 ${current === value ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-100 text-gray-400 hover:border-gray-200"}`}
-    >
-      <div
-        className={`w-3 h-3 rounded-full border-2 ${current === value ? "bg-white border-white" : "bg-transparent border-gray-200"}`}
-      ></div>
-      {label}
-    </button>
-  );
-
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-in fade-in duration-500">
+    <div id="printable-area" className="space-y-6 max-w-6xl mx-auto pb-20 animate-in fade-in duration-500">
       {/* Top Sticky Bar */}
       <div className="flex items-center justify-between bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-gray-200 shadow-xl no-print sticky top-4 z-40">
         <div className="flex items-center gap-4">
@@ -1715,36 +1765,36 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
       </div>
 
       {/* Identificação */}
-      <Section num="1" title="IDENTIFICAÇÃO DO IDOSO">
+      <FormSection num="1" title="IDENTIFICAÇÃO DO IDOSO">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-x-8 gap-y-6">
           <div className="md:col-span-2">
-            <Label>Nome Completo</Label>
-            <Input
+            <FormLabel>Nome Completo</FormLabel>
+            <FormInput
               value={data.name}
               onChange={(e: any) => updateField("name", e.target.value)}
             />
           </div>
           <div>
-            <Label>Data de Nascimento</Label>
-            <Input
+            <FormLabel>Data de Nascimento</FormLabel>
+            <FormInput
               type="date"
               value={data.birthDate}
               onChange={(e: any) => updateField("birthDate", e.target.value)}
             />
           </div>
           <div>
-            <Label>Idade</Label>
-            <Input
+            <FormLabel>Idade</FormLabel>
+            <FormInput
               value={data.age}
               onChange={(e: any) => updateField("age", e.target.value)}
             />
           </div>
           <div className="md:col-span-2 flex gap-3">
             <div className="flex-1">
-              <Label>Sexo</Label>
+              <FormLabel>Sexo</FormLabel>
               <div className="flex gap-2">
                 {["Feminino", "Masculino", "Outro"].map((v) => (
-                  <Choice
+                  <FormChoice
                     key={v}
                     label={v}
                     value={v}
@@ -1756,8 +1806,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             </div>
           </div>
           <div className="md:col-span-2">
-            <Label>Estado Civil</Label>
-            <Input
+            <FormLabel>Estado Civil</FormLabel>
+            <FormInput
               value={data.maritalStatus}
               onChange={(e: any) =>
                 updateField("maritalStatus", e.target.value)
@@ -1765,78 +1815,78 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             />
           </div>
           <div>
-            <Label>RG</Label>
-            <Input
+            <FormLabel>RG</FormLabel>
+            <FormInput
               value={data.rg}
               onChange={(e: any) => updateField("rg", e.target.value)}
             />
           </div>
           <div>
-            <Label>CPF</Label>
-            <Input
+            <FormLabel>CPF</FormLabel>
+            <FormInput
               value={data.cpf}
               onChange={(e: any) => updateField("cpf", e.target.value)}
             />
           </div>
           <div className="md:col-span-3">
-            <Label>Endereço Atual</Label>
-            <Input
+            <FormLabel>Endereço Atual</FormLabel>
+            <FormInput
               value={data.address}
               onChange={(e: any) => updateField("address", e.target.value)}
             />
           </div>
           <div>
-            <Label>Telefone</Label>
-            <Input
+            <FormLabel>Telefone</FormLabel>
+            <FormInput
               value={data.phone}
               onChange={(e: any) => updateField("phone", e.target.value)}
             />
           </div>
         </div>
-      </Section>
+      </FormSection>
 
       {/* Responsável Legal */}
-      <Section num="2" title="RESPONSÁVEL LEGAL / FAMILIAR">
+      <FormSection num="2" title="RESPONSÁVEL LEGAL / FAMILIAR">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div>
-            <Label>Nome do Responsável</Label>
-            <Input
+            <FormLabel>Nome do Responsável</FormLabel>
+            <FormInput
               value={data.repName}
               onChange={(e: any) => updateField("repName", e.target.value)}
             />
           </div>
           <div>
-            <Label>Grau de Parentesco</Label>
-            <Input
+            <FormLabel>Grau de Parentesco</FormLabel>
+            <FormInput
               value={data.repKinship}
               onChange={(e: any) => updateField("repKinship", e.target.value)}
             />
           </div>
           <div>
-            <Label>Telefone</Label>
-            <Input
+            <FormLabel>Telefone</FormLabel>
+            <FormInput
               value={data.repPhone}
               onChange={(e: any) => updateField("repPhone", e.target.value)}
             />
           </div>
           <div>
-            <Label>Endereço</Label>
-            <Input
+            <FormLabel>Endereço</FormLabel>
+            <FormInput
               value={data.repAddress}
               onChange={(e: any) => updateField("repAddress", e.target.value)}
             />
           </div>
         </div>
-      </Section>
+      </FormSection>
 
       {/* Composição Familiar e Rede Apoio */}
-      <Section num="3" title="COMPOSIÇÃO FAMILIAR E REDE DE APOIO">
+      <FormSection num="3" title="COMPOSIÇÃO FAMILIAR E REDE DE APOIO">
         <div className="space-y-8">
           <div>
-            <Label>Com quem o idoso reside atualmente?</Label>
+            <FormLabel>Com quem o idoso reside atualmente?</FormLabel>
             <div className="flex flex-wrap gap-2">
               {["Sozinho", "Filhos", "Familiares", "Outros"].map((v) => (
-                <Choice
+                <FormChoice
                   key={v}
                   label={v}
                   value={v}
@@ -1849,10 +1899,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="flex items-end gap-4">
               <div className="flex-1">
-                <Label>Possui filhos?</Label>
+                <FormLabel>Possui filhos?</FormLabel>
                 <div className="flex gap-2">
                   {["Sim", "Não"].map((v) => (
-                    <Choice
+                    <FormChoice
                       key={v}
                       label={v}
                       value={v}
@@ -1863,8 +1913,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
                 </div>
               </div>
               <div className="flex-1">
-                <Label>Quantos?</Label>
-                <Input
+                <FormLabel>Quantos?</FormLabel>
+                <FormInput
                   value={data.interview.childrenCount}
                   onChange={(e: any) =>
                     updateInterview("childrenCount", e.target.value)
@@ -1873,10 +1923,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
               </div>
             </div>
             <div>
-              <Label>Existe cuidador?</Label>
+              <FormLabel>Existe cuidador?</FormLabel>
               <div className="flex flex-wrap gap-2">
                 {["Não", "Sim", "Familiar", "Profissional"].map((v) => (
-                  <Choice
+                  <FormChoice
                     key={v}
                     label={v}
                     value={v}
@@ -1889,12 +1939,12 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
             <div>
-              <Label>
+              <FormLabel>
                 Possui rede de apoio (parentes, vizinhos, serviços)?
-              </Label>
+              </FormLabel>
               <div className="flex gap-2">
                 {["Sim", "Não"].map((v) => (
-                  <Choice
+                  <FormChoice
                     key={v}
                     label={v}
                     value={v}
@@ -1905,8 +1955,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
               </div>
             </div>
             <div>
-              <Label>Quais?</Label>
-              <Input
+              <FormLabel>Quais?</FormLabel>
+              <FormInput
                 value={data.interview.supportNetworkDetails}
                 onChange={(e: any) =>
                   updateInterview("supportNetworkDetails", e.target.value)
@@ -1915,10 +1965,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             </div>
           </div>
         </div>
-      </Section>
+      </FormSection>
 
       {/* Tabela de Composição Familiar */}
-      <Section num="4" title="COMPOSIÇÃO FAMILIAR (DETALHAMENTO)">
+      <FormSection num="4" title="COMPOSIÇÃO FAMILIAR (DETALHAMENTO)">
         <div className="overflow-hidden border rounded-2xl">
           <table className="w-full text-left">
             <thead className="bg-gray-50 text-[10px] font-black uppercase text-gray-500 tracking-widest border-b">
@@ -1935,7 +1985,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
               {data.interview.familyTable.map((m: any) => (
                 <tr key={m.id} className="hover:bg-blue-50/10">
                   <td className="px-6 py-3">
-                    <Input
+                    <FormInput
                       value={m.name}
                       onChange={(e: any) =>
                         updateFamilyMember(m.id, "name", e.target.value)
@@ -1943,7 +1993,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
                     />
                   </td>
                   <td className="px-6 py-3">
-                    <Input
+                    <FormInput
                       value={m.kinship}
                       onChange={(e: any) =>
                         updateFamilyMember(m.id, "kinship", e.target.value)
@@ -1951,7 +2001,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
                     />
                   </td>
                   <td className="px-6 py-3 w-20">
-                    <Input
+                    <FormInput
                       value={m.age}
                       onChange={(e: any) =>
                         updateFamilyMember(m.id, "age", e.target.value)
@@ -1959,7 +2009,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
                     />
                   </td>
                   <td className="px-6 py-3">
-                    <Input
+                    <FormInput
                       value={m.job}
                       onChange={(e: any) =>
                         updateFamilyMember(m.id, "job", e.target.value)
@@ -1967,7 +2017,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
                     />
                   </td>
                   <td className="px-6 py-3 w-32">
-                    <Input
+                    <FormInput
                       value={m.income}
                       onChange={(e: any) =>
                         updateFamilyMember(m.id, "income", e.target.value)
@@ -1997,16 +2047,16 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             </tbody>
           </table>
         </div>
-      </Section>
+      </FormSection>
 
       {/* Moradia */}
-      <Section num="5" title="CONDIÇÕES DE MORADIA">
+      <FormSection num="5" title="CONDIÇÕES DE MORADIA">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
           <div>
-            <Label>Tipo de Moradia</Label>
+            <FormLabel>Tipo de Moradia</FormLabel>
             <div className="flex gap-2">
               {["Própria", "Alugada", "Cedida"].map((v) => (
-                <Choice
+                <FormChoice
                   key={v}
                   label={v}
                   value={v}
@@ -2017,8 +2067,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             </div>
           </div>
           <div>
-            <Label>Valor Aluguel</Label>
-            <Input
+            <FormLabel>Valor Aluguel</FormLabel>
+            <FormInput
               value={data.interview.rentValue}
               onChange={(e: any) =>
                 updateInterview("rentValue", e.target.value)
@@ -2026,16 +2076,16 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             />
           </div>
         </div>
-      </Section>
+      </FormSection>
 
       {/* Socioeconômica */}
-      <Section num="6" title="SITUAÇÃO SOCIOECONÔMICA">
+      <FormSection num="6" title="SITUAÇÃO SOCIOECONÔMICA">
         <div className="space-y-8">
           <div>
-            <Label>Fonte de renda do idoso</Label>
+            <FormLabel>Fonte de renda do idoso</FormLabel>
             <div className="flex flex-wrap gap-2">
               {["Aposentadoria", "Pensão", "BPC/LOAS", "Outros"].map((v) => (
-                <Choice
+                <FormChoice
                   key={v}
                   label={v}
                   value={v}
@@ -2047,8 +2097,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
-              <Label>Valor aproximado da renda R$</Label>
-              <Input
+              <FormLabel>Valor aproximado da renda R$</FormLabel>
+              <FormInput
                 value={data.interview.incomeValue}
                 onChange={(e: any) =>
                   updateInterview("incomeValue", e.target.value)
@@ -2057,10 +2107,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             </div>
             <div className="flex items-end gap-4">
               <div className="flex-1">
-                <Label>Possui empréstimo?</Label>
+                <FormLabel>Possui empréstimo?</FormLabel>
                 <div className="flex gap-2">
                   {["Sim", "Não"].map((v) => (
-                    <Choice
+                    <FormChoice
                       key={v}
                       label={v}
                       value={v}
@@ -2071,8 +2121,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
                 </div>
               </div>
               <div className="flex-1">
-                <Label>Valor R$</Label>
-                <Input
+                <FormLabel>Valor R$</FormLabel>
+                <FormInput
                   value={data.interview.loanValue}
                   onChange={(e: any) =>
                     updateInterview("loanValue", e.target.value)
@@ -2081,10 +2131,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
               </div>
             </div>
             <div>
-              <Label>A família possui condições de custear cuidados?</Label>
+              <FormLabel>A família possui condições de custear cuidados?</FormLabel>
               <div className="flex gap-2">
                 {["Sim", "Não", "Parcialmente"].map((v) => (
-                  <Choice
+                  <FormChoice
                     key={v}
                     label={v}
                     value={v}
@@ -2096,14 +2146,14 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             </div>
           </div>
         </div>
-      </Section>
+      </FormSection>
 
       {/* Saúde */}
-      <Section num="7" title="CONDIÇÕES DE SAÚDE">
+      <FormSection num="7" title="CONDIÇÕES DE SAÚDE">
         <div className="space-y-8">
           <div>
-            <Label>Diagnósticos médicos</Label>
-            <Input
+            <FormLabel>Diagnósticos médicos</FormLabel>
+            <FormInput
               value={data.interview.medicalDiagnoses}
               onChange={(e: any) =>
                 updateInterview("medicalDiagnoses", e.target.value)
@@ -2112,10 +2162,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
             <div>
-              <Label>Uso de medicação contínua?</Label>
+              <FormLabel>Uso de medicação contínua?</FormLabel>
               <div className="flex gap-2">
                 {["Sim", "Não"].map((v) => (
-                  <Choice
+                  <FormChoice
                     key={v}
                     label={v}
                     value={v}
@@ -2126,8 +2176,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
               </div>
             </div>
             <div>
-              <Label>Quais?</Label>
-              <Input
+              <FormLabel>Quais?</FormLabel>
+              <FormInput
                 value={data.interview.medicationDetails}
                 onChange={(e: any) =>
                   updateInterview("medicationDetails", e.target.value)
@@ -2137,10 +2187,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
             <div>
-              <Label>Possui acompanhamento médico regular?</Label>
+              <FormLabel>Possui acompanhamento médico regular?</FormLabel>
               <div className="flex gap-2">
                 {["Sim", "Não"].map((v) => (
-                  <Choice
+                  <FormChoice
                     key={v}
                     label={v}
                     value={v}
@@ -2151,10 +2201,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
               </div>
             </div>
             <div>
-              <Label>Apresenta comprometimento cognitivo?</Label>
+              <FormLabel>Apresenta comprometimento cognitivo?</FormLabel>
               <div className="flex gap-2">
                 {["Sim", "Não", "Em avaliação"].map((v) => (
-                  <Choice
+                  <FormChoice
                     key={v}
                     label={v}
                     value={v}
@@ -2165,8 +2215,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
               </div>
             </div>
             <div>
-              <Label>Quais?</Label>
-              <Input
+              <FormLabel>Quais?</FormLabel>
+              <FormInput
                 value={data.interview.cognitiveDetails}
                 onChange={(e: any) =>
                   updateInterview("cognitiveDetails", e.target.value)
@@ -2175,10 +2225,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             </div>
           </div>
         </div>
-      </Section>
+      </FormSection>
 
       {/* Grau de Dependência */}
-      <Section num="8" title="GRAU DE DEPENDÊNCIA (O idoso realiza sozinho?)">
+      <FormSection num="8" title="GRAU DE DEPENDÊNCIA (O idoso realiza sozinho?)">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
           {[
             { label: "Higiene pessoal", field: "depHygiene" },
@@ -2188,11 +2238,11 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             { label: "Medicação", field: "depMedication" },
           ].map((item) => (
             <div key={item.field} className="space-y-2">
-              <Label>{item.label}</Label>
+              <FormLabel>{item.label}</FormLabel>
               <div className="flex flex-col gap-2">
                 {item.field === "depMobility"
                   ? ["Sim", "Não", "Andador", "Cadeira de Rodas"].map((v) => (
-                      <Choice
+                      <FormChoice
                         key={v}
                         label={v}
                         value={v}
@@ -2201,7 +2251,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
                       />
                     ))
                   : ["Sim", "Não"].map((v) => (
-                      <Choice
+                      <FormChoice
                         key={v}
                         label={v}
                         value={v}
@@ -2214,10 +2264,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
           ))}
         </div>
         <div className="mt-10 pt-6 border-t border-dashed border-gray-100 flex items-center gap-6">
-          <Label>Necessita de cuidador em tempo integral?</Label>
+          <FormLabel>Necessita de cuidador em tempo integral?</FormLabel>
           <div className="flex gap-2">
             {["Sim", "Não"].map((v) => (
-              <Choice
+              <FormChoice
                 key={v}
                 label={v}
                 value={v}
@@ -2227,17 +2277,17 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             ))}
           </div>
         </div>
-      </Section>
+      </FormSection>
 
       {/* Psicossociais */}
-      <Section num="9" title="ASPECTOS PSICOSSOCIAIS">
+      <FormSection num="9" title="ASPECTOS PSICOSSOCIAIS">
         <div className="space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
             <div>
-              <Label>Há conflitos familiares?</Label>
+              <FormLabel>Há conflitos familiares?</FormLabel>
               <div className="flex gap-2">
                 {["Sim", "Não"].map((v) => (
-                  <Choice
+                  <FormChoice
                     key={v}
                     label={v}
                     value={v}
@@ -2248,8 +2298,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
               </div>
             </div>
             <div>
-              <Label>Quais?</Label>
-              <Input
+              <FormLabel>Quais?</FormLabel>
+              <FormInput
                 value={data.interview.conflictDetails}
                 onChange={(e: any) =>
                   updateInterview("conflictDetails", e.target.value)
@@ -2259,10 +2309,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div>
-              <Label>O idoso concorda com o ingresso na ILPI?</Label>
+              <FormLabel>O idoso concorda com o ingresso na ILPI?</FormLabel>
               <div className="flex gap-2">
                 {["Sim", "Não", "Parcialmente"].map((v) => (
-                  <Choice
+                  <FormChoice
                     key={v}
                     label={v}
                     value={v}
@@ -2273,10 +2323,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
               </div>
             </div>
             <div>
-              <Label>A família concorda?</Label>
+              <FormLabel>A família concorda?</FormLabel>
               <div className="flex gap-2">
                 {["Sim", "Não"].map((v) => (
-                  <Choice
+                  <FormChoice
                     key={v}
                     label={v}
                     value={v}
@@ -2288,27 +2338,568 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             </div>
           </div>
         </div>
-      </Section>
+      </FormSection>
 
       {/* Motivo Solicitação */}
-      <Section num="10" title="MOTIVO DA SOLICITAÇÃO DO ACOLHIMENTO">
+      <FormSection num="10" title="MOTIVO DA SOLICITAÇÃO DO ACOLHIMENTO">
         <textarea
           value={data.interview.requestReason}
           onChange={(e) => updateInterview("requestReason", e.target.value)}
           placeholder="Descreva detalhadamente o motivo do pedido..."
           className="w-full p-8 border border-gray-100 rounded-2xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all h-60 outline-none leading-relaxed"
         />
-      </Section>
+      </FormSection>
 
       {/* Parecer Social */}
-      <Section num="11" title="PARECER SOCIAL">
+      <FormSection num="11" title="PARECER SOCIAL">
         <textarea
           value={data.interview.socialAnalysis}
           onChange={(e) => updateInterview("socialAnalysis", e.target.value)}
           placeholder="Parecer técnico da Assistente Social..."
           className="w-full p-8 border-l-8 border-l-[#004c99] border-y border-r border-gray-100 rounded-2xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all h-60 outline-none leading-relaxed"
         />
-      </Section>
+      </FormSection>
+    </div>
+  );
+}
+
+// --- MODAL DE TRIAGEM DE ENFERMAGEM ---
+
+interface NursingScreeningModalProps {
+  onClose: () => void;
+  onSave: (data: NursingScreening) => void;
+  initialData?: NursingScreening;
+  candidateName: string;
+}
+
+function NursingScreeningModal({ onClose, onSave, initialData, candidateName }: NursingScreeningModalProps) {
+  const [formData, setFormData] = React.useState<NursingScreening>(initialData || INITIAL_NURSING_SCREENING);
+
+  const handleComorbidityToggle = (item: string) => {
+    const current = formData.clinicalHistory.comorbidities || [];
+    if (current.includes(item)) {
+      setFormData({
+        ...formData,
+        clinicalHistory: {
+          ...formData.clinicalHistory,
+          comorbidities: current.filter(c => c !== item)
+        }
+      });
+    } else {
+      setFormData({
+        ...formData,
+        clinicalHistory: {
+          ...formData.clinicalHistory,
+          comorbidities: [...current, item]
+        }
+      });
+    }
+  };
+
+  const handleCommunicationToggle = (item: string) => {
+    const current = formData.functionalAssessment.communication || [];
+    if (current.includes(item)) {
+      setFormData({
+        ...formData,
+        functionalAssessment: {
+          ...formData.functionalAssessment,
+          communication: current.filter(c => c !== item)
+        }
+      });
+    } else {
+      setFormData({
+        ...formData,
+        functionalAssessment: {
+          ...formData.functionalAssessment,
+          communication: [...current, item]
+        }
+      });
+    }
+  };
+
+  const handleBenefitToggle = (item: string) => {
+    const current = formData.healthSupport.activeBenefits || [];
+    if (current.includes(item)) {
+      setFormData({
+        ...formData,
+        healthSupport: {
+          ...formData.healthSupport,
+          activeBenefits: current.filter(c => c !== item)
+        }
+      });
+    } else {
+      setFormData({
+        ...formData,
+        healthSupport: {
+          ...formData.healthSupport,
+          activeBenefits: [...current, item]
+        }
+      });
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[60] flex items-center justify-center p-4 animate-in fade-in duration-300">
+      <div className="bg-white w-full max-w-4xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
+        <div className="p-8 border-b bg-[#004c99] text-white flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+              <HeartPulse size={24} />
+            </div>
+            <div>
+              <h3 className="text-xl font-black uppercase tracking-tighter">
+                Triagem Prévia de Enfermagem
+              </h3>
+              <p className="text-[10px] font-bold uppercase opacity-80">
+                Candidato(a): {candidateName}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-3 hover:bg-white/10 rounded-2xl transition-all"
+          >
+            <X size={28} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-8 space-y-10 bg-gray-50/30">
+          {/* 1. Sinais Vitais e Biometria */}
+          <section className="space-y-6">
+            <div className="flex items-center gap-3 border-b pb-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs">1</div>
+              <h4 className="text-sm font-black uppercase text-gray-800">Sinais Vitais e Biometria</h4>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+              <div>
+                <FormLabel>Pressão Arterial (Sis)</FormLabel>
+                <FormInput 
+                  type="number"
+                  placeholder="Sis"
+                  value={formData.vitalSigns.paSystolic}
+                  onChange={(e: any) => setFormData({...formData, vitalSigns: {...formData.vitalSigns, paSystolic: Number(e.target.value)}})}
+                />
+              </div>
+              <div>
+                <FormLabel>Pressão Arterial (Dia)</FormLabel>
+                <FormInput 
+                  type="number"
+                  placeholder="Dia"
+                  value={formData.vitalSigns.paDiastolic}
+                  onChange={(e: any) => setFormData({...formData, vitalSigns: {...formData.vitalSigns, paDiastolic: Number(e.target.value)}})}
+                />
+              </div>
+              <div>
+                <FormLabel>Freq. Cardíaca (BPM)</FormLabel>
+                <FormInput 
+                  type="number"
+                  placeholder="BPM"
+                  value={formData.vitalSigns.fc}
+                  onChange={(e: any) => setFormData({...formData, vitalSigns: {...formData.vitalSigns, fc: Number(e.target.value)}})}
+                />
+              </div>
+              <div>
+                <FormLabel>Temp. (°C)</FormLabel>
+                <FormInput 
+                  type="number"
+                  step="0.1"
+                  placeholder="°C"
+                  value={formData.vitalSigns.temperature}
+                  onChange={(e: any) => setFormData({...formData, vitalSigns: {...formData.vitalSigns, temperature: Number(e.target.value)}})}
+                />
+              </div>
+              <div>
+                <FormLabel>Sat. O2 (%)</FormLabel>
+                <FormInput 
+                  type="number"
+                  placeholder="%"
+                  value={formData.vitalSigns.spo2}
+                  onChange={(e: any) => setFormData({...formData, vitalSigns: {...formData.vitalSigns, spo2: Number(e.target.value)}})}
+                />
+              </div>
+              <div>
+                <FormLabel>Glicemia (Valor)</FormLabel>
+                <FormInput 
+                  type="number"
+                  placeholder="mg/dL"
+                  value={formData.vitalSigns.hgtValue}
+                  onChange={(e: any) => setFormData({...formData, vitalSigns: {...formData.vitalSigns, hgtValue: Number(e.target.value)}})}
+                />
+              </div>
+              <div className="col-span-1 md:col-span-2">
+                <FormLabel>Tipo de Glicemia</FormLabel>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setFormData({...formData, vitalSigns: {...formData.vitalSigns, hgtType: 'jejum'}})}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${formData.vitalSigns.hgtType === 'jejum' ? 'bg-[#004c99] text-white' : 'bg-gray-100 text-gray-500'}`}
+                  >
+                    Jejum
+                  </button>
+                  <button 
+                    onClick={() => setFormData({...formData, vitalSigns: {...formData.vitalSigns, hgtType: 'pos-prandial'}})}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${formData.vitalSigns.hgtType === 'pos-prandial' ? 'bg-[#004c99] text-white' : 'bg-gray-100 text-gray-500'}`}
+                  >
+                    Pós-prandial
+                  </button>
+                </div>
+              </div>
+              <div>
+                <FormLabel>Peso (Kg)</FormLabel>
+                <FormInput 
+                  placeholder="Kg"
+                  value={formData.vitalSigns.weight}
+                  onChange={(e: any) => setFormData({...formData, vitalSigns: {...formData.vitalSigns, weight: e.target.value}})}
+                />
+              </div>
+              <div>
+                <FormLabel>Altura (cm)</FormLabel>
+                <FormInput 
+                  placeholder="cm"
+                  value={formData.vitalSigns.height}
+                  onChange={(e: any) => setFormData({...formData, vitalSigns: {...formData.vitalSigns, height: e.target.value}})}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* 2. Anamnese e Histórico Clínico */}
+          <section className="space-y-6">
+            <div className="flex items-center gap-3 border-b pb-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs">2</div>
+              <h4 className="text-sm font-black uppercase text-gray-800">Anamnese e Histórico Clínico</h4>
+            </div>
+            <div className="grid grid-cols-1 gap-6">
+              <div className="p-4 bg-orange-50 border border-orange-100 rounded-2xl">
+                <FormLabel>Alergias</FormLabel>
+                <textarea 
+                  className="w-full bg-transparent outline-none text-xs font-black uppercase min-h-[60px]"
+                  placeholder="Descreva alergias conhecidas..."
+                  value={formData.clinicalHistory.allergies}
+                  onChange={(e) => setFormData({...formData, clinicalHistory: {...formData.clinicalHistory, allergies: e.target.value}})}
+                />
+              </div>
+              <div>
+                <FormLabel>Diagnósticos Prévios (Comorbidades)</FormLabel>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {['Hipertensão', 'Diabetes', 'Alzheimer', 'Parkinson', 'Cardiopatias', 'Sequela de AVC', 'Outros'].map(item => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => handleComorbidityToggle(item)}
+                      className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase border-2 transition-all ${formData.clinicalHistory.comorbidities?.includes(item) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-100 text-gray-400"}`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+                {formData.clinicalHistory.comorbidities?.includes('Outros') && (
+                  <div className="mt-3">
+                    <FormInput 
+                      placeholder="Especifique outras comorbidades..." 
+                      value={formData.clinicalHistory.otherComorbidities}
+                      onChange={(e: any) => setFormData({...formData, clinicalHistory: {...formData.clinicalHistory, otherComorbidities: e.target.value}})}
+                    />
+                  </div>
+                )}
+              </div>
+              <div>
+                <FormLabel>Cirurgias Anteriores</FormLabel>
+                <FormInput 
+                  placeholder="Liste cirurgias realizadas..."
+                  value={formData.clinicalHistory.surgeries}
+                  onChange={(e: any) => setFormData({...formData, clinicalHistory: {...formData.clinicalHistory, surgeries: e.target.value}})}
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="p-4 bg-white border border-gray-100 rounded-2xl">
+                  <FormLabel>Tabagismo</FormLabel>
+                  <div className="flex gap-4 mt-2">
+                    <FormChoice label="Sim" value={true} current={formData.clinicalHistory.habits.smoking} onClick={() => setFormData({...formData, clinicalHistory: {...formData.clinicalHistory, habits: {...formData.clinicalHistory.habits, smoking: true}}})} />
+                    <FormChoice label="Não" value={false} current={formData.clinicalHistory.habits.smoking} onClick={() => setFormData({...formData, clinicalHistory: {...formData.clinicalHistory, habits: {...formData.clinicalHistory.habits, smoking: false}}})} />
+                  </div>
+                  {formData.clinicalHistory.habits.smoking && (
+                    <div className="mt-2">
+                      <FormInput placeholder="Observação..." value={formData.clinicalHistory.habits.smokingDetails} onChange={(e: any) => setFormData({...formData, clinicalHistory: {...formData.clinicalHistory, habits: {...formData.clinicalHistory.habits, smokingDetails: e.target.value}}})} />
+                    </div>
+                  )}
+                </div>
+                <div className="p-4 bg-white border border-gray-100 rounded-2xl">
+                  <FormLabel>Etilismo</FormLabel>
+                  <div className="flex gap-4 mt-2">
+                    <FormChoice label="Sim" value={true} current={formData.clinicalHistory.habits.alcohol} onClick={() => setFormData({...formData, clinicalHistory: {...formData.clinicalHistory, habits: {...formData.clinicalHistory.habits, alcohol: true}}})} />
+                    <FormChoice label="Não" value={false} current={formData.clinicalHistory.habits.alcohol} onClick={() => setFormData({...formData, clinicalHistory: {...formData.clinicalHistory, habits: {...formData.clinicalHistory.habits, alcohol: false}}})} />
+                  </div>
+                  {formData.clinicalHistory.habits.alcohol && (
+                    <div className="mt-2">
+                      <FormInput placeholder="Observação..." value={formData.clinicalHistory.habits.alcoholDetails} onChange={(e: any) => setFormData({...formData, clinicalHistory: {...formData.clinicalHistory, habits: {...formData.clinicalHistory.habits, alcoholDetails: e.target.value}}})} />
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div>
+                <FormLabel>Medicamentos em Uso (Remédios, Dosagens e Horários)</FormLabel>
+                <textarea 
+                  className="w-full p-4 border border-gray-100 rounded-2xl outline-none text-xs font-black uppercase min-h-[100px] bg-white"
+                  placeholder="Liste os medicamentos que o candidato já toma em casa..."
+                  value={formData.clinicalHistory.medications}
+                  onChange={(e) => setFormData({...formData, clinicalHistory: {...formData.clinicalHistory, medications: e.target.value}})}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* 3. Avaliação Funcional e Cognitiva */}
+          <section className="space-y-6">
+            <div className="flex items-center gap-3 border-b pb-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs">3</div>
+              <h4 className="text-sm font-black uppercase text-gray-800">Avaliação Funcional e Cognitiva</h4>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                <FormLabel>Mobilidade</FormLabel>
+                <div className="flex flex-col gap-2 mt-2">
+                  {[
+                    { label: 'Deambula sem auxílio', value: 'deambula' },
+                    { label: 'Usa dispositivo/bengala', value: 'dispositivo' },
+                    { label: 'Cadeirante', value: 'cadeirante' },
+                    { label: 'Acamado', value: 'acamado' }
+                  ].map(opt => (
+                    <FormChoice 
+                      key={opt.value} 
+                      label={opt.label} 
+                      value={opt.value} 
+                      current={formData.functionalAssessment.mobility} 
+                      onClick={() => setFormData({...formData, functionalAssessment: {...formData.functionalAssessment, mobility: opt.value as any}})} 
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <FormLabel>Continência</FormLabel>
+                <div className="flex flex-col gap-2 mt-2">
+                  {[
+                    { label: 'Continente', value: 'continente' },
+                    { label: 'Incontinência Urinária', value: 'incontinencia_urinaria' },
+                    { label: 'Incontinência Fecal', value: 'incontinencia_fecal' },
+                    { label: 'Uso contínuo de fraldas', value: 'fraldas' }
+                  ].map(opt => (
+                    <FormChoice 
+                      key={opt.value} 
+                      label={opt.label} 
+                      value={opt.value} 
+                      current={formData.functionalAssessment.continence} 
+                      onClick={() => setFormData({...formData, functionalAssessment: {...formData.functionalAssessment, continence: opt.value as any}})} 
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <FormLabel>Nível de Consciência</FormLabel>
+                <div className="flex gap-2 flex-wrap mt-2">
+                  {[
+                    { label: 'Lúcido/Orientado', value: 'lucido' },
+                    { label: 'Confuso', value: 'confuso' },
+                    { label: 'Letárgico', value: 'letargico' }
+                  ].map(opt => (
+                    <FormChoice 
+                      key={opt.value} 
+                      label={opt.label} 
+                      value={opt.value} 
+                      current={formData.functionalAssessment.consciousness} 
+                      onClick={() => setFormData({...formData, functionalAssessment: {...formData.functionalAssessment, consciousness: opt.value as any}})} 
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <FormLabel>Comunicação (Checklist)</FormLabel>
+                <div className="flex gap-2 flex-wrap mt-2">
+                  {['Verbaliza bem', 'Apresenta déficit auditivo', 'Apresenta déficit visual'].map(item => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => handleCommunicationToggle(item)}
+                      className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase border-2 transition-all ${formData.functionalAssessment.communication?.includes(item) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-100 text-gray-400"}`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <FormLabel>Grau de Dependência (Base Katz)</FormLabel>
+                <div className="flex gap-6 mt-2">
+                  {[
+                    { label: 'Independente', value: 'independente' },
+                    { label: 'Dependência Parcial', value: 'parcial' },
+                    { label: 'Dependência Total', value: 'total' }
+                  ].map(opt => (
+                    <FormChoice 
+                      key={opt.value} 
+                      label={opt.label} 
+                      value={opt.value} 
+                      current={formData.functionalAssessment.dependencyLevel} 
+                      onClick={() => setFormData({...formData, functionalAssessment: {...formData.functionalAssessment, dependencyLevel: opt.value as any}})} 
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 4. Exame Físico Simplificado */}
+          <section className="space-y-6">
+            <div className="flex items-center gap-3 border-b pb-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs">4</div>
+              <h4 className="text-sm font-black uppercase text-gray-800">Exame Físico Simplificado</h4>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                <FormLabel>Integridade da Pele</FormLabel>
+                <div className="flex flex-col gap-2 mt-2">
+                  {[
+                    { label: 'Pele íntegra', value: 'integra' },
+                    { label: 'Lesões por Pressão', value: 'lesao_pressao' },
+                    { label: 'Escoriações/Hematomas', value: 'escoriacoes_hematomas' }
+                  ].map(opt => (
+                    <FormChoice 
+                      key={opt.value} 
+                      label={opt.label} 
+                      value={opt.value} 
+                      current={formData.physicalExam.skinIntegrity} 
+                      onClick={() => setFormData({...formData, physicalExam: {...formData.physicalExam, skinIntegrity: opt.value as any}})} 
+                    />
+                  ))}
+                </div>
+                {formData.physicalExam.skinIntegrity !== 'integra' && (
+                  <div className="mt-3">
+                    <FormInput placeholder="Descreva o local da lesão..." value={formData.physicalExam.skinDetails} onChange={(e: any) => setFormData({...formData, physicalExam: {...formData.physicalExam, skinDetails: e.target.value}})} />
+                  </div>
+                )}
+              </div>
+              <div>
+                <FormLabel>Estado Nutricional / Alimentação</FormLabel>
+                <div className="flex flex-col gap-2 mt-2">
+                  {[
+                    { label: 'Boa aceitação via oral', value: 'via_oral' },
+                    { label: 'Dificuldade de deglutição/engasgos', value: 'dificuldade_degluticao' },
+                    { label: 'Uso de Sonda enteral/GTT', value: 'sonda_enteral_gtt' }
+                  ].map(opt => (
+                    <FormChoice 
+                      key={opt.value} 
+                      label={opt.label} 
+                      value={opt.value} 
+                      current={formData.physicalExam.nutritionalStatus} 
+                      onClick={() => setFormData({...formData, physicalExam: {...formData.physicalExam, nutritionalStatus: opt.value as any}})} 
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <FormLabel>Padrão de Sono</FormLabel>
+                <div className="flex gap-4 flex-wrap mt-2">
+                  {[
+                    { label: 'Dorme bem', value: 'dorme_bem' },
+                    { label: 'Agitação noturna', value: 'agitacao_noturna' },
+                    { label: 'Uso de medicação para dormir', value: 'uso_medicacao_dormir' }
+                  ].map(opt => (
+                    <FormChoice 
+                      key={opt.value} 
+                      label={opt.label} 
+                      value={opt.value} 
+                      current={formData.physicalExam.sleepPattern} 
+                      onClick={() => setFormData({...formData, physicalExam: {...formData.physicalExam, sleepPattern: opt.value as any}})} 
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 5. Rede de Apoio de Saúde (Foco SUS) */}
+          <section className="space-y-6">
+            <div className="flex items-center gap-3 border-b pb-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs">5</div>
+              <h4 className="text-sm font-black uppercase text-gray-800">Rede de Apoio de Saúde (Foco SUS)</h4>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <FormLabel>Número do Cartão SUS</FormLabel>
+                <FormInput 
+                  placeholder="000 0000 0000 0000" 
+                  value={formData.healthSupport.susCard}
+                  onChange={(e: any) => setFormData({...formData, healthSupport: {...formData.healthSupport, susCard: e.target.value}})}
+                />
+              </div>
+              <div>
+                <FormLabel>UBS / Posto de Referência</FormLabel>
+                <FormInput 
+                  placeholder="Nome da unidade..." 
+                  value={formData.healthSupport.referenceUBS}
+                  onChange={(e: any) => setFormData({...formData, healthSupport: {...formData.healthSupport, referenceUBS: e.target.value}})}
+                />
+              </div>
+              <div>
+                <FormLabel>Médico do Posto / Especialista</FormLabel>
+                <FormInput 
+                  placeholder="Nome e especialidade..." 
+                  value={formData.healthSupport.referenceDoctor}
+                  onChange={(e: any) => setFormData({...formData, healthSupport: {...formData.healthSupport, referenceDoctor: e.target.value}})}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <FormLabel>Benefícios de Saúde Ativos</FormLabel>
+                <div className="flex gap-2 flex-wrap mt-2">
+                  {['Retira fraldas pelo SUS', 'Retira medicamentos de alto custo/farmácia municipal'].map(item => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => handleBenefitToggle(item)}
+                      className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase border-2 transition-all ${formData.healthSupport.activeBenefits?.includes(item) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-100 text-gray-400"}`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="pt-10 border-t grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+              <FormLabel>Enfermeira Responsável</FormLabel>
+              <FormInput 
+                placeholder="Nome da profissional..." 
+                value={formData.professionalName}
+                onChange={(e: any) => setFormData({...formData, professionalName: e.target.value})}
+              />
+            </div>
+            <div>
+              <FormLabel>Data da Assinatura</FormLabel>
+              <FormInput 
+                type="date"
+                value={formData.signatureDate}
+                onChange={(e: any) => setFormData({...formData, signatureDate: e.target.value})}
+              />
+            </div>
+          </section>
+        </div>
+
+        <div className="p-8 border-t bg-gray-50 flex gap-4">
+          <button
+            onClick={onClose}
+            className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400 hover:bg-gray-100 rounded-2xl transition-all"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => onSave(formData)}
+            className="flex-1 py-4 bg-[#004c99] text-white rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-blue-800 transition-all flex items-center justify-center gap-3"
+          >
+            <CheckCircle2 size={18} /> Salvar Triagem
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

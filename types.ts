@@ -20,6 +20,7 @@ export interface Institution {
   capacityGeneral?: number;
   roomsMale?: number;
   roomsFemale?: number;
+  roles?: string[];
 }
 
 export interface InstitutionSettings {
@@ -42,6 +43,7 @@ export interface InstitutionSettings {
   roomsMale?: number;
   roomsFemale?: number;
   logoUrl?: string;
+  roles?: string[];
 }
 
 export interface AssistedFamily {
@@ -70,8 +72,8 @@ export interface User {
   password?: string;
   fullName: string;
   role: string;
-  accessLevel: 'gerencial' | 'equipe';
-  institutionType?: InstitutionType; // Cache for easy access
+  accessLevel: 'administrador' | 'assistente_social' | 'psicologia' | 'terapeuta_ocupacional' | 'fisioterapeuta' | 'nutricionista' | 'medico';
+  institutionType?: InstitutionType;
 }
 
 export interface Relative {
@@ -129,10 +131,16 @@ export interface HealthUpdate {
 export interface Medication {
   id: string;
   name: string;
-  dosage: string;
-  frequency: string;
-  stock: number;
-  lastUpdate: string;
+  concentration: string;
+  dose: string;
+  frequency: number; // vezes ao dia
+  times: string[]; // horários (ex: ["08:00", "20:00"])
+  type: 'continuo' | 'temporario';
+  durationDays?: number;
+  startDate: string;
+  observation?: string;
+  stock?: number;
+  lastUpdate?: string;
 }
 
 export type CandidateStage = 
@@ -201,6 +209,68 @@ export interface InterviewData {
   socialAnalysis: string;
 }
 
+export interface NursingScreening {
+  id?: string;
+  date: string;
+  
+  // 1. Sinais Vitais e Biometria
+  vitalSigns: {
+    paSystolic: number;
+    paDiastolic: number;
+    fc: number;
+    fr: number;
+    temperature: number;
+    spo2: number;
+    hgtValue: number;
+    hgtType: 'jejum' | 'pos-prandial';
+    weight: string;
+    height: string;
+  };
+
+  // 2. Anamnese e Histórico Clínico
+  clinicalHistory: {
+    allergies: string;
+    comorbidities: string[]; // Hipertensão, Diabetes, Alzheimer, Parkinson, Cardiopatias, Sequela de AVC, Outros
+    otherComorbidities?: string;
+    surgeries: string;
+    habits: {
+      smoking: boolean;
+      smokingDetails?: string;
+      alcohol: boolean;
+      alcoholDetails?: string;
+    };
+    medications: string; // Listar remédios, dosagens e horários
+  };
+
+  // 3. Avaliação Funcional e Cognitiva
+  functionalAssessment: {
+    mobility: 'deambula' | 'dispositivo' | 'cadeirante' | 'acamado';
+    continence: 'continente' | 'incontinencia_urinaria' | 'incontinencia_fecal' | 'fraldas';
+    consciousness: 'lucido' | 'confuso' | 'letargico';
+    communication: string[]; // Verbaliza bem, Apresenta déficit auditivo, Apresenta déficit visual
+    dependencyLevel: 'independente' | 'parcial' | 'total'; // Base Katz
+  };
+
+  // 4. Exame Físico Simplificado
+  physicalExam: {
+    skinIntegrity: 'integra' | 'lesao_pressao' | 'escoriacoes_hematomas';
+    skinDetails?: string;
+    nutritionalStatus: 'via_oral' | 'dificuldade_degluticao' | 'sonda_enteral_gtt';
+    sleepPattern: 'dorme_bem' | 'agitacao_noturna' | 'uso_medicacao_dormir';
+  };
+
+  // 5. Rede de Apoio de Saúde (Foco SUS)
+  healthSupport: {
+    susCard: string;
+    referenceUBS: string;
+    referenceDoctor: string;
+    activeBenefits: string[]; // Retira fraldas pelo SUS, Retira medicamentos de alto custo/farmácia municipal
+  };
+
+  professionalName: string;
+  signatureDate: string;
+}
+
 export interface Candidate {
   id: string;
   stage: CandidateStage;
@@ -246,6 +316,7 @@ export interface Candidate {
 
   // NOVA FICHA OFICIAL
   interview: InterviewData;
+  nursingScreening?: NursingScreening;
   
   createdAt: string;
   residentId?: string;
@@ -317,6 +388,7 @@ export interface NutritionalAttendance {
   reason: string;
   notes: string;
   muralNotes?: string;
+  notifyFamily?: boolean;
   signature: string;
 }
 
@@ -360,6 +432,7 @@ export interface PsychologicalAttendance {
   muralNotes?: string;
   privateNotes?: string;
   needsTeamReport: boolean;
+  notifyFamily?: boolean;
   signature: string;
 }
 
@@ -408,6 +481,7 @@ export interface OccupationalTherapyAttendance {
   attendanceEvolution: string;
   prontuarioNotes: string;
   muralNotes: string;
+  notifyFamily?: boolean;
   signature: string;
 }
 
@@ -415,6 +489,40 @@ export interface OccupationalTherapyData {
   initialAssessment?: OccupationalTherapyAssessment;
   evolutions?: OccupationalTherapyEvolution[];
   attendances?: OccupationalTherapyAttendance[];
+  groupActivities?: GroupActivity[];
+}
+
+export interface PhysiotherapyAssessment {
+  date: string;
+  motorAssessment: string;
+  respiratoryAssessment: string;
+  kineticFunctionalDiagnosis: string;
+  objectives: string;
+  conduct: string;
+}
+
+export interface PhysiotherapyEvolution {
+  id: string;
+  date: string;
+  description: string;
+  treatmentResponse: string;
+}
+
+export interface PhysiotherapyAttendance {
+  id: string;
+  dateTime: string;
+  attendanceType: string;
+  attendanceEvolution: string;
+  prontuarioNotes: string;
+  muralNotes: string;
+  notifyFamily?: boolean;
+  signature: string;
+}
+
+export interface PhysiotherapyData {
+  initialAssessment?: PhysiotherapyAssessment;
+  evolutions?: PhysiotherapyEvolution[];
+  attendances?: PhysiotherapyAttendance[];
   groupActivities?: GroupActivity[];
 }
 
@@ -441,11 +549,13 @@ export interface PiaData {
     psychology: string;
     medical: string;
     occupationalTherapy?: string;
+    physiotherapy?: string;
   };
   goalsStatus: {
     nutrition: PiaGoalStatus;
     psychology: PiaGoalStatus;
     occupationalTherapy?: PiaGoalStatus;
+    physiotherapy?: PiaGoalStatus;
   };
   revisions: PiaRevision[];
 }
@@ -525,6 +635,12 @@ export interface Resident {
   conferenciaId?: string;
   institutionId: string;
 
+  // Arquivamento
+  isArchived?: boolean;
+  archivingDate?: string;
+  archivingReason?: 'inadaptacao' | 'quebra_regras' | 'desistencia' | 'vontade_familiar' | 'falecimento';
+  archivingNotes?: string;
+
   // Campos importados da Triagem
   sourceCandidateId?: string;
   priority?: string;
@@ -537,7 +653,115 @@ export interface Resident {
   nutrition?: NutritionData;
   psychology?: PsychologyData;
   occupationalTherapy?: OccupationalTherapyData;
+  physiotherapy?: PhysiotherapyData;
   pia?: PiaData;
+  per?: PerData;
+  dailyRoutines?: DailyRoutineLog[];
+  appointments?: Appointment[];
+  incidents?: IncidentReport[];
+}
+
+export interface IncidentReport {
+  id: string;
+  timestamp: number;
+  residentIds: string[];
+  type: 'queda' | 'comportamental' | 'clinica' | 'outros';
+  description: string;
+  conduct: string;
+  shareOnMural: boolean;
+  professionalName: string;
+}
+
+export interface ShiftHandover {
+  id: string;
+  timestamp: number;
+  shift: 'manha' | 'tarde' | 'noite';
+  summary: string;
+  pendingTasks: string;
+  shareOnMural: boolean;
+  professionalName: string;
+}
+
+export interface VitalSignEntry {
+  id: string;
+  date: string;
+  paSystolic: number;
+  paDiastolic: number;
+  fc: number;
+  fr: number;
+  temperature: number;
+  spo2: number;
+  hgtValue: number;
+  hgtType: 'jejum' | 'pos-prandial';
+  weight: string;
+  height: string;
+  professionalName?: string;
+}
+
+export interface ClinicalProgressEntry {
+  id: string;
+  date: string;
+  professionalName: string;
+  crm?: string;
+  note: string;
+}
+
+export interface PerData {
+  lastUpdated: string;
+  nursingAdmissionSummary?: string; 
+  vitalSignsHistory: VitalSignEntry[];
+  clinicalProgress?: ClinicalProgressEntry[];
+  diagnoses: string[];
+  allergies: string;
+  clinicalHistory: string;
+  functionalStatus: {
+    mobility: string;
+    continence: string;
+    consciousness: string;
+    dependencyLevel: string;
+  };
+  surgeryHistory?: string;
+  habits?: {
+    smoking: boolean;
+    alcohol: boolean;
+  };
+  currentMedications?: string;
+  healthSupport?: {
+    susCard: string;
+    ubs: string;
+    doctor?: string;
+  };
+  dailyRoutines?: DailyRoutineLog[];
+}
+
+export interface DailyRoutineLog {
+  id: string;
+  taskId: string;
+  taskName: string;
+  status: 'concluido' | 'nao_concluido' | 'ausente';
+  date: string; // ISO Date YYYY-MM-DD
+  timestamp: string;
+  performedBy: string;
+  observation?: string;
+}
+
+export interface Companion {
+  id: string;
+  name: string;
+  role: 'tecnico' | 'cuidador' | 'acompanhante';
+  phone: string;
+}
+
+export interface Appointment {
+  id: string;
+  date: string;
+  time: string;
+  location: string;
+  type: 'consulta' | 'retorno' | 'exame';
+  companionId?: string;
+  status: 'agendado' | 'realizado' | 'cancelado';
+  notes?: string;
+  notifyFamily?: boolean;
 }
 
 export interface MuralMessage {
@@ -576,4 +800,4 @@ export enum AppRoute {
   AMENDMENTS = 'amendments'
 }
 
-export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'prontuario' | 'pia';
+export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'prontuario' | 'pia' | 'prontuario-medico' | 'medicamentos';

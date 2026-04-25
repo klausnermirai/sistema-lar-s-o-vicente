@@ -1,26 +1,18 @@
 
 import React, { useState, ReactNode, useEffect } from 'react';
 import { 
-  BarChart3, 
-  Calendar, 
   ChevronRight, 
   CircleAlert, 
   CircleCheck, 
   Download, 
-  Filter, 
   Info, 
   LayoutDashboard, 
-  LogOut,
-  MoreVertical, 
   Search,
   Settings,
   ShieldCheck,
-  User,
-  UserPlus,
   Trash2,
   Wallet,
   Database,
-  Upload,
   X,
   Plus
 } from 'lucide-react';
@@ -33,8 +25,7 @@ import {
   deleteAmendmentCategory,
   fetchAmendmentGrants,
   saveAmendmentGrant,
-  deleteAmendmentGrant,
-  bulkBootstrapAmendments
+  deleteAmendmentGrant
 } from '../lib/amendmentService';
 
 export interface Grant {
@@ -237,220 +228,6 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
     }
   };
 
-  const handleResetToOfficialData = async () => {
-    if (!confirm("Isso apagará todas as emendas e categorias atuais para carregar os dados oficiais. Continuar?")) return;
-
-    try {
-      const grantsToBootstrap = [
-        {
-          periodMonths: 12,
-          allocations: [{ amount: 100000, categoryId: "fotovoltaico" }],
-          accountability: "Direta com o município",
-          type: "Emenda parlamentar",
-          nature: "Investimento",
-          status: "Paga",
-          startMonth: 0,
-          name: "SPSP - T. COIMBRA (36444-4)",
-          id: "coimbra_36444",
-          color: "#84cc16",
-          totalValue: 100000
-        },
-        {
-          color: "#3b82f6",
-          totalValue: 76540.1,
-          status: "Paga",
-          nature: "Custeio",
-          startMonth: 0,
-          name: "SUB. ESTADUAL (108237-X)",
-          id: "est_108237",
-          type: "Subvenção municipal",
-          accountability: "Direta com o município",
-          allocations: [
-            { categoryId: "agua", amount: 29280 },
-            { categoryId: "gas", amount: 43200 },
-            { categoryId: "alimentos", amount: 4060.1 }
-          ],
-          periodMonths: 9
-        },
-        {
-          accountability: "Direta com o município",
-          allocations: [{ amount: 17520, categoryId: "salarios" }],
-          periodMonths: 9,
-          id: "fed_108238",
-          name: "SUB. FEDERAL (108238-8)",
-          startMonth: 0,
-          nature: "Custeio",
-          status: "Paga",
-          type: "Emenda parlamentar",
-          totalValue: 17520,
-          color: "#10b981"
-        },
-        {
-          color: "#ef4444",
-          totalValue: 18000,
-          periodMonths: 9,
-          allocations: [
-            { amount: 3000, categoryId: "combustivel" },
-            { amount: 3000, categoryId: "escritorio" },
-            { amount: 12000, categoryId: "uniformes" }
-          ],
-          accountability: "Direta com o município",
-          type: "Emenda parlamentar",
-          name: "SUB. FEDERAL (108488-7)",
-          status: "Paga",
-          nature: "Custeio",
-          startMonth: 0,
-          id: "fed_108488"
-        },
-        {
-          type: "Emenda Impositiva (vereadores)",
-          status: "Paga",
-          nature: "Custeio",
-          startMonth: 0,
-          name: "EMENDA IMPOSITIVA (34018-9)",
-          id: "imp_34018",
-          periodMonths: 9,
-          accountability: "Direta com o município",
-          allocations: [{ amount: 362500, categoryId: "salarios" }],
-          color: "#8b5cf6",
-          totalValue: 362500
-        },
-        {
-          periodMonths: 12,
-          allocations: [
-            { amount: 20000, categoryId: "juridica" },
-            { amount: 30000, categoryId: "contabeis" }
-          ],
-          accountability: "Via São Paulo Sem Papel",
-          type: "Emenda parlamentar",
-          id: "lombar_39324",
-          name: "EMENDA MIGUEL LOMBARDI (39324-X)",
-          status: "Paga",
-          nature: "Custeio",
-          startMonth: 0,
-          totalValue: 50000,
-          color: "#f43f5e"
-        },
-        {
-          id: "mun_108236",
-          name: "SUB. MUNICIPAL (108236-1)",
-          status: "Paga",
-          nature: "Custeio",
-          startMonth: 0,
-          type: "Emenda parlamentar",
-          allocations: [{ amount: 181755, categoryId: "salarios" }],
-          accountability: "Direta com o município",
-          periodMonths: 9,
-          totalValue: 181755,
-          color: "#f59e0b"
-        },
-        {
-          color: "#6366f1",
-          totalValue: 100000,
-          name: "SPSP - RAFAEL SILVA (42897-3)",
-          startMonth: 0,
-          nature: "Custeio",
-          status: "Paga",
-          id: "rafael_42897",
-          type: "Emenda parlamentar",
-          accountability: "Direta com o município",
-          allocations: [{ amount: 100000, categoryId: "salarios" }],
-          periodMonths: 12
-        },
-        {
-          color: "#06b6d4",
-          totalValue: 105000,
-          accountability: "Via São Paulo Sem Papel",
-          allocations: [
-            { amount: 19175.91, categoryId: "energia" },
-            { amount: 11394.8, categoryId: "carne" },
-            { amount: 4412.9, categoryId: "copa" },
-            { amount: 62933.34, categoryId: "limpeza" },
-            { amount: 7083.05, categoryId: "higiene" }
-          ],
-          periodMonths: 12,
-          name: "SPSP - ROGÉRIO SANTOS (42183-9)",
-          startMonth: 0,
-          status: "Paga",
-          nature: "Custeio",
-          id: "rogerio_42183",
-          type: "Emenda parlamentar"
-        }
-      ];
-      
-      await bulkBootstrapAmendments(institutionId, DEFAULT_CATEGORIES, grantsToBootstrap);
-      await loadData();
-      alert("Dados oficiais carregados com sucesso!");
-    } catch (error) {
-      console.error("Erro ao resetar dados:", error);
-      alert("Erro ao resetar dados.");
-    }
-  };
-
-  const handleCsvUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const text = e.target?.result as string;
-      if (!text) return;
-
-      try {
-        const lines = text.split('\n').filter(line => line.trim().length > 0);
-        // Skip header
-        const dataLines = lines.slice(1);
-        
-        const grantsMap: Record<string, any> = {};
-
-        dataLines.forEach(line => {
-          // simple csv split handling quotes
-          const regex = /(".*?"|[^",\s]+)(?=\s*,|\s*$)/g;
-          const parts = line.match(regex)?.map(p => p.replace(/"/g, '')) || [];
-          
-          if (parts.length < 5) return;
-
-          const [grantId, grantName, catId, catName, amount] = parts;
-          
-          if (!grantsMap[grantId]) {
-            grantsMap[grantId] = {
-              id: grantId,
-              name: grantName,
-              color: '#' + Math.floor(Math.random()*16777215).toString(16), // Random color for new ones
-              totalValue: 0,
-              periodMonths: 12, // Default
-              startMonth: 0,
-              allocations: [],
-              type: 'Emenda parlamentar',
-              nature: 'Custeio',
-              accountability: 'Direta com o município',
-              status: 'Paga'
-            };
-          }
-
-          const val = parseFloat(amount) || 0;
-          grantsMap[grantId].allocations.push({ categoryId: catId, amount: val });
-          grantsMap[grantId].totalValue += val;
-        });
-
-        const grantsToUpload = Object.values(grantsMap);
-        
-        if (confirm(`Foram identificadas ${grantsToUpload.length} emendas no arquivo. Deseja importar e substituir os dados atuais?`)) {
-          setLoading(true);
-          await bulkBootstrapAmendments(institutionId, categories, grantsToUpload);
-          await loadData();
-          alert("Importação concluída com sucesso!");
-        }
-      } catch (error) {
-        console.error("Erro ao processar CSV:", error);
-        alert("Erro ao processar arquivo. Verifique o formato.");
-      }
-    };
-    reader.readAsText(file);
-    // Reset input
-    event.target.value = '';
-  };
-
   const filteredCategories = categories.filter(cat => 
     cat.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -641,12 +418,6 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
                 label="Categorias" 
                 active={activeView === 'categories'}
                 onClick={() => setActiveView('categories')}
-              />
-              <NavItem 
-                icon={<ShieldCheck size={18} />} 
-                label="Configurações" 
-                active={activeView === 'settings'}
-                onClick={() => setActiveView('settings')}
               />
             </nav>
 
@@ -1014,43 +785,6 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
                     </div>
                   </div>
                 ))}
-              </div>
-            </motion.div>
-          ) : activeView === 'settings' ? (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-xl">
-               <div className="mb-8">
-                <h2 className="text-2xl font-bold text-slate-800">Configurações do Módulo</h2>
-                <p className="text-slate-500 text-sm">Opções administrativas para o planejamento de emendas.</p>
-              </div>
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8">
-                <h3 className="text-lg font-bold text-slate-800 mb-4">Dados e Backup</h3>
-                <p className="text-sm text-slate-500 mb-6">Você pode restaurar o banco de dados para os valores padrão oficiais (conforme o PDF compartilhado).</p>
-                <button 
-                  onClick={handleResetToOfficialData}
-                  className="w-full py-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl font-black uppercase tracking-widest hover:bg-red-100 transition-all flex items-center justify-center gap-3"
-                >
-                  <Database size={20} /> Reiniciar para Dados Oficiais
-                </button>
-
-                <div className="mt-8 pt-8 border-t border-slate-100">
-                  <h3 className="text-lg font-bold text-slate-800 mb-4">Importação via Arquivo</h3>
-                  <p className="text-sm text-slate-500 mb-6">Utilize um arquivo CSV para atualizar massivamente as distribuições de emendas.</p>
-                  
-                  <input 
-                    type="file" 
-                    id="csv-upload" 
-                    accept=".csv" 
-                    className="hidden" 
-                    onChange={handleCsvUpload}
-                  />
-                  
-                  <label 
-                    htmlFor="csv-upload"
-                    className="w-full py-4 bg-blue-50 border border-blue-100 text-blue-600 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-100 transition-all flex items-center justify-center gap-3 cursor-pointer"
-                  >
-                    <Upload size={20} /> Importar Arquivo CSV
-                  </label>
-                </div>
               </div>
             </motion.div>
           ) : (

@@ -14,6 +14,7 @@ import {
   Package, 
   HeartPulse, 
   Stethoscope, 
+  Pill,
   TrendingUp, 
   TrendingDown,
   Clock,
@@ -39,6 +40,8 @@ import {
 } from '../types';
 import ProntuarioTab from './ProntuarioTab';
 import PiaTab from './PiaTab';
+import PerTab from './PerTab';
+import MedicationTab from './MedicationTab';
 
 interface ElderlyFormProps {
   initialData: Resident;
@@ -177,8 +180,19 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
   };
 
   const addMedication = () => {
-    const newMed: Medication = { id: Date.now().toString(), name: '', dosage: '', frequency: '', stock: 0, lastUpdate: new Date().toISOString().split('T')[0] };
-    setFormData(prev => ({ ...prev, medications: [...prev.medications, newMed] }));
+    const newMed: Medication = { 
+      id: Date.now().toString(), 
+      name: '', 
+      concentration: '',
+      dose: '',
+      frequency: 1,
+      times: ['08:00'],
+      type: 'continuo',
+      startDate: new Date().toISOString().split('T')[0],
+      stock: 0, 
+      lastUpdate: new Date().toISOString().split('T')[0] 
+    };
+    setFormData(prev => ({ ...prev, medications: [...(prev.medications || []), newMed] }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -192,6 +206,8 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     { id: 'financeiro', label: 'Financeiro', icon: DollarSign },
     { id: 'itens', label: 'Itens Pessoais', icon: Package },
     { id: 'prontuario', label: 'Prontuário Multidisciplinar', icon: FileText },
+    { id: 'prontuario-medico', label: 'Prontuário Clínico', icon: Stethoscope },
+    { id: 'medicamentos', label: 'Medicamentos', icon: Pill },
     { id: 'pia', label: 'PIA', icon: ClipboardList },
   ];
 
@@ -692,6 +708,20 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
 
         {activeTab === 'prontuario' && (
           <ProntuarioTab resident={formData} />
+        )}
+
+        {activeTab === 'prontuario-medico' && (
+          <PerTab 
+            resident={formData} 
+            onUpdatePer={(newPer) => setFormData({ ...formData, per: newPer })} 
+          />
+        )}
+
+        {activeTab === 'medicamentos' && (
+          <MedicationTab 
+            resident={formData}
+            onUpdateMedications={(newMeds) => setFormData({ ...formData, medications: newMeds })}
+          />
         )}
 
         {activeTab === 'pia' && (

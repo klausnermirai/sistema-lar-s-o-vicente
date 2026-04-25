@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Search, Plus, Filter, UserPlus, ChevronRight, AlertCircle, Calendar } from 'lucide-react';
+import { Search, Plus, Filter, UserPlus, ChevronRight, AlertCircle, Calendar, Archive, Trash2, X, ArchiveX } from 'lucide-react';
 import { Resident, SubTab, Relative } from '../types';
 import { INITIAL_RESIDENT } from '../constants';
 
@@ -9,15 +9,40 @@ interface ElderlyListProps {
   activeSubTab: SubTab;
   onAdd: () => void;
   onEdit: (resident: Resident) => void;
+  onSave: (resident: Resident) => void;
+  onDelete: (id: string) => void;
 }
 
-const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAdd, onEdit }) => {
+const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAdd, onEdit, onSave, onDelete }) => {
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [showArchived, setShowArchived] = React.useState(false);
+  const [archivingResident, setArchivingResident] = React.useState<Resident | null>(null);
+  const [archivingReason, setArchivingReason] = React.useState<Resident['archivingReason']>('inadaptacao');
+  const [archivingNotes, setArchivingNotes] = React.useState('');
 
-  const filteredResidents = residents.filter(r => 
-    r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.cpf.includes(searchTerm)
-  );
+  const filteredResidents = residents.filter(r => {
+    const matchesSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      r.cpf.includes(searchTerm);
+    const matchesStatus = showArchived ? r.isArchived === true : !r.isArchived;
+    return matchesSearch && matchesStatus;
+  });
+
+  const handleArchive = () => {
+    if (!archivingResident) return;
+    
+    const updatedResident: Resident = {
+      ...archivingResident,
+      isArchived: true,
+      archivingDate: new Date().toISOString().split('T')[0],
+      archivingReason: archivingReason,
+      archivingNotes: archivingNotes
+    };
+    
+    onSave(updatedResident);
+    setArchivingResident(null);
+    setArchivingReason('inadaptacao');
+    setArchivingNotes('');
+  };
 
   const getActionText = () => {
     switch(activeSubTab) {
@@ -25,12 +50,34 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
       case 'financeiro': return 'Lançar Financeiro';
       case 'itens': return 'Ver Itens';
       case 'prontuario': return 'Ver Prontuário Multidisciplinar';
+      case 'prontuario-medico': return 'Ver Prontuário Clínico';
+      case 'medicamentos': return 'Gerenciar Medicamentos';
       case 'pia': return 'Ver PIA';
       default: return 'Abrir Ficha Geral';
     }
   };
 
   const renderModuleSummary = (resident: Resident) => {
+    if (resident.isArchived) {
+      const reasons: Record<string, string> = {
+        inadaptacao: 'Inadaptação',
+        quebra_regras: 'Quebra de Regras',
+        desistencia: 'Desistência',
+        vontade_familiar: 'Vontade Familiar',
+        falecimento: 'Falecimento'
+      };
+      return (
+        <div className="text-[10px] uppercase">
+          <div className="font-black text-red-600 flex items-center gap-1">
+            <Archive size={10} /> Arquivado em {resident.archivingDate ? new Date(resident.archivingDate).toLocaleDateString('pt-BR') : 'N/D'}
+          </div>
+          <div className="font-bold text-gray-500 mt-1">
+            Motivo: {reasons[resident.archivingReason || ''] || 'N/D'}
+          </div>
+        </div>
+      );
+    }
+
     switch(activeSubTab) {
       case 'familiares-visitantes':
         const resp = resident.relatives.find(r => r.isResponsible);
@@ -61,6 +108,23 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
             <div className="font-bold text-gray-700">{resident.personalItems.length} Itens Catalogados</div>
           </div>
         );
+      case 'medicamentos':
+        return (
+          <div className="text-[10px] uppercase">
+            <div className="font-black text-gray-400">Farmácia:</div>
+            <div className="font-bold text-blue-700">{(resident.medications || []).length} Prescrições Ativas</div>
+          </div>
+        );
+      case 'prontuario-medico':
+        return (
+          <div className="text-[10px] uppercase">
+            <div className="font-black text-gray-400">Status Clínico:</div>
+            <div className="font-bold text-red-600 truncate max-w-[200px]">
+              {resident.per?.diagnoses?.[0] || 'Sem diagnóstico principal'}
+              {resident.per?.diagnoses?.length && resident.per.diagnoses.length > 1 ? ` +${resident.per.diagnoses.length - 1}` : ''}
+            </div>
+          </div>
+        );
       default:
         return (
           <div className="text-[10px] uppercase">
@@ -79,16 +143,29 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
         <div>
           <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">Módulo de Residentes</h1>
           <p className="text-[11px] font-bold text-gray-400 uppercase mt-1">
-            Visualizando informações de <span className="text-[#004c99]">{activeSubTab.replace('-', ' ')}</span> • {residents.length} Idosos cadastrados
+            Visualizando <span className="text-[#004c99]">{showArchived ? 'RESTAURADOS/ARQUIVADOS' : activeSubTab.replace('-', ' ')}</span> • {filteredResidents.length} Idosos listados
           </p>
         </div>
         <div className="flex gap-2">
+          {!showArchived && (
+            <button
+              onClick={onAdd}
+              className="bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 shadow-xl transition-all font-black text-xs uppercase"
+            >
+              <UserPlus size={18} />
+              <span>Cadastrar Idoso</span>
+            </button>
+          )}
           <button
-            onClick={onAdd}
-            className="bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 shadow-xl transition-all font-black text-xs uppercase"
+            onClick={() => setShowArchived(!showArchived)}
+            className={`px-6 py-3 rounded-xl flex items-center gap-2 transition-all font-black text-xs uppercase shadow-sm border ${
+              showArchived 
+                ? 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200' 
+                : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+            }`}
           >
-            <UserPlus size={18} />
-            <span>Cadastrar Idoso</span>
+            {showArchived ? <ArchiveX size={18} /> : <Archive size={18} />}
+            <span>{showArchived ? 'Ver Ativos' : 'Arquivados'}</span>
           </button>
         </div>
       </div>
@@ -145,13 +222,35 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
                     {renderModuleSummary(resident)}
                   </td>
                   <td className="px-8 py-5 text-right">
-                    <button 
-                      onClick={() => onEdit(resident)}
-                      className="px-6 py-2.5 bg-white border border-gray-200 text-[#004c99] hover:bg-[#004c99] hover:text-white rounded-xl transition-all inline-flex items-center gap-2 font-black text-[10px] uppercase shadow-sm group-hover:shadow-blue-200"
-                    >
-                      <span>{getActionText()}</span>
-                      <ChevronRight size={14} />
-                    </button>
+                    <div className="flex justify-end items-center gap-2">
+                      <button 
+                        onClick={() => onEdit(resident)}
+                        className={`px-6 py-2.5 bg-white border border-gray-200 rounded-xl transition-all inline-flex items-center gap-2 font-black text-[10px] uppercase shadow-sm ${
+                          showArchived ? 'text-amber-600 hover:bg-amber-50' : 'text-[#004c99] hover:bg-[#004c99] hover:text-white'
+                        }`}
+                      >
+                        <span>{showArchived ? 'Ver Histórico' : getActionText()}</span>
+                        <ChevronRight size={14} />
+                      </button>
+                      
+                      {showArchived ? (
+                        <button 
+                          onClick={() => onDelete(resident.id)}
+                          className="p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all border border-red-100 shadow-sm"
+                          title="Excluir Definitivamente"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => setArchivingResident(resident)}
+                          className="p-2.5 bg-gray-50 text-gray-400 hover:bg-amber-100 hover:text-amber-700 rounded-xl transition-all border border-gray-100 shadow-sm"
+                          title="Arquivar Residente"
+                        >
+                          <Archive size={16} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -169,6 +268,68 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
           </table>
         </div>
       </div>
+      {/* Modal de Arquivamento */}
+      {archivingResident && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-amber-50 p-6 border-b border-amber-100 flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-black text-amber-900 uppercase tracking-tighter">Arquivar Residente</h3>
+                <p className="text-[10px] font-bold text-amber-700 uppercase mt-1">Desacolhimento do idoso: {archivingResident.name}</p>
+              </div>
+              <button 
+                onClick={() => setArchivingResident(null)}
+                className="p-2 hover:bg-amber-100 rounded-full text-amber-900"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-8 space-y-6">
+              <div className="space-y-4">
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Motivo do Desacolhimento</label>
+                <select 
+                  className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-amber-500 focus:outline-none font-bold text-sm text-gray-700 transition-all"
+                  value={archivingReason}
+                  onChange={(e) => setArchivingReason(e.target.value as any)}
+                >
+                  <option value="inadaptacao">Inadaptação</option>
+                  <option value="quebra_regras">Quebra de Regras</option>
+                  <option value="desistencia">Desistência do Idoso</option>
+                  <option value="vontade_familiar">Vontade Familiar</option>
+                  <option value="falecimento">Falecimento</option>
+                </select>
+              </div>
+
+              <div className="space-y-4">
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Observações Adicionais</label>
+                <textarea 
+                  className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-amber-500 focus:outline-none font-medium text-sm text-gray-700 min-h-[100px] resize-none"
+                  placeholder="Detalhes sobre o arquivamento..."
+                  value={archivingNotes}
+                  onChange={(e) => setArchivingNotes(e.target.value)}
+                />
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  onClick={() => setArchivingResident(null)}
+                  className="flex-1 py-4 px-6 border-2 border-gray-100 rounded-2xl text-xs font-black text-gray-400 uppercase tracking-widest hover:bg-gray-50 bg-white transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleArchive}
+                  className="flex-1 py-4 px-6 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-amber-100 transition-all flex items-center justify-center gap-2"
+                >
+                  <Archive size={16} />
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

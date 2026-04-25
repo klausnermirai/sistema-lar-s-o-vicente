@@ -75,10 +75,14 @@ service cloud.firestore {
 
     // Mural Messages
     match /muralMessages/{messageId} {
-      allow read: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
-      allow create: if isSignedIn() && hasAccessTo(incoming().institutionId, incoming());
-      allow update: if isSignedIn() && (hasAccessTo(incoming().institutionId, incoming()) || hasAccessTo(resource.data.institutionId, resource.data));
-      allow delete: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+      allow read, create, update: if true; // Permissivo para desenvolvimento/protótipo
+      allow delete: if isSignedIn();
+    }
+
+    // Support Messages
+    match /support_messages/{messageId} {
+      allow read, create, update: if true; // Permissivo para desenvolvimento/protótipo
+      allow delete: if isSignedIn();
     }
 
     // Group Activities

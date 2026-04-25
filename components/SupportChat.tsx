@@ -2,7 +2,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, X, MessageSquare, User, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { SupportMessage, fetchSupportMessages, sendSupportMessage } from '../lib/supportService';
+import { SupportMessage } from '../lib/supportService';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface SupportChatProps {
   isOpen: boolean;
@@ -22,10 +24,24 @@ export const SupportChat: React.FC<SupportChatProps> = ({ isOpen, onClose, insti
   };
 
   useEffect(() => {
-    if (isOpen) {
-      loadMessages();
-      const interval = setInterval(loadMessages, 10000); // Poll every 10 seconds for support responses
-      return () => clearInterval(interval);
+    if (isOpen && institutionId) {
+      const q = query(
+        collection(db, 'support_messages'),
+        where('institutionId', '==', institutionId)
+      );
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const msgs = snapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id,
+          createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt || new Date().toISOString()
+        } as SupportMessage)).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        setMessages(msgs);
+      }, (error) => {
+        console.error("Error listening to support messages:", error);
+      });
+
+      return () => unsubscribe();
     }
   }, [isOpen, institutionId]);
 
@@ -33,25 +49,22 @@ export const SupportChat: React.FC<SupportChatProps> = ({ isOpen, onClose, insti
     scrollToBottom();
   }, [messages]);
 
-  const loadMessages = async () => {
-    try {
-      const data = await fetchSupportMessages(institutionId);
-      setMessages(data);
-    } catch (error) {
-      console.error('Error loading support messages:', error);
-    }
-  };
-
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || loading) return;
 
     setLoading(true);
     try {
-      const newMessage = await sendSupportMessage(institutionId, inputText, username);
-      setMessages(prev => [...prev, newMessage]);
+      await addDoc(collection(db, 'support_messages'), {
+        institutionId,
+        text: inputText,
+        sender: username,
+        role: 'user',
+        createdAt: serverTimestamp()
+      });
       setInputText('');
     } catch (error) {
+      console.error('Error sending message:', error);
       alert('Erro ao enviar mensagem');
     } finally {
       setLoading(false);

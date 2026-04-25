@@ -16,7 +16,9 @@
         "conferenciaId": { "type": "string" },
         "address": { "type": "string" },
         "phone": { "type": "string" },
-        "email": { "type": "string" }
+        "email": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "roles": { "type": "array", "items": { "type": "string" } }
       },
       "required": ["cnpj", "name", "type"]
     },
@@ -30,7 +32,7 @@
         "password": { "type": "string" },
         "fullName": { "type": "string" },
         "role": { "type": "string" },
-        "accessLevel": { "type": "string", "enum": ["gerencial", "equipe"] }
+        "accessLevel": { "type": "string", "enum": ["administrador", "assistente_social", "psicologia", "terapeuta_ocupacional", "fisioterapeuta"] }
       },
       "required": ["institutionId", "username", "password", "accessLevel"]
     },

@@ -1,5 +1,6 @@
 
 export interface Session {
+  id?: string;
   cnpj: string;
   username: string;
   accessLevel: string;
@@ -154,5 +155,13 @@ export const deleteCandidate = async (candidateId: string) => {
     method: 'DELETE'
   });
   if (!response.ok) throw new Error('Erro ao excluir candidato');
+  return response.json();
+};
+
+export const deleteResident = async (residentId: string) => {
+  const response = await fetch(`/api/residents/${residentId}`, {
+    method: 'DELETE'
+  });
+  if (!response.ok) throw new Error('Erro ao excluir residente');
   return response.json();
 };

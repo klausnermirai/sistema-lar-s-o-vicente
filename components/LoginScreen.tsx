@@ -50,6 +50,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
       const data = await login({ cnpj, username, password });
       if (data.success) {
         const session = { 
+          id: data.user.id,
           cnpj: data.cnpj, 
           username: data.user.username, 
           accessLevel: data.user.accessLevel,

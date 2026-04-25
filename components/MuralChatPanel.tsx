@@ -8,10 +8,11 @@ interface MuralChatPanelProps {
   isOpen: boolean;
   onClose: () => void;
   institutionId: string;
+  cnpj?: string;
   username: string;
 }
 
-export const MuralChatPanel: React.FC<MuralChatPanelProps> = ({ isOpen, onClose, institutionId, username }) => {
+export const MuralChatPanel: React.FC<MuralChatPanelProps> = ({ isOpen, onClose, institutionId, cnpj, username }) => {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -51,7 +52,7 @@ export const MuralChatPanel: React.FC<MuralChatPanelProps> = ({ isOpen, onClose,
 
             {/* Content - Reuse MuralModule */}
             <div className="flex-1 overflow-hidden">
-               <MuralModule institutionId={institutionId} username={username} hideHeader={true} />
+               <MuralModule institutionId={institutionId} cnpj={cnpj} username={username} hideHeader={true} />
             </div>
           </motion.div>
         </div>

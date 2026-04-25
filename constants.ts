@@ -1,11 +1,63 @@
 
-import { Resident, Candidate } from './types';
+import { Resident, Candidate, NursingScreening, Companion } from './types';
 
 export const COLORS = {
   primary: '#004c99',
   secondary: '#e31b23',
   accent: '#1e3a8a',
   background: '#f8fafc',
+};
+
+export const INITIAL_COMPANIONS: Companion[] = [
+  { id: 'c1', name: 'Ana Oliveira', role: 'tecnico', phone: '(11) 98888-7777' },
+  { id: 'c2', name: 'Roberto Santos', role: 'cuidador', phone: '(11) 97777-6666' },
+  { id: 'c3', name: 'Maria Silva', role: 'acompanhante', phone: '(11) 96666-5555' },
+];
+
+export const INITIAL_NURSING_SCREENING: NursingScreening = {
+  date: new Date().toISOString().split('T')[0],
+  vitalSigns: {
+    paSystolic: 120,
+    paDiastolic: 80,
+    fc: 70,
+    fr: 16,
+    temperature: 36.5,
+    spo2: 98,
+    hgtValue: 90,
+    hgtType: 'jejum',
+    weight: '',
+    height: ''
+  },
+  clinicalHistory: {
+    allergies: '',
+    comorbidities: [],
+    surgeries: '',
+    habits: {
+      smoking: false,
+      alcohol: false
+    },
+    medications: ''
+  },
+  functionalAssessment: {
+    mobility: 'deambula',
+    continence: 'continente',
+    consciousness: 'lucido',
+    communication: [],
+    dependencyLevel: 'independente'
+  },
+  physicalExam: {
+    skinIntegrity: 'integra',
+    nutritionalStatus: 'via_oral',
+    sleepPattern: 'dorme_bem'
+  },
+  healthSupport: {
+    susCard: '',
+    referenceUBS: '',
+    referenceDoctor: '',
+    activeBenefits: []
+  },
+  professionalName: '',
+  signatureDate: new Date().toISOString().split('T')[0]
 };
 
 export const INITIAL_CANDIDATE: Candidate = {
@@ -64,7 +116,8 @@ export const INITIAL_CANDIDATE: Candidate = {
     familyAgrees: '',
     requestReason: '',
     socialAnalysis: ''
-  }
+  },
+  nursingScreening: INITIAL_NURSING_SCREENING
 };
 
 export const INITIAL_RESIDENT: Resident = {
@@ -128,6 +181,7 @@ export const INITIAL_RESIDENT: Resident = {
   healthUpdates: [],
   medications: [],
   institutionId: '',
+  isArchived: false,
 };
 
 export const DUMMY_CANDIDATES: Candidate[] = [
@@ -180,8 +234,8 @@ export const DUMMY_RESIDENTS: Resident[] = [
       { id: 'h1', date: '2024-05-10', summary: 'Check-up Mensal', professional: 'Dr. Marcos Silva', observation: 'Pressão arterial estável 12x8. Continuar medicação.' }
     ],
     medications: [
-      { id: 'm1', name: 'Enalapril 20mg', dosage: '1 comprimido', frequency: '12/12h', stock: 15, lastUpdate: '2024-05-01' },
-      { id: 'm2', name: 'Metformina 850mg', dosage: '1 comprimido', frequency: '8/8h', stock: 4, lastUpdate: '2024-05-01' }
+      { id: 'm1', name: 'Enalapril', concentration: '20mg', dose: '1 comprimido', frequency: 2, times: ['08:00', '20:00'], type: 'continuo', startDate: '2024-05-01', stock: 15, lastUpdate: '2024-05-01' },
+      { id: 'm2', name: 'Metformina', concentration: '850mg', dose: '1 comprimido', frequency: 3, times: ['08:00', '14:00', '20:00'], type: 'continuo', startDate: '2024-05-01', stock: 4, lastUpdate: '2024-05-01' }
     ]
   }
 ];

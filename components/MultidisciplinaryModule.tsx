@@ -1,319 +1,546 @@
 import React, { useState, useEffect } from 'react';
-import { Resident, NutritionalEvolution, NutritionalAttendance, PsychologicalEvolution, PsychologicalAttendance } from '../types';
-import { Search, Save, AlertTriangle, Plus, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Resident, NutritionalEvolution, NutritionalAttendance, PsychologicalEvolution, PsychologicalAttendance, MuralMessage } from '../types';
+import { Search, Save, AlertTriangle, Plus, ChevronRight, ChevronDown, ArrowLeft, HeartPulse, Users, Activity, FileSearch, X, User, Printer, FileSpreadsheet } from 'lucide-react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import OccupationalTherapyTab from './OccupationalTherapyTab';
 import GroupActivityTab from './GroupActivityTab';
+import SocialWorkerTab from './SocialWorkerTab';
+import PhysiotherapyTab from './PhysiotherapyTab';
 
 interface MultidisciplinaryModuleProps {
   residents: Resident[];
   onSaveResident: (resident: Resident) => void;
+  accessLevel?: string;
+  onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
 }
 
-const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ residents, onSaveResident }) => {
+const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ residents, onSaveResident, accessLevel, onPostToMural }) => {
   const [selectedResidentId, setSelectedResidentId] = useState<string>('');
-  const [activeCompetence, setActiveCompetence] = useState<'nutricionista' | 'psicologia' | 'terapeuta_ocupacional'>('nutricionista');
+  const [activeCompetence, setActiveCompetence] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  
+  const isAssistenteSocial = accessLevel === 'assistente_social';
+  const isPsicologia = accessLevel === 'psicologia';
+  const isTerapeutaOcupacional = accessLevel === 'terapeuta_ocupacional';
+  const isFisioterapeuta = accessLevel === 'fisioterapeuta';
+  const isNutricionista = accessLevel === 'nutricionista';
+
   const [activeTab, setActiveTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos' | 'anamnese' | 'grupo'>('avaliacao');
   
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isDropdownOpen) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.search-container')) {
+          setIsDropdownOpen(false);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isDropdownOpen]);
+
+  const competencies = [
+    { id: 'nutricionista', label: 'Nutricionista', icon: HeartPulse, allowed: !isAssistenteSocial && !isPsicologia && !isTerapeutaOcupacional && !isFisioterapeuta },
+    { id: 'psicologia', label: 'Psicologia', icon: Users, allowed: !isAssistenteSocial && !isTerapeutaOcupacional && !isFisioterapeuta && !isNutricionista },
+    { id: 'terapeuta_ocupacional', label: 'Terapeuta Ocupacional', icon: Activity, allowed: !isAssistenteSocial && !isPsicologia && !isFisioterapeuta && !isNutricionista },
+    { id: 'fisioterapeuta', label: 'Fisioterapia', icon: Activity, allowed: !isAssistenteSocial && !isPsicologia && !isTerapeutaOcupacional && !isNutricionista },
+    { id: 'assistente_social', label: 'Assistente Social', icon: FileSearch, allowed: !isPsicologia && !isTerapeutaOcupacional && !isFisioterapeuta && !isNutricionista },
+  ].filter(c => c.allowed);
+
   const selectedResident = residents.find(r => r.id === selectedResidentId);
 
-  return (
-    <div className="space-y-6">
-      <div className="bg-white p-6 rounded-2xl border shadow-sm">
-        <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">Atendimento Multidisciplinar</h1>
-        <p className="text-[11px] font-bold text-gray-400 uppercase mt-1">
-          Selecione um residente e a competência desejada
-        </p>
-        
-        <div className="mt-6 flex flex-col md:flex-row gap-4 items-center">
-          <div className="relative w-full md:w-96">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-            <select
-              className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] bg-white shadow-inner text-sm font-medium appearance-none"
-              value={selectedResidentId}
-              onChange={(e) => setSelectedResidentId(e.target.value)}
+  const filteredResidents = residents.filter(r => 
+    r.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handleExportGeneralCSV = () => {
+    if (!activeCompetence) return;
+
+    let headers: string[] = [];
+    let rows: any[][] = [];
+    let filename = '';
+
+    if (activeCompetence === 'nutricionista') {
+      headers = ['Residente', 'Tipo de Registro', 'Data', 'Status/Aceitacao/Razao', 'Notas/Conduta/Detalhes'];
+      residents.forEach(res => {
+        const evols = res.nutrition?.evolutions || [];
+        const atts = res.nutrition?.attendances || [];
+        evols.forEach(ev => {
+          rows.push([
+            res.name,
+            'Evolução',
+            new Date(ev.date).toLocaleDateString('pt-BR'),
+            `Aceitação: ${ev.foodAcceptance || ''}`,
+            ev.newConduct || ''
+          ]);
+        });
+        atts.forEach(at => {
+          rows.push([
+            res.name,
+            'Atendimento',
+            new Date(at.dateTime).toLocaleDateString('pt-BR'),
+            at.reason || '',
+            at.notes || ''
+          ]);
+        });
+      });
+      filename = 'Relatorio_Completo_Nutricao.csv';
+    } else if (activeCompetence === 'psicologia') {
+      headers = ['Residente', 'Tipo de Registro', 'Data', 'Adaptacao/Intervencao', 'Humor/Evolucao'];
+      residents.forEach(res => {
+        const evols = res.psychology?.evolutions || [];
+        const atts = res.psychology?.attendances || [];
+        evols.forEach(ev => {
+          rows.push([
+            res.name,
+            'Evolução',
+            new Date(ev.date).toLocaleDateString('pt-BR'),
+            ev.institutionalAdaptationStatus || '',
+            ev.moodBehaviorEvolution || ''
+          ]);
+        });
+        atts.forEach(at => {
+          rows.push([
+            res.name,
+            'Atendimento',
+            new Date(at.dateTime).toLocaleDateString('pt-BR'),
+            at.interventionType || '',
+            at.attendanceEvolution || ''
+          ]);
+        });
+      });
+      filename = 'Relatorio_Completo_Psicologia.csv';
+    } else if (activeCompetence === 'terapeuta_ocupacional') {
+      headers = ['Residente', 'Tipo de Registro', 'Data', 'Evolucao Funcional / Tipo Atend.', 'Conduta / Evolucao'];
+      residents.forEach(res => {
+        const evols = res.occupationalTherapy?.evolutions || [];
+        const atts = res.occupationalTherapy?.attendances || [];
+        evols.forEach(ev => {
+          rows.push([
+            res.name,
+            'Evolução',
+            new Date(ev.date).toLocaleDateString('pt-BR'),
+            ev.functionalEvolution || '',
+            ev.newConduct || ''
+          ]);
+        });
+        atts.forEach(at => {
+          rows.push([
+            res.name,
+            'Atendimento',
+            new Date(at.dateTime).toLocaleDateString('pt-BR'),
+            at.attendanceType || '',
+            at.attendanceEvolution || ''
+          ]);
+        });
+      });
+      filename = 'Relatorio_Completo_Terapia_Ocupacional.csv';
+    } else if (activeCompetence === 'fisioterapeuta') {
+      headers = ['Residente', 'Tipo de Registro', 'Data', 'Descricao / Tipo Atend.', 'Resposta / Evolucao'];
+      residents.forEach(res => {
+        const evols = res.physiotherapy?.evolutions || [];
+        const atts = res.physiotherapy?.attendances || [];
+        evols.forEach(ev => {
+          rows.push([
+            res.name,
+            'Evolução',
+            new Date(ev.date).toLocaleDateString('pt-BR'),
+            ev.description || '',
+            ev.treatmentResponse || ''
+          ]);
+        });
+        atts.forEach(at => {
+          rows.push([
+            res.name,
+            'Atendimento',
+            new Date(at.dateTime).toLocaleDateString('pt-BR'),
+            at.attendanceType || '',
+            at.attendanceEvolution || ''
+          ]);
+        });
+      });
+      filename = 'Relatorio_Completo_Fisioterapia.csv';
+    } else {
+      return;
+    }
+
+    if (rows.length === 0) {
+      alert("Nenhum dado encontrado para exportar nesta área.");
+      return;
+    }
+
+    const csvContent = [headers, ...rows].map(e => e.join(";")).join("\n");
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Initial View: Competency selection
+  if (!activeCompetence) {
+    return (
+      <div className="p-8 animate-in fade-in duration-500 max-w-6xl mx-auto">
+        <div className="mb-12 text-center">
+          <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-2">Atendimento Multidisciplinar</h2>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Clique na sua área para iniciar o atendimento</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {competencies.filter(c => c.allowed).map((comp) => (
+            <button
+              key={comp.id}
+              onClick={() => setActiveCompetence(comp.id)}
+              className="group bg-white p-12 rounded-[48px] border-2 border-transparent hover:border-[#004c99] hover:shadow-2xl transition-all flex flex-col items-center gap-6 text-center shadow-lg transform hover:-translate-y-2"
             >
-              <option value="">Selecione um residente...</option>
-              {residents.map(r => (
-                <option key={r.id} value={r.id}>{r.name} (CPF: {r.cpf})</option>
-              ))}
-            </select>
-          </div>
+              <div className="w-24 h-24 bg-blue-50 rounded-[32px] flex items-center justify-center text-[#004c99] group-hover:scale-110 group-hover:bg-[#004c99] group-hover:text-white transition-all duration-300">
+                <comp.icon size={48} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">{comp.label}</h3>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2 px-4 leading-relaxed">Registro de Evoluções, Avaliações e Planos de Atendimento Individual</p>
+              </div>
+              <div className="mt-4 px-8 py-3 bg-gray-100 rounded-2xl text-[10px] font-black text-gray-400 uppercase tracking-widest group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
+                Abrir Módulo
+              </div>
+            </button>
+          ))}
         </div>
       </div>
+    );
+  }
 
-      {selectedResident && (
-        <div className="flex flex-col md:flex-row gap-6">
-          {/* Competence Sidebar */}
-          <div className="w-full md:w-64 shrink-0">
-            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-              <div className="p-4 bg-gray-50 border-b">
-                <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest">Competências</h3>
-              </div>
-              <div className="p-2 space-y-1">
-                <button
-                  onClick={() => setActiveCompetence('nutricionista')}
-                  className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold uppercase transition-all ${
-                    activeCompetence === 'nutricionista'
-                      ? 'bg-[#004c99] text-white shadow-md'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Nutricionista
-                </button>
-                <button
-                  onClick={() => setActiveCompetence('psicologia')}
-                  className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold uppercase transition-all ${
-                    activeCompetence === 'psicologia'
-                      ? 'bg-[#004c99] text-white shadow-md'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Psicologia
-                </button>
-                <button
-                  onClick={() => setActiveCompetence('terapeuta_ocupacional')}
-                  className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold uppercase transition-all ${
-                    activeCompetence === 'terapeuta_ocupacional'
-                      ? 'bg-[#004c99] text-white shadow-md'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Terapeuta Ocupacional
-                </button>
-                {/* Outras competências podem ser adicionadas aqui no futuro */}
-              </div>
+  return (
+    <div className="p-8 animate-in fade-in duration-500 overflow-visible max-w-7xl mx-auto">
+      {/* Header with Search and Navigation */}
+      <div className="mb-8 flex flex-col md:flex-row items-center justify-between gap-6 bg-white p-8 rounded-[40px] border shadow-sm">
+        <div className="flex items-center gap-5">
+          <button 
+            onClick={() => {
+              setActiveCompetence(null);
+              setSelectedResidentId('');
+              setSearchTerm('');
+            }}
+            className="p-4 bg-gray-50 hover:bg-gray-100 text-gray-400 hover:text-gray-900 rounded-2xl transition-all shadow-sm active:scale-95"
+            title="Voltar para seleção de área"
+          >
+            <ArrowLeft size={24} />
+          </button>
+          <div>
+            <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter flex items-center gap-3">
+              <span className="p-2 bg-blue-50 text-[#004c99] rounded-xl">
+                {competencies.find(c => c.id === activeCompetence)?.icon && React.createElement(competencies.find(c => c.id === activeCompetence)!.icon, { size: 24 })}
+              </span>
+              {competencies.find(c => c.id === activeCompetence)?.label}
+            </h2>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
+              Atendimento Multidisciplinar
+            </p>
+          </div>
+        </div>
+
+        <div className="flex-1 w-full max-w-xl relative search-container group/search">
+          <div className={`relative transition-all duration-300 ${selectedResidentId ? 'ring-4 ring-blue-50 rounded-[28px]' : ''}`}>
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+            <input
+              type="text"
+              placeholder={`Buscar Residente para ${competencies.find(c => c.id === activeCompetence)?.label}...`}
+              value={searchTerm}
+              onFocus={() => setIsDropdownOpen(true)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                if (selectedResidentId) setSelectedResidentId('');
+                setIsDropdownOpen(true);
+              }}
+              className="w-full pl-16 pr-12 py-5 bg-gray-50 border-2 border-transparent focus:border-blue-100 focus:bg-white rounded-[24px] text-sm font-black uppercase tracking-tight outline-none transition-all shadow-inner"
+            />
+            <button 
+              onClick={() => {
+                setIsDropdownOpen(!isDropdownOpen);
+                if (selectedResidentId) {
+                  setSelectedResidentId('');
+                  setSearchTerm('');
+                }
+              }}
+              className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#004c99] transition-all p-2 flex items-center gap-1 group"
+              title="Listar todos os residentes"
+            >
+              <span className="text-[9px] font-black uppercase mr-1 hidden sm:inline opacity-60 group-hover:opacity-100">Ver Todos</span>
+              <ChevronDown size={20} className={`transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+
+          {/* Search Dropdown */}
+          {(searchTerm || isDropdownOpen) && !selectedResidentId && (
+            <div className="absolute top-full left-0 right-0 mt-3 bg-white border border-gray-100 rounded-[32px] shadow-2xl z-50 max-h-80 overflow-y-auto no-scrollbar py-4 px-2">
+              {filteredResidents.length > 0 ? (
+                filteredResidents.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={() => {
+                      setSelectedResidentId(r.id);
+                      setSearchTerm(r.name);
+                      setIsDropdownOpen(false);
+                    }}
+                    className="w-full px-5 py-4 text-left hover:bg-blue-50 rounded-2xl flex items-center gap-5 transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-white border-2 border-gray-50 rounded-2xl flex items-center justify-center font-black text-blue-600 shadow-sm group-hover:border-blue-200">
+                      {r.name.charAt(0)}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs font-black text-gray-800 uppercase tracking-tight group-hover:text-blue-900">{r.name}</p>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Quarto {r.room} • CPF {r.cpf.slice(0,3)}...</p>
+                    </div>
+                    <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-300 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                      <Plus size={16} />
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="py-12 flex flex-col items-center justify-center text-gray-400 opacity-50">
+                  <Search size={32} className="mb-2" />
+                  <p className="text-[10px] font-black uppercase">Nenhum residente encontrado</p>
+                </div>
+              )}
             </div>
-          </div>
+          )}
+        </div>
 
-          {/* Main Content */}
-          <div className="flex-1 bg-white rounded-2xl border shadow-sm overflow-hidden">
-            {activeCompetence === 'nutricionista' && (
-              <>
-                <div className="flex border-b overflow-x-auto no-scrollbar">
-                  <button
-                    onClick={() => setActiveTab('avaliacao')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
-                      activeTab === 'avaliacao' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    Primeira Avaliação Nutricional
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('evolucao')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
-                      activeTab === 'evolucao' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    Evolução Nutricional
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('atendimentos')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
-                      activeTab === 'atendimentos' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    Atendimentos
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('grupo')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
-                      activeTab === 'grupo' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    Atividade em Grupo
-                  </button>
-                </div>
+        {activeCompetence !== 'assistente_social' && (
+          <button
+            onClick={handleExportGeneralCSV}
+            className="flex items-center justify-center gap-2 px-6 py-4 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-2xl transition-all shadow-sm font-black text-[10px] uppercase tracking-widest border border-emerald-100 whitespace-nowrap"
+            title="Exportar todos os dados desta área no formato CSV"
+          >
+            <FileSpreadsheet size={20} />
+            CSV da Base ({competencies.find(c => c.id === activeCompetence)?.label})
+          </button>
+        )}
+      </div>
 
-                <div className="p-6">
-                  {activeTab === 'avaliacao' && (
-                    <NutritionalAssessmentForm 
-                      resident={selectedResident} 
-                      onSave={(data) => {
-                        const updatedResident = {
-                          ...selectedResident,
-                          nutrition: {
-                            ...selectedResident.nutrition,
-                            initialAssessment: data
-                          }
-                        };
-                        onSaveResident(updatedResident);
-                      }} 
-                    />
-                  )}
-                  {activeTab === 'evolucao' && (
-                    <NutritionalEvolutionSection 
-                      resident={selectedResident} 
-                      onSave={(evolutions) => {
-                        const updatedResident = {
-                          ...selectedResident,
-                          nutrition: {
-                            ...selectedResident.nutrition,
-                            evolutions: evolutions
-                          }
-                        };
-                        onSaveResident(updatedResident);
-                      }} 
-                    />
-                  )}
-                  {activeTab === 'atendimentos' && (
-                    <NutritionalAttendanceSection 
-                      resident={selectedResident} 
-                      onSave={(attendances) => {
-                        const updatedResident = {
-                          ...selectedResident,
-                          nutrition: {
-                            ...selectedResident.nutrition,
-                            attendances: attendances
-                          }
-                        };
-                        onSaveResident(updatedResident);
-                      }} 
-                    />
-                  )}
-                  {activeTab === 'grupo' && (
-                    <GroupActivityTab
-                      competence="nutricionista"
-                      residents={residents}
-                      onSaveResident={onSaveResident}
-                    />
-                  )}
-                </div>
-              </>
-            )}
-            {activeCompetence === 'psicologia' && (
-              <>
-                <div className="flex border-b overflow-x-auto no-scrollbar">
+      {selectedResident ? (
+        <div className="animate-in slide-in-from-bottom duration-700 bg-white rounded-[40px] border shadow-sm overflow-hidden">
+          {activeCompetence === 'fisioterapeuta' && (
+            <PhysiotherapyTab 
+              resident={selectedResident}
+              onPostToMural={onPostToMural}
+              onChange={(data) => onSaveResident({ ...selectedResident, physiotherapy: data })}
+              residents={residents}
+              onSaveResident={onSaveResident}
+            />
+          )}
+          
+          {activeCompetence === 'nutricionista' && (
+            <>
+              <div className="flex bg-gray-50/50 p-2 border-b overflow-x-auto no-scrollbar">
+                {[
+                  { id: 'avaliacao', label: 'Primeira Avaliação Nutricional' },
+                  { id: 'evolucao', label: 'Evolução Nutricional' },
+                  { id: 'atendimentos', label: 'Atendimentos' },
+                  { id: 'grupo', label: 'Atividade em Grupo' }
+                ].map(tab => (
                   <button
-                    onClick={() => setActiveTab('anamnese')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
-                      activeTab === 'anamnese' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                      activeTab === tab.id 
+                        ? 'bg-[#004c99] text-white shadow-lg' 
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-white'
                     }`}
                   >
-                    Anamnese
+                    {tab.label}
                   </button>
-                  <button
-                    onClick={() => setActiveTab('avaliacao')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
-                      activeTab === 'avaliacao' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    Primeira Avaliação Psicológica
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('evolucao')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
-                      activeTab === 'evolucao' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    Evolução Psicológica
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('atendimentos')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
-                      activeTab === 'atendimentos' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    Atendimentos
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('grupo')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
-                      activeTab === 'grupo' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    Atividade em Grupo
-                  </button>
-                </div>
-
-                <div className="p-6">
-                  {activeTab === 'anamnese' && (
-                    <PsychologicalAssessmentForm 
-                      resident={selectedResident} 
-                      isAnamnese={true}
-                      onSave={(data) => {
-                        const updatedResident = {
-                          ...selectedResident,
-                          psychology: {
-                            ...selectedResident.psychology,
-                            anamnese: data
-                          }
-                        };
-                        onSaveResident(updatedResident);
-                      }} 
-                    />
-                  )}
-                  {activeTab === 'avaliacao' && (
-                    <PsychologicalAssessmentForm 
-                      resident={selectedResident} 
-                      onSave={(data) => {
-                        const updatedResident = {
-                          ...selectedResident,
-                          psychology: {
-                            ...selectedResident.psychology,
-                            initialAssessment: data
-                          }
-                        };
-                        onSaveResident(updatedResident);
-                      }} 
-                    />
-                  )}
-                  {activeTab === 'evolucao' && (
-                    <PsychologicalEvolutionSection 
-                      resident={selectedResident} 
-                      onSave={(evolutions) => {
-                        const updatedResident = {
-                          ...selectedResident,
-                          psychology: {
-                            ...selectedResident.psychology,
-                            evolutions: evolutions
-                          }
-                        };
-                        onSaveResident(updatedResident);
-                      }} 
-                    />
-                  )}
-                  {activeTab === 'atendimentos' && (
-                    <PsychologicalAttendanceSection 
-                      resident={selectedResident} 
-                      onSave={(attendances) => {
-                        const updatedResident = {
-                          ...selectedResident,
-                          psychology: {
-                            ...selectedResident.psychology,
-                            attendances: attendances
-                          }
-                        };
-                        onSaveResident(updatedResident);
-                      }} 
-                    />
-                  )}
-                  {activeTab === 'grupo' && (
-                    <GroupActivityTab
-                      competence="psicologia"
-                      residents={residents}
-                      onSaveResident={onSaveResident}
-                    />
-                  )}
-                </div>
-              </>
-            )}
-            {activeCompetence === 'terapeuta_ocupacional' && (
-              <div className="p-6">
-                <OccupationalTherapyTab 
-                  resident={selectedResident}
-                  onChange={(otData) => {
-                    const updatedResident = {
-                      ...selectedResident,
-                      occupationalTherapy: otData
-                    };
-                    onSaveResident(updatedResident);
-                  }}
-                  residents={residents}
-                  onSaveResident={onSaveResident}
-                />
+                ))}
               </div>
-            )}
-          </div>
+
+              <div className="p-10">
+                {activeTab === 'avaliacao' && (
+                  <NutritionalAssessmentForm 
+                    resident={selectedResident} 
+                    onSave={(data) => {
+                      const updatedResident = {
+                        ...selectedResident,
+                        nutrition: {
+                          ...selectedResident.nutrition,
+                          initialAssessment: data
+                        }
+                      };
+                      onSaveResident(updatedResident);
+                    }} 
+                  />
+                )}
+                {activeTab === 'evolucao' && (
+                  <NutritionalEvolutionSection 
+                    resident={selectedResident} 
+                    onSave={(evolutions) => {
+                      const updatedResident = {
+                        ...selectedResident,
+                        nutrition: {
+                          ...selectedResident.nutrition,
+                          evolutions: evolutions
+                        }
+                      };
+                      onSaveResident(updatedResident);
+                    }} 
+                  />
+                )}
+                {activeTab === 'atendimentos' && (
+                  <NutritionalAttendanceSection 
+                    resident={selectedResident} 
+                    onPostToMural={onPostToMural}
+                    onSave={(attendances) => {
+                      const updatedResident = {
+                        ...selectedResident,
+                        nutrition: {
+                          ...selectedResident.nutrition,
+                          attendances: attendances
+                        }
+                      };
+                      onSaveResident(updatedResident);
+                    }} 
+                  />
+                )}
+                {activeTab === 'grupo' && (
+                  <GroupActivityTab
+                    competence="nutricionista"
+                    residents={residents}
+                    onSaveResident={onSaveResident}
+                    onPostToMural={onPostToMural}
+                  />
+                )}
+              </div>
+            </>
+          )}
+
+          {activeCompetence === 'psicologia' && (
+            <>
+              <div className="flex bg-gray-50/50 p-2 border-b overflow-x-auto no-scrollbar">
+                {[
+                  { id: 'anamnese', label: 'Anamnese (Primeira Avaliação)' },
+                  { id: 'evolucao', label: 'Evolução Psicológica' },
+                  { id: 'atendimentos', label: 'Atendimentos' },
+                  { id: 'grupo', label: 'Atividade em Grupo' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                      activeTab === tab.id || (tab.id === 'anamnese' && activeTab === 'avaliacao')
+                        ? 'bg-[#004c99] text-white shadow-lg' 
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="p-10">
+                {(activeTab === 'anamnese' || activeTab === 'avaliacao') && (
+                  <PsychologicalAssessmentForm 
+                    resident={selectedResident} 
+                    isAnamnese={true}
+                    onSave={(data) => {
+                      const updatedResident = {
+                        ...selectedResident,
+                        psychology: {
+                          ...selectedResident.psychology,
+                          anamnese: data,
+                          initialAssessment: data
+                        }
+                      };
+                      onSaveResident(updatedResident);
+                    }} 
+                  />
+                )}
+                {activeTab === 'evolucao' && (
+                  <PsychologicalEvolutionSection 
+                    resident={selectedResident} 
+                    onSave={(evolutions) => {
+                      const updatedResident = {
+                        ...selectedResident,
+                        psychology: {
+                          ...selectedResident.psychology,
+                          evolutions: evolutions
+                        }
+                      };
+                      onSaveResident(updatedResident);
+                    }} 
+                  />
+                )}
+                {activeTab === 'atendimentos' && (
+                  <PsychologicalAttendanceSection 
+                    resident={selectedResident} 
+                    onPostToMural={onPostToMural}
+                    onSave={(attendances) => {
+                      const updatedResident = {
+                        ...selectedResident,
+                        psychology: {
+                          ...selectedResident.psychology,
+                          attendances: attendances
+                        }
+                      };
+                      onSaveResident(updatedResident);
+                    }} 
+                  />
+                )}
+                {activeTab === 'grupo' && (
+                  <GroupActivityTab
+                    competence="psicologia"
+                    residents={residents}
+                    onSaveResident={onSaveResident}
+                    onPostToMural={onPostToMural}
+                  />
+                )}
+              </div>
+            </>
+          )}
+
+          {activeCompetence === 'terapeuta_ocupacional' && (
+            <div className="p-10">
+              <OccupationalTherapyTab 
+                resident={selectedResident}
+                onPostToMural={onPostToMural}
+                onChange={(otData) => {
+                  const updatedResident = {
+                    ...selectedResident,
+                    occupationalTherapy: otData
+                  };
+                  onSaveResident(updatedResident);
+                }}
+                residents={residents}
+                onSaveResident={onSaveResident}
+              />
+            </div>
+          )}
+
+          {activeCompetence === 'assistente_social' && (
+            <div className="p-10">
+              <SocialWorkerTab 
+                resident={selectedResident}
+                onChange={(socialData) => {
+                  // Social worker Logic
+                }}
+              />
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center p-24 text-center bg-white rounded-[64px] border-2 border-dashed border-gray-100 mt-8 shadow-inner animate-pulse">
+           <div className="w-32 h-32 bg-blue-50 rounded-full flex items-center justify-center text-blue-200 mb-8">
+              <User size={64} />
+           </div>
+           <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">Residente não selecionado</h3>
+           <p className="max-w-md text-sm font-bold text-gray-400 uppercase tracking-widest mt-4 leading-relaxed">
+             Por favor, escolha um residente utilizando a barra de busca acima para visualizar e editar os registros de {competencies.find(c => c.id === activeCompetence)?.label}.
+           </p>
         </div>
       )}
     </div>
@@ -366,6 +593,41 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
   };
 
   const [formData, setFormData] = useState<any>(initialData);
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Avaliação Nutricional Inicial', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data da Avaliação: ${formData.date}`, 14, 35);
+    doc.text(`Quarto: ${resident.room || 'N/A'}`, 14, 40);
+
+    const tableData = [
+      ['Peso', `${formData.weight || 'N/A'} kg`, 'Altura', `${formData.height || 'N/A'} m`],
+      ['IMC', calculateBMI() || 'N/A', 'Comp. Panturrilha', `${formData.calfCircumference || 'N/A'} cm`],
+      ['Circ. Braço', `${formData.armCircumference || 'N/A'} cm`, 'Circ. Cintura', `${formData.waistCircumference || 'N/A'} cm`],
+      ['Via Alimentação', formData.feedingRoute || 'N/A', 'Consistência', formData.dietConsistency || 'N/A'],
+      ['Diagnóstico', { content: formData.initialDiagnosis || 'N/A', colSpan: 3 }],
+      ['Metas PIA', { content: formData.piaGoals || 'N/A', colSpan: 3 }]
+    ];
+
+    (doc as any).autoTable({
+      startY: 50,
+      head: [['Campo', 'Valor', 'Campo', 'Valor']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillStyle: '#004c99', textColor: 255 },
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Avaliacao_Nutricional_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
 
   const calculateBMI = () => {
     const w = parseFloat(formData.weight);
@@ -543,15 +805,25 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
     <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Primeira Avaliação Nutricional (Abastece o PIA)</h2>
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Data da Avaliação</label>
-          <input 
-            type="date" 
-            value={formData.date} 
-            onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-            className="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
-            required
-          />
+        <div className="flex items-center gap-4">
+          <button 
+            type="button" 
+            onClick={handleExportPDF}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-black text-[10px] uppercase hover:bg-gray-200 flex items-center gap-2 shadow-sm transition-colors"
+          >
+            <Printer size={14} />
+            Exportar PDF
+          </button>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Data da Avaliação</label>
+            <input 
+              type="date" 
+              value={formData.date} 
+              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+              className="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+              required
+            />
+          </div>
         </div>
       </div>
 
@@ -1162,9 +1434,17 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
         <button 
           type="button" 
           onClick={() => setFormData(initialData)}
-          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50"
+          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50 transition-all"
         >
           Cancelar
+        </button>
+        <button 
+          type="button" 
+          onClick={handleExportPDF}
+          className="px-6 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg flex items-center gap-2 shadow-sm transition-all font-bold text-xs uppercase border"
+        >
+          <Printer size={16} />
+          <span>Exportar PDF</span>
         </button>
         <button 
           type="submit" 
@@ -1188,6 +1468,40 @@ const NutritionalEvolutionSection: React.FC<NutritionalEvolutionSectionProps> = 
   const [isCreating, setIsCreating] = useState(false);
 
   const evolutions = resident.nutrition?.evolutions || [];
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Histórico de Evoluções Nutricionais', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
+
+    const tableData = evolutions.map(ev => [
+      new Date(ev.date).toLocaleDateString('pt-BR'),
+      `${ev.weight} kg`,
+      ev.foodAcceptance || 'N/A',
+      ev.piaGoalStatus || 'N/A',
+      ev.newConduct || 'N/A'
+    ]);
+
+    (doc as any).autoTable({
+      startY: 45,
+      head: [['Data', 'Peso', 'Aceitação', 'Meta PIA', 'Conduta']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillStyle: '#004c99', textColor: 255 },
+      styles: { fontSize: 8 }
+    });
+
+    doc.save(`Evolucoes_Nutricionais_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
 
   const handleSave = (evolution: NutritionalEvolution) => {
     let newEvolutions;
@@ -1223,12 +1537,20 @@ const NutritionalEvolutionSection: React.FC<NutritionalEvolutionSectionProps> = 
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Histórico de Evoluções</h2>
-        <button 
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase transition-all"
-        >
-          <Plus size={18} /> Nova Evolução
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleExportPDF}
+            className="flex items-center gap-2 text-[10px] font-black text-gray-700 bg-gray-100 hover:bg-gray-200 px-4 py-3 rounded-xl shadow-sm uppercase transition-all"
+          >
+            <Printer size={16} /> Exportar PDF
+          </button>
+          <button 
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase transition-all"
+          >
+            <Plus size={18} /> Nova Evolução
+          </button>
+        </div>
       </div>
 
       {evolutions.length === 0 ? (
@@ -1330,6 +1652,37 @@ const NutritionalEvolutionForm: React.FC<NutritionalEvolutionFormProps> = ({ res
 
   const variation = calculateVariation(formData.weight);
   const isAlert = variation !== undefined && variation <= -5.0;
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Evolução Nutricional', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data: ${formData.date}`, 14, 35);
+
+    const tableData = [
+      ['Peso Atual', `${formData.weight || 'N/A'} kg`, 'Variação', variation !== undefined ? `${variation > 0 ? '+' : ''}${variation}%` : 'N/A'],
+      ['Aceitação Alimentar', { content: formData.foodAcceptance || 'N/A', colSpan: 3 }],
+      ['Status Meta PIA', { content: formData.piaGoalStatus || 'N/A', colSpan: 3 }],
+      ['Mudança na Dieta?', { content: formData.changedConsistencyOrRoute ? `Sim - ${formData.changeJustification}` : 'Não', colSpan: 3 }],
+      ['Nova Conduta', { content: formData.newConduct || 'N/A', colSpan: 3 }]
+    ];
+
+    (doc as any).autoTable({
+      startY: 45,
+      body: tableData,
+      theme: 'grid',
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Evolucao_Nutricional_${resident.name.replace(/\s+/g, '_')}_${formData.date}.pdf`);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1475,9 +1828,17 @@ const NutritionalEvolutionForm: React.FC<NutritionalEvolutionFormProps> = ({ res
         <button 
           type="button" 
           onClick={onCancel}
-          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50"
+          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50 transition-all"
         >
           Cancelar
+        </button>
+        <button 
+          type="button" 
+          onClick={handleExportPDF}
+          className="px-6 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg flex items-center gap-2 shadow-sm transition-all font-bold text-xs uppercase border"
+        >
+          <Printer size={16} />
+          <span>Exportar PDF</span>
         </button>
         <button 
           type="submit" 
@@ -1493,14 +1854,47 @@ const NutritionalEvolutionForm: React.FC<NutritionalEvolutionFormProps> = ({ res
 
 interface NutritionalAttendanceSectionProps {
   resident: Resident;
+  onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
   onSave: (attendances: NutritionalAttendance[]) => void;
 }
 
-const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> = ({ resident, onSave }) => {
+const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> = ({ resident, onPostToMural, onSave }) => {
   const [editingAttendance, setEditingAttendance] = useState<NutritionalAttendance | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const attendances = resident.nutrition?.attendances || [];
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Histórico de Atendimentos Nutricionais', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
+
+    const tableData = attendances.map(at => [
+      new Date(at.dateTime).toLocaleString('pt-BR'),
+      at.attendanceType || 'N/A',
+      at.signature || 'N/A'
+    ]);
+
+    (doc as any).autoTable({
+      startY: 45,
+      head: [['Data/Hora', 'Tipo', 'Assinatura']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillStyle: '#004c99', textColor: 255 },
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Atendimentos_Nutricionais_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
 
   const handleSave = (attendance: NutritionalAttendance) => {
     let newAttendances;
@@ -1514,6 +1908,15 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
     newAttendances.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
     
     onSave(newAttendances);
+
+    // Post to mural if requested
+    if (attendance.muralNotes) {
+      onPostToMural({
+        author: attendance.signature || 'Nutricionista',
+        text: `[Nutrição] ${resident.name}: ${attendance.muralNotes}`,
+      });
+    }
+
     setEditingAttendance(null);
     setIsCreating(false);
   };
@@ -1546,12 +1949,20 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Histórico de Atendimentos</h2>
-        <button 
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase transition-all"
-        >
-          <Plus size={18} /> Novo Atendimento
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleExportPDF}
+            className="flex items-center gap-2 text-[10px] font-black text-gray-700 bg-gray-100 hover:bg-gray-200 px-4 py-3 rounded-xl shadow-sm uppercase transition-all"
+          >
+            <Printer size={16} /> Exportar PDF
+          </button>
+          <button 
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase transition-all"
+          >
+            <Plus size={18} /> Novo Atendimento
+          </button>
+        </div>
       </div>
 
       {attendances.length === 0 ? (
@@ -1642,6 +2053,35 @@ const NutritionalAttendanceForm: React.FC<NutritionalAttendanceFormProps> = ({ a
     onSave(formData as NutritionalAttendance);
   };
 
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Atendimento Nutricional', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Data/Hora: ${formData.dateTime.replace('T', ' ')}`, 14, 30);
+    doc.text(`Motivo: ${formData.reason || 'N/A'}`, 14, 35);
+    doc.text(`Profissional: ${formData.signature}`, 14, 40);
+
+    const tableData = [
+      ['Anotação do Prontuário', { content: formData.notes || 'N/A' }],
+      ['Compartilhado no Mural', { content: formData.muralNotes || 'N/A' }]
+    ];
+
+    (doc as any).autoTable({
+      startY: 45,
+      body: tableData,
+      theme: 'grid',
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Atendimento_Nutricional_${formData.dateTime.split('T')[0]}.pdf`);
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in duration-300">
       <div className="flex items-center gap-4 border-b pb-4">
@@ -1703,10 +2143,19 @@ const NutritionalAttendanceForm: React.FC<NutritionalAttendanceFormProps> = ({ a
         <textarea 
           rows={4}
           value={formData.muralNotes} 
-          onChange={(e) => setFormData({ ...formData, muralNotes: e.target.value })}
+          onChange={(e) => setFormData({ ...formData, muralNotes: e.target.value.slice(0, 150) })}
+          maxLength={150}
           className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
           placeholder="Anotação que será visível para toda a equipe no mural..."
         />
+        <div className="flex justify-between items-center mt-1 text-[10px] font-bold uppercase tracking-widest">
+          <span className="text-gray-400">
+            {formData.muralNotes?.length || 0}/150 caracteres
+          </span>
+          <span className="text-[#004c99]">
+            Limite de 150 caracteres para o mural e notificação familiar
+          </span>
+        </div>
       </div>
 
       <div>
@@ -1719,13 +2168,34 @@ const NutritionalAttendanceForm: React.FC<NutritionalAttendanceFormProps> = ({ a
         />
       </div>
 
+      <div className="flex items-center gap-3 bg-green-50 p-4 rounded-xl border border-green-100 mt-4">
+        <input 
+          type="checkbox"
+          id="notifyFamily"
+          checked={formData.notifyFamily || false}
+          onChange={(e) => setFormData({ ...formData, notifyFamily: e.target.checked })}
+          className="w-5 h-5 text-green-600 rounded focus:ring-green-500"
+        />
+        <label htmlFor="notifyFamily" className="text-sm font-bold text-green-900 cursor-pointer">
+          Notificação Familiar - Incluir este atendimento no resumo mensal de repasse à familia
+        </label>
+      </div>
+
       <div className="flex justify-end gap-3 pt-6 border-t">
         <button 
           type="button" 
           onClick={onCancel}
-          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50"
+          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50 transition-all"
         >
           Cancelar
+        </button>
+        <button 
+          type="button" 
+          onClick={handleExportPDF}
+          className="px-6 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg flex items-center gap-2 shadow-sm transition-all font-bold text-xs uppercase border"
+        >
+          <Printer size={16} />
+          <span>Exportar PDF</span>
         </button>
         <button 
           type="submit" 
@@ -1763,6 +2233,36 @@ const PsychologicalAssessmentForm: React.FC<PsychologicalAssessmentFormProps> = 
 
   const [formData, setFormData] = useState<any>(initialData);
 
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Avaliação Psicológica Inicial', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data da Avaliação: ${formData.date}`, 14, 35);
+
+    const tableData = [
+      ['História Pessoal', { content: formData.personalHistory || 'N/A', colSpan: 3 }],
+      ['Exame Psíquico', { content: formData.psychicExamination || 'N/A', colSpan: 3 }],
+      ['Diagnóstico', { content: formData.initialDiagnosis || 'N/A', colSpan: 3 }],
+      ['Metas PIA', { content: formData.piaGoals || 'N/A', colSpan: 3 }]
+    ];
+
+    (doc as any).autoTable({
+      startY: 45,
+      body: tableData,
+      theme: 'grid',
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Avaliacao_Psicologica_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
   const handleCheckboxChange = (field: string, value: string) => {
     const currentList = formData[field] as string[];
     if (currentList.includes(value)) {
@@ -1784,7 +2284,7 @@ const PsychologicalAssessmentForm: React.FC<PsychologicalAssessmentFormProps> = 
     <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter">
-          {isAnamnese ? 'Anamnese' : 'Primeira Avaliação Psicológica (Abastece o PIA)'}
+          Anamnese (Primeira Avaliação)
         </h2>
         <div>
           <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Data da Avaliação</label>
@@ -1969,9 +2469,17 @@ const PsychologicalAssessmentForm: React.FC<PsychologicalAssessmentFormProps> = 
         <button 
           type="button" 
           onClick={() => setFormData(initialData)}
-          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50"
+          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50 transition-all"
         >
           Cancelar
+        </button>
+        <button 
+          type="button" 
+          onClick={handleExportPDF}
+          className="px-6 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg flex items-center gap-2 shadow-sm transition-all font-bold text-xs uppercase border"
+        >
+          <Printer size={16} />
+          <span>Exportar PDF</span>
         </button>
         <button 
           type="submit" 
@@ -1996,6 +2504,38 @@ const PsychologicalEvolutionSection: React.FC<PsychologicalEvolutionSectionProps
 
   const evolutions = resident.psychology?.evolutions || [];
 
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Histórico de Evoluções Psicológicas', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
+
+    const tableData = evolutions.map(ev => [
+      new Date(ev.date).toLocaleDateString('pt-BR'),
+      ev.evolutionStatus || 'N/A',
+      ev.newConduct || 'N/A'
+    ]);
+
+    (doc as any).autoTable({
+      startY: 45,
+      head: [['Data', 'Status', 'Conduta']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillStyle: '#004c99', textColor: 255 },
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Evolucoes_Psicologicas_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+
   const handleSave = (evolution: PsychologicalEvolution) => {
     let newEvolutions;
     if (isCreating) {
@@ -2015,6 +2555,7 @@ const PsychologicalEvolutionSection: React.FC<PsychologicalEvolutionSectionProps
   if (isCreating || editingEvolution) {
     return (
       <PsychologicalEvolutionForm 
+        resident={resident}
         evolution={editingEvolution}
         onSave={handleSave}
         onCancel={() => {
@@ -2029,12 +2570,20 @@ const PsychologicalEvolutionSection: React.FC<PsychologicalEvolutionSectionProps
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Histórico de Evoluções</h2>
-        <button 
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase transition-all"
-        >
-          <Plus size={18} /> Nova Evolução
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleExportPDF}
+            className="flex items-center gap-2 text-[10px] font-black text-gray-700 bg-gray-100 hover:bg-gray-200 px-4 py-3 rounded-xl shadow-sm uppercase transition-all"
+          >
+            <Printer size={16} /> Exportar PDF
+          </button>
+          <button 
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase transition-all"
+          >
+            <Plus size={18} /> Nova Evolução
+          </button>
+        </div>
       </div>
 
       {evolutions.length === 0 ? (
@@ -2069,12 +2618,13 @@ const PsychologicalEvolutionSection: React.FC<PsychologicalEvolutionSectionProps
 };
 
 interface PsychologicalEvolutionFormProps {
+  resident: Resident;
   evolution: PsychologicalEvolution | null;
   onSave: (evolution: PsychologicalEvolution) => void;
   onCancel: () => void;
 }
 
-const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({ evolution, onSave, onCancel }) => {
+const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({ resident, evolution, onSave, onCancel }) => {
   const [formData, setFormData] = useState<any>(evolution || {
     id: Date.now().toString(),
     date: new Date().toISOString().split('T')[0],
@@ -2097,6 +2647,37 @@ const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(formData as PsychologicalEvolution);
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Evolução Psicológica', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data: ${formData.date}`, 14, 35);
+
+    const tableData = [
+      ['Status Adaptação', { content: formData.institutionalAdaptationStatus || 'N/A', colSpan: 3 }],
+      ['Evolução Humor/Comp.', { content: formData.moodBehaviorEvolution || 'N/A', colSpan: 3 }],
+      ['Qualidade Socialização', { content: formData.currentSocializationQuality.join(', ') || 'N/A', colSpan: 3 }],
+      ['Status Meta PIA', { content: formData.piaGoalStatus || 'N/A', colSpan: 3 }],
+      ['Nova Conduta', { content: formData.newConduct || 'N/A', colSpan: 3 }]
+    ];
+
+    (doc as any).autoTable({
+      startY: 45,
+      body: tableData,
+      theme: 'grid',
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Evolucao_Psicologica_${resident.name.replace(/\s+/g, '_')}_${formData.date}.pdf`);
   };
 
   return (
@@ -2208,9 +2789,17 @@ const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({
         <button 
           type="button" 
           onClick={onCancel}
-          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50"
+          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50 transition-all"
         >
           Cancelar
+        </button>
+        <button 
+          type="button" 
+          onClick={handleExportPDF}
+          className="px-6 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg flex items-center gap-2 shadow-sm transition-all font-bold text-xs uppercase border"
+        >
+          <Printer size={16} />
+          <span>Exportar PDF</span>
         </button>
         <button 
           type="submit" 
@@ -2226,14 +2815,47 @@ const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({
 
 interface PsychologicalAttendanceSectionProps {
   resident: Resident;
+  onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
   onSave: (attendances: PsychologicalAttendance[]) => void;
 }
 
-const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionProps> = ({ resident, onSave }) => {
+const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionProps> = ({ resident, onPostToMural, onSave }) => {
   const [editingAttendance, setEditingAttendance] = useState<PsychologicalAttendance | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const attendances = resident.psychology?.attendances || [];
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Histórico de Atendimentos Psicológicos', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
+
+    const tableData = attendances.map(at => [
+      new Date(at.dateTime).toLocaleString('pt-BR'),
+      at.attendanceType || 'N/A',
+      at.signature || 'N/A'
+    ]);
+
+    (doc as any).autoTable({
+      startY: 45,
+      head: [['Data/Hora', 'Tipo', 'Assinatura']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillStyle: '#004c99', textColor: 255 },
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Atendimentos_Psicologicos_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
 
   const handleSave = (attendance: PsychologicalAttendance) => {
     let newAttendances;
@@ -2247,6 +2869,15 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
     newAttendances.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
     
     onSave(newAttendances);
+
+    // Post to mural if requested
+    if (attendance.muralNotes) {
+      onPostToMural({
+        author: attendance.signature || 'Psicologia',
+        text: `[Psicologia] ${resident.name}: ${attendance.muralNotes}`,
+      });
+    }
+
     setEditingAttendance(null);
     setIsCreating(false);
   };
@@ -2254,6 +2885,7 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
   if (isCreating || editingAttendance) {
     return (
       <PsychologicalAttendanceForm 
+        resident={resident}
         attendance={editingAttendance}
         onSave={handleSave}
         onCancel={() => {
@@ -2279,12 +2911,20 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Histórico de Atendimentos</h2>
-        <button 
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase transition-all"
-        >
-          <Plus size={18} /> Novo Atendimento
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleExportPDF}
+            className="flex items-center gap-2 text-[10px] font-black text-gray-700 bg-gray-100 hover:bg-gray-200 px-4 py-3 rounded-xl shadow-sm uppercase transition-all"
+          >
+            <Printer size={16} /> Exportar PDF
+          </button>
+          <button 
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase transition-all"
+          >
+            <Plus size={18} /> Novo Atendimento
+          </button>
+        </div>
       </div>
 
       {attendances.length === 0 ? (
@@ -2336,12 +2976,13 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
 };
 
 interface PsychologicalAttendanceFormProps {
+  resident: Resident;
   attendance: PsychologicalAttendance | null;
   onSave: (attendance: PsychologicalAttendance) => void;
   onCancel: () => void;
 }
 
-const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = ({ attendance, onSave, onCancel }) => {
+const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = ({ resident, attendance, onSave, onCancel }) => {
   const [formData, setFormData] = useState<any>(attendance || {
     id: Date.now().toString(),
     dateTime: new Date().toISOString().slice(0, 16), // YYYY-MM-DDThh:mm
@@ -2397,6 +3038,36 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(formData as PsychologicalAttendance);
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('Atendimento Psicológico', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Data/Hora: ${formData.dateTime.replace('T', ' ')}`, 14, 30);
+    doc.text(`Tipo Intervenção: ${formData.interventionType || 'N/A'}`, 14, 35);
+    doc.text(`Profissional: ${formData.signature}`, 14, 40);
+
+    const tableData = [
+      ['Anotação do Prontuário', { content: formData.attendanceEvolution || 'N/A' }],
+      ['Compartilhado no Mural', { content: formData.muralNotes || 'N/A' }],
+      ['Repasse Equipe?', { content: formData.needsTeamReport ? 'Sim' : 'Não' }]
+    ];
+
+    (doc as any).autoTable({
+      startY: 45,
+      body: tableData,
+      theme: 'grid',
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Atendimento_Psicologico_${formData.dateTime.split('T')[0]}.pdf`);
   };
 
   return (
@@ -2470,10 +3141,19 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
         <textarea 
           rows={4}
           value={formData.muralNotes} 
-          onChange={(e) => setFormData({ ...formData, muralNotes: e.target.value })}
+          onChange={(e) => setFormData({ ...formData, muralNotes: e.target.value.slice(0, 150) })}
+          maxLength={150}
           className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
           placeholder="Anotação que será visível para toda a equipe no mural..."
         />
+        <div className="flex justify-between items-center mt-1 text-[10px] font-bold uppercase tracking-widest">
+          <span className="text-gray-400">
+            {formData.muralNotes?.length || 0}/150 caracteres
+          </span>
+          <span className="text-[#004c99]">
+            Limite de 150 caracteres para o mural e notificação familiar
+          </span>
+        </div>
       </div>
 
       <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
@@ -2527,13 +3207,34 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
         />
       </div>
 
+      <div className="flex items-center gap-3 bg-green-50 p-4 rounded-xl border border-green-100 mt-4">
+        <input 
+          type="checkbox"
+          id="notifyFamily"
+          checked={formData.notifyFamily || false}
+          onChange={(e) => setFormData({ ...formData, notifyFamily: e.target.checked })}
+          className="w-5 h-5 text-green-600 rounded focus:ring-green-500"
+        />
+        <label htmlFor="notifyFamily" className="text-sm font-bold text-green-900 cursor-pointer">
+          Notificação Familiar - Incluir este atendimento no resumo mensal de repasse à familia
+        </label>
+      </div>
+
       <div className="flex justify-end gap-3 pt-6 border-t">
         <button 
           type="button" 
           onClick={onCancel}
-          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50"
+          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50 transition-all"
         >
           Cancelar
+        </button>
+        <button 
+          type="button" 
+          onClick={handleExportPDF}
+          className="px-6 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg flex items-center gap-2 shadow-sm transition-all font-bold text-xs uppercase border"
+        >
+          <Printer size={16} />
+          <span>Exportar PDF</span>
         </button>
         <button 
           type="submit" 

@@ -20,20 +20,29 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { fetchUsers, saveUser, deleteUser, fetchSettings, saveSettings } from '../lib/api';
+import { ChangePasswordModal } from './ChangePasswordModal';
 
 interface SettingsModuleProps {
   institutionId: string;
   onLogout: () => void;
   onSettingsChange?: (settings: any) => void;
+  accessLevel?: string;
+  currentUserId?: string;
 }
 
-const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout, onSettingsChange }) => {
-  const [activeTab, setActiveTab] = React.useState<'instituicao' | 'acesso'>('instituicao');
+const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout, onSettingsChange, accessLevel, currentUserId }) => {
+  const isAdmin = accessLevel === 'administrador' || accessLevel === 'gerencial';
+  const [activeTab, setActiveTab] = React.useState<'instituicao' | 'acesso' | 'perfil'>(
+    isAdmin ? 'instituicao' : 'perfil'
+  );
   const [institution, setInstitution] = React.useState<any>(null);
   const [users, setUsers] = React.useState<User[]>([]);
   const [message, setMessage] = React.useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
+  const [resetPasswordUser, setResetPasswordUser] = React.useState<{id: string, name: string} | null>(null);
+  const [editUserId, setEditUserId] = React.useState<string | null>(null);
+  const [newRole, setNewRole] = React.useState('');
 
   React.useEffect(() => {
     if (institutionId) {
@@ -53,11 +62,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
       setUsers(usersData || []);
       
       // Normalização: Garantir que temos entityType mesmo que no banco esteja como 'type'
-      if (settingsData && !settingsData.entityType && settingsData.type) {
-        settingsData.entityType = settingsData.type;
+      const normalizedSettings = settingsData || {};
+      if (normalizedSettings && !normalizedSettings.entityType && normalizedSettings.type) {
+        normalizedSettings.entityType = normalizedSettings.type;
       }
       
-      setInstitution(settingsData);
+      setInstitution({
+        ...normalizedSettings,
+        roles: normalizedSettings.roles || []
+      });
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       showMessage('Erro ao carregar configurações. Verifique sua conexão.', 'error');
@@ -91,6 +104,22 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
     }
   };
 
+  const handleAddRole = () => {
+    if (!newRole.trim()) return;
+    const currentRoles = institution.roles || [];
+    if (currentRoles.includes(newRole.trim())) {
+      showMessage('Esta função já está cadastrada.', 'error');
+      return;
+    }
+    setInstitution({ ...institution, roles: [...currentRoles, newRole.trim()] });
+    setNewRole('');
+  };
+
+  const handleRemoveRole = (roleToRemove: string) => {
+    const currentRoles = institution.roles || [];
+    setInstitution({ ...institution, roles: currentRoles.filter((r: string) => r !== roleToRemove) });
+  };
+
   const handleSaveInstitution = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!institution.name || !institution.cnpj) {
@@ -110,37 +139,61 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUser.username || !newUser.password) {
-      showMessage('Username e senha são obrigatórios.', 'error');
+    if (!newUser.username || (!editUserId && !newUser.password)) {
+      showMessage('E-mail e senha são obrigatórios.', 'error');
       return;
     }
 
-    if (users.find(u => u.username === newUser.username)) {
+    if (!editUserId && users.find(u => u.username === newUser.username)) {
       showMessage('Este nome de usuário já existe.', 'error');
       return;
     }
 
     try {
       const userToAdd = {
+        ...(editUserId ? { id: editUserId } : {}),
         username: newUser.username!.trim().toLowerCase(),
         fullName: newUser.fullName || '',
         role: newUser.role || '',
         accessLevel: newUser.accessLevel || 'gerencial',
-        password: newUser.password,
+        ...(newUser.password ? { password: newUser.password } : {}),
         institutionId: institutionId,
-        createdAt: new Date().toISOString()
+        createdAt: editUserId ? undefined : new Date().toISOString()
       };
 
-      console.log('Tentando salvar usuário:', userToAdd);
       const saved = await saveUser(userToAdd);
-      setUsers(prev => [...prev, saved]);
+      
+      if (editUserId) {
+        setUsers(prev => prev.map(u => u.id === editUserId ? { ...u, ...saved } : u));
+        showMessage('Usuário atualizado com sucesso!', 'success');
+      } else {
+        setUsers(prev => [...prev, saved]);
+        showMessage('Usuário cadastrado com sucesso!', 'success');
+      }
+
       setNewUser({ username: '', fullName: '', role: '', accessLevel: 'administrador', password: '' });
+      setEditUserId(null);
       setShowPassword(false);
-      showMessage('Usuário cadastrado com sucesso!', 'success');
     } catch (error: any) {
-      console.error('Erro ao cadastrar:', error);
-      showMessage(error.message || 'Erro ao cadastrar usuário.', 'error');
+      console.error('Erro ao salvar usuário:', error);
+      showMessage(error.message || 'Erro ao salvar usuário.', 'error');
     }
+  };
+
+  const handleEditUser = (user: User) => {
+    setEditUserId(user.id);
+    setNewUser({
+      username: user.username,
+      fullName: user.fullName,
+      role: user.role,
+      accessLevel: user.accessLevel,
+      password: '' // Don't show password
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditUserId(null);
+    setNewUser({ username: '', fullName: '', role: '', accessLevel: 'administrador', password: '' });
   };
 
   const handleDeleteUser = async (id: string) => {
@@ -155,20 +208,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
     }
   };
 
-  const handleResetPassword = async (id: string) => {
-    const newPass = prompt('Informe a nova senha:');
-    if (newPass) {
-      try {
-        const user = users.find(u => u.id === id);
-        if (user) {
-          await saveUser({ ...user, password: newPass });
-          setUsers(prev => prev.map(u => u.id === id ? { ...u, password: newPass } : u));
-          showMessage('Senha alterada com sucesso!', 'success');
-        }
-      } catch (error) {
-        showMessage('Erro ao alterar senha.', 'error');
-      }
-    }
+  const handleResetPassword = (id: string, name: string) => {
+    setResetPasswordUser({ id, name });
   };
 
   return (
@@ -204,21 +245,33 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
 
       {/* Tabs */}
       <div className="flex gap-2">
+        {isAdmin && (
+          <>
+            <button
+              onClick={() => setActiveTab('instituicao')}
+              className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
+                activeTab === 'instituicao' ? 'bg-[#004c99] text-white shadow-lg' : 'bg-white text-gray-400 hover:bg-gray-50 border'
+              }`}
+            >
+              <Building2 size={16} /> Instituição
+            </button>
+            <button
+              onClick={() => setActiveTab('acesso')}
+              className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
+                activeTab === 'acesso' ? 'bg-[#004c99] text-white shadow-lg' : 'bg-white text-gray-400 hover:bg-gray-50 border'
+              }`}
+            >
+              <ShieldCheck size={16} /> Controle de Acesso
+            </button>
+          </>
+        )}
         <button
-          onClick={() => setActiveTab('instituicao')}
+          onClick={() => setActiveTab('perfil')}
           className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
-            activeTab === 'instituicao' ? 'bg-[#004c99] text-white shadow-lg' : 'bg-white text-gray-400 hover:bg-gray-50 border'
+            activeTab === 'perfil' ? 'bg-[#004c99] text-white shadow-lg' : 'bg-white text-gray-400 hover:bg-gray-50 border'
           }`}
         >
-          <Building2 size={16} /> Instituição
-        </button>
-        <button
-          onClick={() => setActiveTab('acesso')}
-          className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
-            activeTab === 'acesso' ? 'bg-[#004c99] text-white shadow-lg' : 'bg-white text-gray-400 hover:bg-gray-50 border'
-          }`}
-        >
-          <ShieldCheck size={16} /> Controle de Acesso
+          <UserCircle size={16} /> Meu Perfil
         </button>
       </div>
 
@@ -230,7 +283,63 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
           </div>
         )}
 
-        {!loading && !institution && activeTab === 'instituicao' && (
+        {activeTab === 'perfil' && !loading && (
+          <div className="bg-white rounded-3xl border shadow-sm p-10 animate-in slide-in-from-right duration-300">
+            <div className="flex flex-col md:flex-row gap-10">
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-32 h-32 bg-blue-50 rounded-full flex items-center justify-center text-[#004c99] border-4 border-white shadow-xl">
+                  <UserCircle size={64} />
+                </div>
+                <div className="text-center">
+                  <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">
+                    {users.find(u => u.id === currentUserId)?.fullName || 'Usuário'}
+                  </h3>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    @{users.find(u => u.id === currentUserId)?.username || 'user'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex-1 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nível de Acesso</label>
+                    <p className="text-sm font-black text-[#004c99] uppercase tracking-tight mt-1">
+                      {accessLevel === 'administrador' ? 'Administrador' : 
+                       accessLevel === 'assistente_social' ? 'Assistente Social' :
+                       accessLevel === 'psicologia' ? 'Psicologia' : 
+                       accessLevel === 'terapeuta_ocupacional' ? 'Terapeuta Ocupacional' : 
+                       accessLevel === 'nutricionista' ? 'Nutricionista' : 
+                       accessLevel === 'medico' ? 'Médico' :
+                       accessLevel === 'fisioterapeuta' ? 'Fisioterapeuta' : accessLevel}
+                    </p>
+                  </div>
+                  <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Cargo/Função</label>
+                    <p className="text-sm font-black text-gray-900 uppercase tracking-tight mt-1">
+                      {users.find(u => u.id === currentUserId)?.role || 'Não informado'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-dashed">
+                  <h4 className="text-sm font-black text-gray-800 uppercase tracking-widest mb-4">Segurança</h4>
+                  <button 
+                    onClick={() => {
+                      const user = users.find(u => u.id === currentUserId);
+                      if (user) handleResetPassword(user.id, user.fullName || user.username);
+                    }}
+                    className="flex items-center gap-2 px-8 py-4 bg-gray-900 text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-black transition-all"
+                  >
+                    <Key size={18} /> Alterar Minha Senha
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!loading && !institution && activeTab === 'instituicao' && isAdmin && (
           <div className="bg-white p-20 rounded-3xl border shadow-sm flex flex-col items-center justify-center text-center">
             <AlertCircle size={48} className="text-red-300 mb-4" />
             <h3 className="text-sm font-black text-gray-800 uppercase">Configurações não encontradas</h3>
@@ -238,7 +347,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
           </div>
         )}
 
-        {!loading && activeTab === 'instituicao' && institution && (
+        {!loading && activeTab === 'instituicao' && institution && isAdmin && (
           <form onSubmit={handleSaveInstitution} className="bg-white rounded-3xl border shadow-sm overflow-hidden animate-in slide-in-from-left duration-300">
             <div className="p-8 border-b bg-gray-50/50">
               <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest">Dados da Unidade</h3>
@@ -433,6 +542,43 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                     * O sistema utilizará estas capacidades para calcular as vagas disponíveis no módulo de triagem.
                   </p>
                 </div>
+
+                <div className="md:col-span-2 space-y-4 pt-4 border-t border-dashed">
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Cargos e Funções na Instituição</h4>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newRole}
+                      onChange={e => setNewRole(e.target.value)}
+                      placeholder="Nova função (ex: Coordenador)"
+                      className="flex-1 p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddRole}
+                      className="px-6 bg-gray-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all"
+                    >
+                      Adicionar
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {(institution.roles || []).map((role: string) => (
+                      <div key={role} className="flex items-center gap-2 bg-blue-50 text-[#004c99] px-3 py-2 rounded-lg border border-blue-100 text-[10px] font-black uppercase">
+                        {role}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRole(role)}
+                          className="text-red-400 hover:text-red-600 transition-colors"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    {(!institution.roles || institution.roles.length === 0) && (
+                      <p className="text-[10px] text-gray-400 font-bold uppercase italic">Nenhuma função cadastrada.</p>
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="pt-4">
                 <button type="submit" className="px-10 py-4 bg-[#004c99] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 flex items-center gap-2 transition-all">
@@ -443,7 +589,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
           </form>
         )}
 
-        {activeTab === 'acesso' && (
+        {activeTab === 'acesso' && isAdmin && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in slide-in-from-right duration-300">
             {/* Lista de Usuários */}
             <div className="lg:col-span-2 bg-white rounded-3xl border shadow-sm overflow-hidden flex flex-col">
@@ -467,13 +613,28 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                       <div>
                         <div className="text-sm font-black text-gray-900 uppercase tracking-tight">{user.fullName || user.username}</div>
                         <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
-                          @{user.username} • {user.role || 'Sem cargo'} • <span className="text-[#004c99]">{user.accessLevel}</span>
+                          @{user.username} • {user.role || 'Sem cargo'} • <span className="text-[#004c99]">
+                            {user.accessLevel === 'administrador' ? 'Administrador' : 
+                             user.accessLevel === 'assistente_social' ? 'Assistente Social' :
+                             user.accessLevel === 'psicologia' ? 'Psicologia' : 
+                             user.accessLevel === 'terapeuta_ocupacional' ? 'Terapeuta Ocupacional' : 
+                             user.accessLevel === 'nutricionista' ? 'Nutricionista' : 
+                             user.accessLevel === 'medico' ? 'Médico' :
+                             user.accessLevel === 'fisioterapeuta' ? 'Fisioterapeuta' : user.accessLevel}
+                          </span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
-                        onClick={() => handleResetPassword(user.id)}
+                        onClick={() => handleEditUser(user)}
+                        className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors" 
+                        title="Editar"
+                      >
+                        <Settings size={16} />
+                      </button>
+                      <button 
+                        onClick={() => handleResetPassword(user.id, user.fullName || user.username)}
                         className="p-2.5 text-[#004c99] hover:bg-blue-100 rounded-xl transition-colors" 
                         title="Alterar Senha"
                       >
@@ -493,11 +654,26 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
             </div>
 
             {/* Cadastro de Novo */}
-            <form onSubmit={handleAddUser} className="bg-white rounded-3xl border shadow-sm overflow-hidden flex flex-col h-fit">
+            <form onSubmit={handleAddUser} className="bg-white rounded-3xl border shadow-sm flex flex-col h-fit pb-10">
               <div className="p-8 border-b bg-gray-50/50">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-[#004c99] rounded-lg flex items-center justify-center text-white"><UserPlus size={16} /></div>
-                  <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest">Novo Acesso</h3>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-[#004c99] rounded-lg flex items-center justify-center text-white">
+                      {editUserId ? <Settings size={16} /> : <UserPlus size={16} />}
+                    </div>
+                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest">
+                      {editUserId ? 'Editar Acesso' : 'Novo Acesso'}
+                    </h3>
+                  </div>
+                  {editUserId && (
+                    <button 
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline"
+                    >
+                      Cancelar
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="p-8 space-y-5">
@@ -523,31 +699,41 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-gray-400 uppercase">Função / Cargo</label>
-                  <input
-                    type="text"
+                  <select
                     value={newUser.role}
                     onChange={e => setNewUser({ ...newUser, role: e.target.value })}
-                    className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100"
-                  />
+                    className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+                  >
+                    <option value="">Selecione uma função...</option>
+                    {(institution?.roles || []).map((role: string) => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-gray-400 uppercase">Nível de Acesso *</label>
                   <select
                     value={newUser.accessLevel}
                     onChange={e => setNewUser({ ...newUser, accessLevel: e.target.value as any })}
-                    className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+                    className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 bg-white max-h-48"
                   >
                     <option value="administrador">Administrador (Total)</option>
-                    <option value="gerencial">Gerencial</option>
-                    <option value="operacional">Operacional</option>
+                    <option value="assistente_social">Assistente Social</option>
+                    <option value="psicologia">Psicologia</option>
+                    <option value="terapeuta_ocupacional">Terapeuta Ocupacional</option>
+                    <option value="fisioterapeuta">Fisioterapeuta</option>
+                    <option value="nutricionista">Nutricionista</option>
+                    <option value="medico">Médico</option>
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase">Senha *</label>
+                  <label className="text-[10px] font-black text-gray-400 uppercase">
+                    {editUserId ? 'Senha (deixe em branco para não alterar)' : 'Senha *'}
+                  </label>
                   <div className="relative">
                     <input
                       type={showPassword ? "text" : "password"}
-                      required
+                      required={!editUserId}
                       value={newUser.password}
                       onChange={e => setNewUser({ ...newUser, password: e.target.value })}
                       className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
@@ -561,11 +747,11 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                     </button>
                   </div>
                 </div>
-                <div className="pt-2">
-                   <button type="submit" className="w-full py-4 bg-gray-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-black flex items-center justify-center gap-2 transition-all">
-                     <Save size={18} /> Cadastrar Acesso
-                   </button>
-                </div>
+                 <div className="pt-2">
+                    <button type="submit" className="w-full py-4 bg-gray-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-black flex items-center justify-center gap-2 transition-all">
+                      <Save size={18} /> {editUserId ? 'Salvar Alterações' : 'Cadastrar Acesso'}
+                    </button>
+                 </div>
                 <p className="text-[9px] text-gray-400 font-bold uppercase text-center leading-relaxed">
                   Atenção: Senhas são armazenadas localmente para fins de protótipo.
                 </p>
@@ -574,6 +760,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
           </div>
         )}
       </div>
+
+      <ChangePasswordModal
+        isOpen={!!resetPasswordUser}
+        onClose={() => setResetPasswordUser(null)}
+        userId={resetPasswordUser?.id}
+        targetName={resetPasswordUser?.name}
+        institutionId={institutionId}
+      />
     </div>
   );
 };
