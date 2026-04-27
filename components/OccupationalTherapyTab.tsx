@@ -5,6 +5,45 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import GroupActivityTab from './GroupActivityTab';
 
+const adlOptionsList = ['Independente', 'Supervisão', 'Assistência leve', 'Assistência moderada', 'Assistência máxima', 'Dependente'];
+const cognitiveOptionsList = ['Lúcido e orientado', 'Desorientado no tempo', 'Desorientado no espaço', 'Alteração de memória', 'Alteração de atenção', 'Agitação psicomotora'];
+const motorSensoryOptionsList = ['Coordenação motora fina preservada', 'Coordenação motora global preservada', 'Déficit de preensão', 'Déficit visual', 'Déficit auditivo', 'Alteração de sensibilidade'];
+const therapeuticGoalsOptionsList = ['Promover independência nas AVDs', 'Estimulação cognitiva', 'Treino de habilidades motoras corporais', 'Adequação postural', 'Prescrição de tecnologia assistiva', 'Atividades expressivas / lúdicas'];
+const treatmentConductOptionsList = ['Treino de AVD', 'Oficinas terapêuticas', 'Exercícios cognitivos', 'Adaptação ambiental', 'Orientações à equipe', 'Atendimentos individuais'];
+
+const currentSituationOptionsList = ['Mantém independência', 'Melhora na autonomia', 'Declínio funcional', 'Oscilação cognitiva'];
+const piaGoalsUpdateOptionsList = ['Manter objetivos atuais', 'Alterar objetivos', 'Incluir novo objetivo', 'Encerrar objetivo alcançado'];
+const conductUpdateOptionsList = ['Manter conduta', 'Modificar atividades', 'Encaminhamentos'];
+
+const ChecklistGroup = ({ label, options, selected = [], onChange, isEditing }: { label: string, options: string[], selected?: string[], onChange: (s: string[]) => void, isEditing: boolean }) => {
+  if (!isEditing && selected.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <label className="text-[10px] font-black text-[#004c99] uppercase tracking-widest">{label}</label>
+      {isEditing ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-3 bg-white border rounded-xl">
+          {options.map(opt => (
+            <label key={opt} className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer p-1 hover:bg-gray-50 rounded">
+              <input type="checkbox" checked={selected.includes(opt)} onChange={(e) => {
+                if (e.target.checked) onChange([...selected, opt]);
+                else onChange(selected.filter(x => x !== opt));
+              }} className="rounded border-gray-300 text-[#004c99] focus:ring-[#004c99]" />
+              {opt}
+            </label>
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {selected.map(opt => (
+            <span key={opt} className="px-3 py-1 bg-blue-50 text-[#004c99] rounded-lg text-[10px] font-bold uppercase">{opt}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 interface OccupationalTherapyTabProps {
   resident: Resident;
   onChange: (data: OccupationalTherapyData) => void;
@@ -14,7 +53,7 @@ interface OccupationalTherapyTabProps {
 }
 
 const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ resident, onChange, residents, onSaveResident, onPostToMural }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos' | 'grupo'>('avaliacao');
+  const [activeSubTab, setActiveSubTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos'>('avaliacao');
   
   const handleExportAssessmentPDF = () => {
     const doc = new jsPDF();
@@ -119,7 +158,6 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
     attendances: []
   };
 
-  const [isEditingAssessment, setIsEditingAssessment] = useState(false);
   const [assessment, setAssessment] = useState<Partial<OccupationalTherapyAssessment>>(
     otData.initialAssessment || {
       date: new Date().toISOString().split('T')[0],
@@ -145,11 +183,9 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
   const [isAddingEvolution, setIsAddingEvolution] = useState(false);
   const [newEvolution, setNewEvolution] = useState<Partial<OccupationalTherapyEvolution>>({
     date: new Date().toISOString().split('T')[0],
-    functionalEvolution: '',
-    participationEvolution: '',
-    currentIndependenceLevel: '',
-    piaGoalStatus: '',
-    newConduct: ''
+    currentSituationOptions: [],
+    piaGoalsUpdateOptions: [],
+    conductUpdateOptions: []
   });
 
   const [isAddingAttendance, setIsAddingAttendance] = useState(false);
@@ -167,7 +203,6 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
       ...otData,
       initialAssessment: assessment as OccupationalTherapyAssessment
     });
-    setIsEditingAssessment(false);
   };
 
   const handleSaveEvolution = () => {
@@ -187,13 +222,11 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
       });
       setIsAddingEvolution(false);
       setNewEvolution({
-        date: new Date().toISOString().split('T')[0],
-        functionalEvolution: '',
-        participationEvolution: '',
-        currentIndependenceLevel: '',
-        piaGoalStatus: '',
-        newConduct: ''
-      });
+      date: new Date().toISOString().split('T')[0],
+      currentSituationOptions: [],
+      piaGoalsUpdateOptions: [],
+      conductUpdateOptions: []
+    });
     }
   };
 
@@ -268,16 +301,6 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         >
           Atendimentos
         </button>
-        <button
-          onClick={() => setActiveSubTab('grupo')}
-          className={`pb-3 px-2 text-sm font-bold uppercase tracking-wider transition-colors border-b-2 ${
-            activeSubTab === 'grupo'
-              ? 'border-[#004c99] text-[#004c99]'
-              : 'border-transparent text-gray-400 hover:text-gray-600'
-          }`}
-        >
-          Atividade em Grupo
-        </button>
       </div>
 
       {/* 1. Primeira Avaliação */}
@@ -294,25 +317,6 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <Printer size={14} />
                 Exportar PDF
               </button>
-              {!isEditingAssessment ? (
-                <button
-                  type="button"
-                  onClick={() => setIsEditingAssessment(true)}
-                  className="bg-[#004c99] hover:bg-blue-800 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
-                >
-                  <Edit2 size={14} />
-                  Editar Avaliação
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSaveAssessment}
-                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
-                >
-                  <Save size={14} />
-                  Salvar Avaliação
-                </button>
-              )}
             </div>
           </div>
 
@@ -324,7 +328,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nível de independência</label>
                   <select
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.independenceLevel || ''}
                     onChange={(e) => setAssessment({ ...assessment, independenceLevel: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -338,7 +342,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Mobilidade</label>
                   <select
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.mobility || ''}
                     onChange={(e) => setAssessment({ ...assessment, mobility: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -360,7 +364,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Alimentação</label>
                   <select
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.feeding || ''}
                     onChange={(e) => setAssessment({ ...assessment, feeding: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -374,7 +378,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Higiene pessoal</label>
                   <select
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.personalHygiene || ''}
                     onChange={(e) => setAssessment({ ...assessment, personalHygiene: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -388,7 +392,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Vestuário</label>
                   <select
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.clothing || ''}
                     onChange={(e) => setAssessment({ ...assessment, clothing: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -402,7 +406,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Banho</label>
                   <select
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.bathing || ''}
                     onChange={(e) => setAssessment({ ...assessment, bathing: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -423,7 +427,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Orientação</label>
                   <select
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.orientation || ''}
                     onChange={(e) => setAssessment({ ...assessment, orientation: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -437,7 +441,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Atenção e memória</label>
                   <select
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.attentionAndMemory || ''}
                     onChange={(e) => setAssessment({ ...assessment, attentionAndMemory: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -458,7 +462,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Participação em atividades</label>
                   <select
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.participation || ''}
                     onChange={(e) => setAssessment({ ...assessment, participation: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -473,7 +477,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Interesse ocupacional</label>
                   <input
                     type="text"
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.occupationalInterest || ''}
                     onChange={(e) => setAssessment({ ...assessment, occupationalInterest: e.target.value })}
                     placeholder="Ex: gosta de música, atividades manuais, jogos"
@@ -491,7 +495,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Limitações motoras</label>
                   <input
                     type="text"
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.motorLimitations || ''}
                     onChange={(e) => setAssessment({ ...assessment, motorLimitations: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -500,7 +504,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Risco de quedas</label>
                   <select
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.fallRisk || ''}
                     onChange={(e) => setAssessment({ ...assessment, fallRisk: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -522,7 +526,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Uso de dispositivos</label>
                   <input
                     type="text"
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.deviceUsage || ''}
                     onChange={(e) => setAssessment({ ...assessment, deviceUsage: e.target.value })}
                     placeholder="Ex: Bengala, andador, cadeira de rodas"
@@ -533,7 +537,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Necessidade de adaptação ambiental</label>
                   <input
                     type="text"
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.environmentalAdaptationNeeds || ''}
                     onChange={(e) => setAssessment({ ...assessment, environmentalAdaptationNeeds: e.target.value })}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none disabled:opacity-70"
@@ -549,7 +553,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Síntese funcional ocupacional</label>
                   <textarea
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.functionalSynthesis || ''}
                     onChange={(e) => setAssessment({ ...assessment, functionalSynthesis: e.target.value })}
                     rows={3}
@@ -559,7 +563,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Metas terapêuticas</label>
                   <textarea
-                    disabled={!isEditingAssessment}
+                    
                     value={assessment.piaGoals || ''}
                     onChange={(e) => setAssessment({ ...assessment, piaGoals: e.target.value })}
                     rows={3}
@@ -567,6 +571,16 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                   />
                 </div>
               </div>
+            </div>
+            
+            <div className="flex justify-end pt-4 border-t mt-6">
+              <button 
+                onClick={handleSaveAssessment}
+                className="bg-[#004c99] hover:bg-blue-800 text-white px-8 py-4 rounded-2xl flex items-center gap-2 shadow-xl shadow-blue-900/20 transition-all font-black text-xs uppercase"
+              >
+                <Save size={18} />
+                Salvar Avaliação e Atualizar PIA
+              </button>
             </div>
           </div>
         </div>
@@ -942,14 +956,6 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
             )}
           </div>
         </div>
-      )}
-
-      {activeSubTab === 'grupo' && (
-        <GroupActivityTab
-          competence="terapeuta_ocupacional"
-          residents={residents}
-          onSaveResident={onSaveResident}
-        />
       )}
     </div>
   );

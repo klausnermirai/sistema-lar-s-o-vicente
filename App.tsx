@@ -10,13 +10,14 @@ import HealthCareModule from './components/HealthCareModule';
 import { PlanningEmendasModule } from './components/PlanningEmendasModule';
 import MuralModule from './components/MuralModule';
 import MedicalModule from './components/MedicalModule';
+import MedicationModule from './components/MedicationModule';
+import AgendaModule from './components/AgendaModule';
+import { VisitorPortal } from './components/VisitorPortal';
 import LoginScreen from './components/LoginScreen';
 import SetupScreen from './components/SetupScreen';
 import { AppRoute, Resident, SubTab, Candidate, InstitutionSettings, MuralMessage } from './types';
 import { DUMMY_RESIDENTS, INITIAL_RESIDENT, DUMMY_CANDIDATES } from './constants';
 import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Pill, Briefcase, FileSearch, FileText, ClipboardList } from 'lucide-react';
-import { loadInstitutionSettings } from './lib/settingsStore';
-import { loadUsers } from './lib/usersStore';
 
 
 import { fetchResidents, fetchCandidates, saveResident as apiSaveResident, saveCandidate as apiSaveCandidate, bulkSaveCandidates as apiBulkSaveCandidates, bulkSaveResidents as apiBulkSaveResidents, deleteCandidate as apiDeleteCandidate, deleteResident as apiDeleteResident, fetchSettings, Session, saveMuralMessage as apiSaveMuralMessage } from './lib/api';
@@ -44,13 +45,20 @@ const App: React.FC = () => {
   const [view, setView] = React.useState<'login' | 'setup' | 'app'>(
     (session || DEV_BYPASS_AUTH) ? 'app' : 'login'
   );
-  const [activeRoute, setActiveRoute] = React.useState<AppRoute>(
-    session?.accessLevel === 'medico' ? AppRoute.CONSULTAS_MEDICAS : AppRoute.RESIDENTS
-  );
+  const [activeRoute, setActiveRoute] = React.useState<AppRoute>(() => {
+    if (session?.accessLevel === 'medico') return AppRoute.CONSULTAS_MEDICAS;
+    if (session?.accessLevel === 'cuidados') return AppRoute.SAUDE_CUIDADOS;
+    if (session?.accessLevel === 'visitante') return AppRoute.VISITANTES;
+    return AppRoute.RESIDENTS;
+  });
 
   React.useEffect(() => {
     if (session?.accessLevel === 'medico' && activeRoute !== AppRoute.CONSULTAS_MEDICAS) {
       setActiveRoute(AppRoute.CONSULTAS_MEDICAS);
+    } else if (session?.accessLevel === 'cuidados' && activeRoute === AppRoute.RESIDENTS) {
+      setActiveRoute(AppRoute.SAUDE_CUIDADOS);
+    } else if (session?.accessLevel === 'visitante' && activeRoute === AppRoute.RESIDENTS) {
+      setActiveRoute(AppRoute.VISITANTES);
     }
   }, [session?.accessLevel]);
   const [activeSubTab, setActiveSubTab] = React.useState<SubTab>('geral');
@@ -451,6 +459,7 @@ const App: React.FC = () => {
         <HealthCareModule 
           residents={residents} 
           onSaveResident={handleSaveResident} 
+          onBulkSaveResidents={handleBulkSaveResidents}
           onPostToMural={handlePostToMural}
         />
       )}
@@ -467,6 +476,43 @@ const App: React.FC = () => {
       {activeRoute === AppRoute.CONSULTAS_MEDICAS && (
         <MedicalModule 
           residents={residents}
+          onSaveResident={handleSaveResident}
+          candidates={candidates}
+          onSaveCandidate={handleSaveCandidate}
+          session={session}
+        />
+      )}
+
+      {activeRoute === AppRoute.AGENDA && (
+        <AgendaModule 
+          residents={residents} 
+          session={session}
+          onPostToMural={handlePostToMural}
+        />
+      )}
+
+      {activeRoute === AppRoute.MEDICAMENTOS && (
+        <MedicationModule 
+          residents={residents} 
+          session={session}
+          onSaveResident={handleSaveResident}
+        />
+      )}
+
+      {activeRoute === AppRoute.GUIAS && (
+        <div className="flex h-full items-center justify-center p-8 bg-white/50 backdrop-blur-sm rounded-3xl m-8 border border-gray-100 shadow-sm">
+          <div className="text-center space-y-4">
+            <h2 className="text-2xl font-black text-gray-800 uppercase">Guias</h2>
+            <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Módulo em desenvolvimento</p>
+          </div>
+        </div>
+      )}
+
+      {activeRoute === AppRoute.VISITANTES && (
+        <VisitorPortal 
+          institutionId={session?.institutionId || session?.cnpj || ''} 
+          residents={residents} 
+          onVisitSaved={() => {}} 
           onSaveResident={handleSaveResident}
         />
       )}

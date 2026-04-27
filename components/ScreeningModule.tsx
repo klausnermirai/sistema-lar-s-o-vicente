@@ -40,6 +40,7 @@ import {
   NursingScreening,
 } from "../types";
 import { INITIAL_CANDIDATE, INITIAL_NURSING_SCREENING } from "../constants";
+import { saveAgendaEvent } from "../lib/agendaStore";
 
 interface ScreeningModuleProps {
   candidates: Candidate[];
@@ -195,17 +196,10 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
   }[] = [
     {
       id: "agendamentos",
-      label: "0. Agendamentos",
+      label: "1. Agendamentos / Entrevista",
       icon: Calendar,
       color: "indigo",
-      description: "Pessoas aguardando visita ou entrevista inicial.",
-    },
-    {
-      id: "entrevista",
-      label: "1. Entrevistas",
-      icon: ClipboardList,
-      color: "blue",
-      description: "Coleta de dados iniciais e visita social.",
+      description: "Agendamento e primeira entrevista social.",
     },
     {
       id: "aguardando_vaga",
@@ -280,7 +274,9 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
     `;
 
     allStages.forEach((stage) => {
-      const stageCandidates = allCandidates.filter((c) => c.stage === stage.id);
+      const stageCandidates = allCandidates.filter((c) => 
+        stage.id === "agendamentos" ? (c.stage === "agendamentos" || c.stage === "entrevista") : c.stage === stage.id
+      );
       if (stageCandidates.length > 0) {
         html += `
           <div class="stage-section">
@@ -350,7 +346,13 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
       const matchesSearch = c.name
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
-      return c.stage === stage && matchesSearch;
+        
+      // Retrocompatibilidade: incluir 'entrevista' na aba 'agendamentos'
+      const matchesStage = stage === "agendamentos" 
+        ? (c.stage === "agendamentos" || c.stage === "entrevista")
+        : c.stage === stage;
+        
+      return matchesStage && matchesSearch;
     });
 
   const archivedCandidates = allCandidates.filter(
@@ -375,6 +377,21 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
       createdAt: new Date().toISOString(),
     };
     onSave(newCandidate);
+    
+    // Convert and save to Agenda
+    const agendaEvent: any = { // Use any briefly to bypass tight type check if needed, though AgendaEvent is fine
+      id: `triagem-${newCandidate.id}`,
+      institutionId: settings?.cnpj || 'default-inst',
+      title: `Pré-Triagem: ${newCandidate.name}`,
+      date: newCandidate.scheduledDate,
+      time: "09:00", // Default time as we don't capture time in simple appointment
+      description: newCandidate.requestDescription || 'Agendamento de triagem inicial',
+      professionalName: 'Assistência Social',
+      professionalRole: 'Serviço Social',
+      type: 'triagem',
+    };
+    saveAgendaEvent(agendaEvent);
+
     setIsCreatingSimple(false);
     setSelectedStage("agendamentos");
   };
@@ -526,8 +543,8 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
       {/* Tabs de Status */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 no-print overflow-x-auto pb-2 no-scrollbar">
         {stages.map((stage) => {
-          const count = allCandidates.filter(
-            (c) => c.stage === stage.id,
+          const count = allCandidates.filter((c) => 
+            stage.id === "agendamentos" ? (c.stage === "agendamentos" || c.stage === "entrevista") : c.stage === stage.id
           ).length;
           const isActive = selectedStage === stage.id;
           const theme = STAGE_THEMES[stage.color];
@@ -1017,11 +1034,10 @@ function StatusManagementModal({
               </div>
               <div className="space-y-1">
                 <p className="text-[12px] font-black text-indigo-900 uppercase tracking-tighter">
-                  Visita Social Realizada?
+                  Visita / Entrevista Social
                 </p>
                 <p className="text-[10px] text-indigo-800 leading-relaxed font-medium">
-                  Você pode iniciar o preenchimento da ficha agora ou apenas
-                  evoluir o status para a próxima etapa.
+                  Você pode iniciar o preenchimento da ficha agora e selecionar a prioridade antes de evoluir para a lista de espera.
                 </p>
               </div>
             </div>
@@ -1038,66 +1054,42 @@ function StatusManagementModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 pt-2">
+              <div className="space-y-2 pt-2">
+                <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                  Nível de prioridade
+                </label>
+                <select
+                  value={data.priority || "padrao"}
+                  onChange={(e) =>
+                    updateField("priority", e.target.value as WaitlistPriority)
+                  }
+                  className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase bg-white focus:ring-2 focus:ring-indigo-200 outline-none"
+                >
+                  <option value="social_urgente">
+                    1) PRIORIDADE SOCIAL (URGENTE)
+                  </option>
+                  <option value="dependencia_duvidosa">
+                    2) GRAU DE DEPENDÊNCIA DUVIDOSO (REQUER AVALIAÇÃO MÉDICA)
+                  </option>
+                  <option value="padrao">3) PRIORIDADE PADRÃO</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 pt-4">
                 <button
                   onClick={() => onOpenFullForm(data)}
                   className="w-full py-3.5 bg-white border-2 border-indigo-600 text-indigo-600 rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-indigo-50 transition-all flex items-center justify-center gap-3"
                 >
-                  <FileText size={18} /> INICIAR ENTREVISTA (ABRIR FICHA)
+                  <FileText size={18} /> INICIAR / EDITAR ENTREVISTA
                 </button>
                 <button
-                  onClick={() => advanceStage("entrevista")}
+                  onClick={() => advanceStage("aguardando_vaga")}
                   className="w-full py-3.5 bg-indigo-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3"
                 >
-                  <ArrowRight size={20} /> EVOLUIR PARA ENTREVISTA
+                  <ArrowRight size={20} /> ENVIAR PARA FILA DE ESPERA
                 </button>
               </div>
             </div>
-          </div>
-        );
-      case "entrevista":
-        return (
-          <div className="space-y-6">
-            <div className="p-5 bg-blue-50 border border-blue-100 rounded-2xl flex items-start gap-4">
-              <Info className="text-blue-500 shrink-0" size={20} />
-              <div className="space-y-1">
-                <p className="text-[11px] font-black text-blue-900 uppercase">
-                  Configuração de Fila
-                </p>
-                <p className="text-[10px] text-blue-800 leading-relaxed font-medium">
-                  Defina a prioridade de atendimento do idoso antes de movê-lo
-                  para a lista de espera.
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
-                Nível de prioridade
-              </label>
-              <select
-                value={data.priority || "padrao"}
-                onChange={(e) =>
-                  updateField("priority", e.target.value as WaitlistPriority)
-                }
-                className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase bg-white focus:ring-2 focus:ring-blue-200 outline-none"
-              >
-                <option value="social_urgente">
-                  1) PRIORIDADE SOCIAL (URGENTE)
-                </option>
-                <option value="dependencia_duvidosa">
-                  2) GRAU DE DEPENDÊNCIA DUVIDOSO (REQUER AVALIAÇÃO MÉDICA)
-                </option>
-                <option value="padrao">3) PRIORIDADE PADRÃO</option>
-              </select>
-            </div>
-
-            <button
-              onClick={() => advanceStage("aguardando_vaga")}
-              className="w-full py-4 bg-[#004c99] text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-blue-800 transition-all flex items-center justify-center gap-2"
-            >
-              <ArrowRight size={16} /> ENVIAR PARA LISTA DE ESPERA
-            </button>
           </div>
         );
       case "aguardando_vaga":
@@ -1169,13 +1161,24 @@ function StatusManagementModal({
                 className="w-full p-5 border border-gray-200 rounded-2xl text-xs font-medium h-40 focus:ring-2 focus:ring-purple-200 outline-none uppercase"
               />
             </div>
-            <button
-              disabled={!data.boardOpinion}
-              onClick={() => advanceStage("avaliacao_medica")}
-              className="w-full py-4 bg-teal-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-teal-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              Encaminhar para Parecer Médico <ArrowRight size={16} />
-            </button>
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                onClick={() => {
+                  onSave(data);
+                  onClose();
+                }}
+                className="w-full py-3.5 bg-white border-2 border-purple-600 text-purple-600 rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-purple-50 transition-all flex items-center justify-center gap-2"
+              >
+                <Save size={16} /> Salvar Parecer (Sem Evoluir)
+              </button>
+              <button
+                disabled={!data.boardOpinion}
+                onClick={() => advanceStage("avaliacao_medica")}
+                className="w-full py-3.5 bg-purple-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-purple-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                Encaminhar para Parecer Médico <ArrowRight size={16} />
+              </button>
+            </div>
           </div>
         );
       case "avaliacao_medica":
@@ -1232,7 +1235,7 @@ function StatusManagementModal({
                 className="w-full py-4 border-2 border-dashed border-teal-200 text-teal-600 rounded-2xl text-[10px] font-black uppercase hover:bg-teal-50 transition-all flex items-center justify-center gap-2"
               >
                 <ClipboardList size={16} /> 
-                {data.nursingScreening ? 'Editar Triagem de Enfermagem' : 'Realizar Triagem de Enfermagem'}
+                {data.nursingScreening ? 'Abrir / Editar Triagem de Enfermagem' : 'Iniciar Triagem de Enfermagem'}
               </button>
               {data.nursingScreening && (
                 <p className="text-[9px] font-bold text-teal-500 text-center mt-2 uppercase">
@@ -1241,14 +1244,26 @@ function StatusManagementModal({
               )}
             </div>
 
-            {data.medicalStatus === "favoravel" && (
+            <div className="grid grid-cols-1 gap-3 pt-2">
               <button
-                onClick={() => advanceStage("integracao")}
-                className="w-full py-4 bg-pink-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-pink-700 transition-all flex items-center justify-center gap-2"
+                onClick={() => {
+                  onSave(data);
+                  onClose();
+                }}
+                className="w-full py-3.5 bg-white border-2 border-teal-600 text-teal-600 rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-teal-50 transition-all flex items-center justify-center gap-2"
               >
-                Seguir para Integração <ArrowRight size={16} />
+                <Save size={16} /> Salvar Relato (Sem Evoluir)
               </button>
-            )}
+              
+              {data.medicalStatus === "favoravel" && (
+                <button
+                  onClick={() => advanceStage("integracao")}
+                  className="w-full py-3.5 bg-pink-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-pink-700 transition-all flex items-center justify-center gap-2"
+                >
+                  Seguir para Integração <ArrowRight size={16} />
+                </button>
+              )}
+            </div>
           </div>
         );
       case "integracao":
@@ -1266,114 +1281,195 @@ function StatusManagementModal({
                   : "NÃO DEFINIDA";
 
           const interview = data.interview;
+          const ns = data.nursingScreening;
 
           let html = `
             <html>
               <head>
-                <title>Relatório Geral de Triagem - ${data.name}</title>
+                <title>Relatório Consolidado de Triagem - ${data.name}</title>
                 <style>
-                  body { font-family: 'Inter', system-ui, sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; }
+                  body { font-family: 'Inter', system-ui, sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; max-width: 1000px; margin: auto; }
                   .header { text-align: center; border-bottom: 4px solid #004c99; margin-bottom: 30px; padding-bottom: 20px; }
-                  .header h1 { margin: 0; font-size: 28px; text-transform: uppercase; color: #004c99; font-weight: 900; }
+                  .header h1 { margin: 0; font-size: 24px; text-transform: uppercase; color: #004c99; font-weight: 900; }
                   .header p { margin: 5px 0 0; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
-                  .section { margin-bottom: 30px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-                  .section-title { background: #f8fafc; padding: 12px 20px; font-size: 14px; font-weight: 900; text-transform: uppercase; color: #004c99; border-bottom: 1px solid #e2e8f0; }
-                  .section-content { padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-                  .full-width { grid-column: span 2; }
-                  .field { margin-bottom: 10px; }
-                  .label { font-size: 10px; font-weight: 900; text-transform: uppercase; color: #64748b; display: block; }
-                  .value { font-size: 13px; font-weight: 600; color: #1e293b; }
-                  .text-block { background: #f1f5f9; padding: 15px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; margin-top: 5px; }
+                  .section { margin-bottom: 25px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; page-break-inside: avoid; }
+                  .section-title { background: #f8fafc; padding: 10px 15px; font-size: 13px; font-weight: 900; text-transform: uppercase; color: #004c99; border-bottom: 1px solid #e2e8f0; }
+                  .section-content { padding: 15px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
+                  .col-span-2 { grid-column: span 2; }
+                  .col-span-3 { grid-column: span 3; }
+                  .field { margin-bottom: 5px; }
+                  .label { font-size: 10px; font-weight: 900; text-transform: uppercase; color: #64748b; display: block; margin-bottom: 2px; }
+                  .value { font-size: 12px; font-weight: 600; color: #1e293b; }
+                  .text-block { background: #f1f5f9; padding: 12px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; margin-top: 5px; }
                   table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
-                  th { background: #f1f5f9; border: 1px solid #e2e8f0; padding: 8px; text-align: left; font-weight: 900; text-transform: uppercase; }
+                  th { background: #f1f5f9; border: 1px solid #e2e8f0; padding: 8px; text-align: left; font-weight: 900; text-transform: uppercase; color: #475569; }
                   td { border: 1px solid #e2e8f0; padding: 8px; }
                   .footer { margin-top: 40px; font-size: 10px; text-align: center; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 20px; }
-                  @media print { .no-print { display: none; } }
+                  @media print { .no-print { display: none; } body { padding: 0; } }
                 </style>
               </head>
               <body>
                 <div class="header">
-                  <h1>Relatório Geral de Triagem</h1>
-                  <p>Candidato: ${data.name} | Emitido em: ${new Date().toLocaleString("pt-BR")}</p>
+                  <h1>Relatório Consolidado de Triagem e Admissão</h1>
+                  <p>Candidato: ${data.name} | Gerado em: ${new Date().toLocaleString("pt-BR")}</p>
                 </div>
 
+                <!-- 1. IDENTIFICAÇÃO E AGENDAMENTO -->
                 <div class="section">
-                  <div class="section-title">Dados do Agendamento</div>
+                  <div class="section-title">1. Dados de Identificação e Agendamento</div>
                   <div class="section-content">
-                    <div class="field"><span class="label">Data do Contato</span><span class="value">${data.scheduledDate ? new Date(data.scheduledDate).toLocaleDateString("pt-BR") : "N/A"}</span></div>
-                    <div class="field"><span class="label">Telefone</span><span class="value">${data.phone || "N/A"}</span></div>
-                    <div class="field full-width"><span class="label">Endereço</span><span class="value">${data.address || "N/A"}</span></div>
+                    <div class="field"><span class="label">Nome Completo</span><span class="value">${data.name || "-"}</span></div>
+                    <div class="field"><span class="label">Data de Nascimento / Idade</span><span class="value">${data.birthDate || "-"} / ${data.age || "-"} anos</span></div>
+                    <div class="field"><span class="label">Gênero</span><span class="value">${data.gender || "-"}</span></div>
+                    
+                    <div class="field"><span class="label">CPF</span><span class="value">${data.cpf || "-"}</span></div>
+                    <div class="field"><span class="label">Telefone</span><span class="value">${data.phone || "-"}</span></div>
+                    <div class="field"><span class="label">Estado Civil</span><span class="value">${data.maritalStatus || "-"}</span></div>
+
+                    <div class="field col-span-2"><span class="label">Endereço</span><span class="value">${data.address || "-"}</span></div>
+                    <div class="field"><span class="label">Fila de Espera / Prioridade</span><span class="value">${priorityLabel}</span></div>
+
+                    <div class="field"><span class="label">Origem do Pedido</span><span class="value">${data.requestOrigin || "-"}</span></div>
+                    <div class="field col-span-2"><span class="label">Anotações do Agendamento / Histórico</span><span class="value">${data.requestDescription || "-"}</span></div>
                   </div>
                 </div>
 
+                <!-- 2. INFORMAÇÕES SOCIOFAMILIARES (Entrevista Social) -->
+                ${interview ? `
                 <div class="section">
-                  <div class="section-title">Entrevista Social</div>
+                  <div class="section-title">2. Relatório de Entrevista Social e Dinâmica Familiar</div>
                   <div class="section-content">
-                    <div class="field"><span class="label">Idade</span><span class="value">${data.age || "N/A"}</span></div>
-                    <div class="field"><span class="label">Sexo</span><span class="value">${data.gender || "N/A"}</span></div>
-                    <div class="field"><span class="label">Estado Civil</span><span class="value">${data.maritalStatus || "N/A"}</span></div>
-                    <div class="field"><span class="label">CPF</span><span class="value">${data.cpf || "N/A"}</span></div>
-                    <div class="field full-width"><span class="label">Reside com</span><span class="value">${interview.residesWith || "N/A"}</span></div>
-                    <div class="field full-width"><span class="label">Motivo da Solicitação</span><div class="text-block">${interview.requestReason || "Não informado"}</div></div>
-                    <div class="field full-width"><span class="label">Parecer da Assistente Social</span><div class="text-block">${interview.socialAnalysis || "Não informado"}</div></div>
+                    <div class="field"><span class="label">Responsável Legal</span><span class="value">${data.repName || "-"}</span></div>
+                    <div class="field"><span class="label">Parentesco</span><span class="value">${data.repKinship || "-"}</span></div>
+                    <div class="field"><span class="label">Telefone Resp.</span><span class="value">${data.repPhone || "-"}</span></div>
+
+                    <div class="field"><span class="label">Moradia</span><span class="value">${interview.housingType === "propria" ? "Própria" : interview.housingType === "alugada" ? "Alugada (R$ " + (interview.rentValue || "0") + ")" : interview.housingType === "cedida" ? "Cedida" : "Outro"}</span></div>
+                    <div class="field"><span class="label">Fonte de Renda</span><span class="value">${interview.incomeSource === 'aposentadoria' ? 'Aposentadoria' : interview.incomeSource === 'bpc' ? 'BPC / LOAS' : interview.incomeSource === 'sem_renda' ? 'Sem Renda' : interview.incomeSource || '-'}</span></div>
+                    <div class="field"><span class="label">Valor Renda / Empréstimos</span><span class="value">R$ ${interview.incomeValue || "0"} ${interview.hasLoan === "sim" && interview.loanValue ? "(Empréstimos: R$ " + interview.loanValue + ")" : ""}</span></div>
+
+                    <div class="field col-span-3">
+                      <span class="label">Composição Familiar</span>
+                      ${interview.familyTable?.length > 0 ? `
+                        <table>
+                          <tr><th>Nome</th><th>Idade</th><th>Parentesco</th><th>Ocupação / Renda</th><th>Condição de Saúde</th></tr>
+                          ${interview.familyTable.map(member => `
+                            <tr>
+                              <td>${member.name || "-"}</td>
+                              <td>${member.age || "-"}</td>
+                              <td>${member.kinship || "-"}</td>
+                              <td>${member.occupation || "-"} ${member.income ? "(R$ " + member.income + ")" : ""}</td>
+                              <td>${member.healthCondition || "-"}</td>
+                            </tr>
+                          `).join('')}
+                        </table>
+                      ` : "<div class='text-block'>Nenhum familiar registrado.</div>"}
+                    </div>
+
+                    <div class="field"><span class="label">Reside com</span><span class="value">${interview.residesWith || "-"}</span></div>
+                    <div class="field"><span class="label">Dinâmica Familiar e Conflitos</span><span class="value">${interview.familyConflicts === "sim" ? "Sim. Detalhes: " + (interview.conflictDetails || "-") : "Não relata"}</span></div>
+                    <div class="field"><span class="label">Rede de Apoio</span><span class="value">${interview.hasSupportNetwork === "sim" ? "Sim. " + (interview.supportNetworkDetails || "-") : "Não possui"}</span></div>
+
+                    <div class="field col-span-3">
+                      <span class="label">Motivo Inicial do Pedido de Vaga</span>
+                      <div class="text-block">${interview.requestReason || "Não registrado"}</div>
+                    </div>
+
+                    <div class="field col-span-3">
+                      <span class="label">Parecer e Diagnóstico da Assistente Social</span>
+                      <div class="text-block">${interview.socialAnalysis || "Não registrado"}</div>
+                    </div>
+                  </div>
+                </div>
+                ` : ""}
+
+                <!-- 3. PARECER DA DIRETORIA -->
+                <div class="section">
+                  <div class="section-title">3. Validação e Parecer da Diretoria</div>
+                  <div class="section-content">
+                    <div class="field col-span-3">
+                      <span class="label">Decisão Colegiada Administrativa</span>
+                      <div class="text-block">${data.boardOpinion || "Não avaliado pela diretoria."}</div>
+                    </div>
                   </div>
                 </div>
 
+                <!-- 4. TRIAGEM DE ENFERMAGEM -->
+                ${ns ? `
                 <div class="section">
-                  <div class="section-title">Fila de Espera</div>
+                  <div class="section-title">4. Avaliação e Triagem de Enfermagem Pré-Admissional</div>
                   <div class="section-content">
-                    <div class="field full-width"><span class="label">Nível de Prioridade</span><span class="value">${priorityLabel}</span></div>
+                    <div class="field"><span class="label">Profissional / Data</span><span class="value">${ns.professionalName || "-"} - ${ns.date ? new Date(ns.date).toLocaleDateString("pt-BR") : "-"}</span></div>
+                    <div class="field"><span class="label">Pressão Arterial / FC</span><span class="value">${ns.vitalSigns?.paSystolic || "-"}/${ns.vitalSigns?.paDiastolic || "-"} mmHg | FC: ${ns.vitalSigns?.fc || "-"} bpm</span></div>
+                    <div class="field"><span class="label">Sat O2 / HGT</span><span class="value">${ns.vitalSigns?.spo2 || "-"}% | HGT: ${ns.vitalSigns?.hgtValue || "-"} mg/dL (${ns.vitalSigns?.hgtType || "-"})</span></div>
+
+                    <div class="field"><span class="label">Peso e Estatura</span><span class="value">Peso: ${ns.vitalSigns?.weight || "-"} | Altura: ${ns.vitalSigns?.height || "-"}</span></div>
+                    <div class="field col-span-2"><span class="label">Comorbidades Referidas</span><span class="value">${ns.clinicalHistory?.comorbidities?.join(", ") || "-"} ${ns.clinicalHistory?.otherComorbidities ? `(${ns.clinicalHistory?.otherComorbidities})` : ""}</span></div>
+
+                    <div class="field col-span-3"><span class="label">Prescrição e Medicações em Uso Contínuo</span><div class="text-block">${ns.clinicalHistory?.medications || "Não informado"}</div></div>
+
+                    <div class="field"><span class="label">Mobilidade</span><span class="value uppercase">${ns.functionalAssessment?.mobility || "-"}</span></div>
+                    <div class="field"><span class="label">Continência</span><span class="value uppercase">${ns.functionalAssessment?.continence || "-"}</span></div>
+                    <div class="field"><span class="label">Nível de Consciência</span><span class="value uppercase">${ns.functionalAssessment?.consciousness || "-"}</span></div>
+
+                    <div class="field col-span-3"><span class="label">Aspectos de Integridade Cutânea</span><div class="text-block">${ns.skinIntegrity?.lesionsPresent ? "Lesões presentes: " + (ns.skinIntegrity?.lesionsDetails || "-") : "Pele íntegra. Turgor/Hidratação: " + (ns.skinIntegrity?.turgor || "-") + " | " + (ns.skinIntegrity?.hydration || "-")}</div></div>
+
+                    <div class="field col-span-3"><span class="label">Cartão SUS e Saúde Pública</span><span class="value">SUS: ${ns.healthSupport?.susCard || "Não informado"} | UBS Ref: ${ns.healthSupport?.referenceUBS || "Não informada"}</span></div>
+                  </div>
+                </div>
+                ` : `
+                <div class="section">
+                  <div class="section-title">4. Avaliação e Triagem de Enfermagem Pré-Admissional</div>
+                  <div class="section-content">
+                    <div class="field col-span-3"><span class="value italic text-gray-500">Triagem de Enfermagem não realizada para este candidato.</span></div>
+                  </div>
+                </div>
+                `}
+
+                <!-- 5. PARECER CLÍNICO MÉDICO -->
+                <div class="section">
+                  <div class="section-title">5. Avaliação e Parecer Médico de Admissibilidade</div>
+                  <div class="section-content">
+                    <div class="field col-span-3">
+                      <span class="label">Status de Aptidão Clínica Institucional</span>
+                      <span class="value" style="font-size: 16px; color: ${data.medicalStatus === "favoravel" ? "#16a34a" : data.medicalStatus === "desfavoravel" ? "#dc2626" : "#64748b"};">
+                        ${data.medicalStatus === "favoravel" ? "APTO PARA ADMISSÃO" : data.medicalStatus === "desfavoravel" ? "INAPTO CLINICAMENTE" : "ANÁLISE PENDENTE"}
+                      </span>
+                    </div>
+                    <div class="field col-span-3">
+                      <span class="label">Justificativa, Conduta e Observações Médicas</span>
+                      <div class="text-block">${data.medicalOpinion || "Nenhum laudo ou parecer registrado."}</div>
+                    </div>
                   </div>
                 </div>
 
-                <div class="section">
-                  <div class="section-title">Parecer da Diretoria</div>
+                <!-- 6. INTEGRAÇÃO E ACOLHIMENTO -->
+                <div class="section" ${!data.integrationDate ? `style="opacity: 0.6"` : ""}>
+                  <div class="section-title">6. Integração, Contrato e Vínculo Institucional</div>
                   <div class="section-content">
-                    <div class="field full-width"><span class="label">Decisão Oficial / Ata</span><div class="text-block">${data.boardOpinion || "Não registrado"}</div></div>
+                    <div class="field"><span class="label">Previsão / Data Integração</span><span class="value">${data.integrationDate ? new Date(data.integrationDate).toLocaleDateString("pt-BR") : "Pendente"}</span></div>
+                    <div class="field"><span class="label">Status Contratual</span><span class="value uppercase">${data.contractStatus === "assinado" ? "Assinado" : "Pendente"}</span></div>
+                    
+                    ${data.admissionDate ? `
+                      <div class="field"><span class="label">Data Efetiva de Acolhimento</span><span class="value" style="color: #16a34a;">${new Date(data.admissionDate).toLocaleDateString("pt-BR")}</span></div>
+                    ` : ""}
+
+                    <div class="field col-span-3">
+                      <span class="label">Relatório Administrativo da Integração</span>
+                      <div class="text-block">${data.integrationReport || "Pendente"}</div>
+                    </div>
+                    
                   </div>
                 </div>
 
-                <div class="section">
-                  <div class="section-title">Parecer Médico</div>
-                  <div class="section-content">
-                    <div class="field"><span class="label">Status Clínico</span><span class="value">${data.medicalStatus === "favoravel" ? "APTO" : data.medicalStatus === "desfavoravel" ? "INAPTO" : "PENDENTE"}</span></div>
-                    <div class="field full-width"><span class="label">Observações Médicas</span><div class="text-block">${data.medicalOpinion || "Não registrado"}</div></div>
-                  </div>
-                </div>
-
-                <div class="section">
-                  <div class="section-title">Integração</div>
-                  <div class="section-content">
-                    <div class="field"><span class="label">Data da Integração</span><span class="value">${data.integrationDate ? new Date(data.integrationDate).toLocaleDateString("pt-BR") : "N/A"}</span></div>
-                    <div class="field"><span class="label">Status do Contrato</span><span class="value">${data.contractStatus === "assinado" ? "ASSINADO" : "PENDENTE"}</span></div>
-                    <div class="field full-width"><span class="label">Relatório da Integração</span><div class="text-block">${data.integrationReport || "Não registrado"}</div></div>
-                  </div>
-                </div>
-
-                ${
-                  data.admissionDate
-                    ? `
-                <div class="section">
-                  <div class="section-title">Acolhimento</div>
-                  <div class="section-content">
-                    <div class="field full-width"><span class="label">Data de Efetivação do Acolhimento</span><span class="value" style="color: #16a34a; font-size: 18px;">${new Date(data.admissionDate).toLocaleDateString("pt-BR")}</span></div>
-                  </div>
-                </div>
-                `
-                    : ""
-                }
-
-                <div class="footer">Este documento é de uso interno da SSVP e contém dados sensíveis.</div>
+                <div class="footer">Este documento é sigiloso. Relatório consolidado gerado automaticamente a partir do Módulo de Triagem SSVP.</div>
+                <script>
+                  window.onload = function() { window.focus(); window.print(); }
+                </script>
               </body>
             </html>
           `;
           printWindow.document.write(html);
           printWindow.document.close();
-          
-          printWindow.onload = () => {
-            printWindow.focus();
-            printWindow.print();
-          };
 
           // Fallback para navegadores onde onload pode não disparar para document.write
           setTimeout(() => {
@@ -1444,6 +1540,16 @@ function StatusManagementModal({
             </div>
 
             <div className="flex flex-col gap-3 pt-4">
+              <button
+                onClick={() => {
+                  onSave(data);
+                  onClose();
+                }}
+                className="w-full py-3.5 bg-white border-2 border-pink-600 text-pink-600 rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-pink-50 transition-all flex items-center justify-center gap-2"
+              >
+                <Save size={16} /> Salvar Relatório (Sem Evoluir)
+              </button>
+
               {data.stage !== "acolhido" ? (
                 <button
                   onClick={() => {

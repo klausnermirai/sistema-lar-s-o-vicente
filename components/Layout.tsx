@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity, MessageCircle, LogOut, DollarSign, Package, BarChart3, HelpCircle, Key } from 'lucide-react';
+import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity, MessageCircle, LogOut, DollarSign, Package, BarChart3, HelpCircle, Key, Calendar, Pill, FileText } from 'lucide-react';
 import { AppRoute } from '../types';
 import { getLastReadTimestamp } from '../lib/muralStore';
 import { SupportChat } from './SupportChat';
@@ -38,7 +38,7 @@ const Layout: React.FC<LayoutProps> = ({
   onLogout, 
   accessLevel 
 }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(accessLevel !== 'medico');
   const [unreadMural, setUnreadMural] = useState(0);
   const [activeCategory, setActiveCategory] = useState<'atendimento' | 'gestao'>('atendimento');
   const [isSupportOpen, setIsSupportOpen] = useState(false);
@@ -48,12 +48,15 @@ const Layout: React.FC<LayoutProps> = ({
   const hasGestaoAccess = accessLevel === 'administrador' || accessLevel === 'gerencial';
   
   // Specific restrictions
+  const isEnfermeira = accessLevel === 'enfermeira';
+  const isVisitante = accessLevel === 'visitante';
   const isAssistenteSocial = accessLevel === 'assistente_social';
   const isPsicologia = accessLevel === 'psicologia';
   const isTerapeutaOcupacional = accessLevel === 'terapeuta_ocupacional';
   const isFisioterapeuta = accessLevel === 'fisioterapeuta';
   const isNutricionista = accessLevel === 'nutricionista';
   const isMedico = accessLevel === 'medico';
+  const isCuidados = accessLevel === 'cuidados';
 
   useEffect(() => {
     // Mural real-time unread count
@@ -111,6 +114,9 @@ const Layout: React.FC<LayoutProps> = ({
       AppRoute.SAUDE_CUIDADOS, 
       AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, 
       AppRoute.CONSULTAS_MEDICAS,
+      AppRoute.MEDICAMENTOS,
+      AppRoute.AGENDA,
+      AppRoute.GUIAS,
       AppRoute.SETTINGS
     ];
 
@@ -134,10 +140,27 @@ const Layout: React.FC<LayoutProps> = ({
     { id: AppRoute.SAUDE_CUIDADOS, label: 'Saúde e Cuidados', icon: HeartPulse },
     { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Activity },
     { id: AppRoute.CONSULTAS_MEDICAS, label: 'Consulta Médica', icon: Stethoscope },
+    { id: AppRoute.MEDICAMENTOS, label: 'Medicamentos', icon: Pill },
+    { id: AppRoute.AGENDA, label: 'Agenda', icon: Calendar },
     { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
   ];
 
-  if (isMedico) {
+  if (isEnfermeira) {
+    atendimentoItems = [
+      { id: AppRoute.GUIAS, label: 'Guias', icon: FileText, disabled: true } as any,
+      { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
+      { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
+      { id: AppRoute.SAUDE_CUIDADOS, label: 'Saúde e Cuidados', icon: HeartPulse },
+      { id: AppRoute.AGENDA, label: 'Agenda', icon: Calendar },
+      { id: AppRoute.MEDICAMENTOS, label: 'Medicamentos', icon: Pill },
+      { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+    ];
+  } else if (isVisitante) {
+    atendimentoItems = [
+      { id: AppRoute.VISITANTES, label: 'Portal do Visitante', icon: Users },
+      { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+    ];
+  } else if (isMedico) {
     atendimentoItems = [
       { id: AppRoute.CONSULTAS_MEDICAS, label: 'Consulta Médica', icon: Stethoscope },
       { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
@@ -147,12 +170,21 @@ const Layout: React.FC<LayoutProps> = ({
       { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
       { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
       { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Activity },
+      { id: AppRoute.AGENDA, label: 'Agenda', icon: Calendar },
+      { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+    ];
+  } else if (isCuidados) {
+    atendimentoItems = [
+      { id: AppRoute.AGENDA, label: 'Agenda', icon: Calendar },
+      { id: AppRoute.SAUDE_CUIDADOS, label: 'Saúde e Cuidados', icon: HeartPulse },
+      { id: AppRoute.MEDICAMENTOS, label: 'Medicamentos', icon: Pill },
       { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     ];
   } else if (isPsicologia || isTerapeutaOcupacional || isFisioterapeuta || isNutricionista) {
     atendimentoItems = [
       { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
       { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Activity },
+      { id: AppRoute.AGENDA, label: 'Agenda', icon: Calendar },
       { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     ];
   }
@@ -171,11 +203,12 @@ const Layout: React.FC<LayoutProps> = ({
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sidebar */}
-      <aside 
-        className={`${
-          isSidebarOpen ? 'w-64' : 'w-20'
-        } bg-[#004c99] text-white flex flex-col transition-all duration-300 ease-in-out shadow-2xl z-20`}
-      >
+      {!isVisitante && (
+        <aside 
+          className={`${
+            isSidebarOpen ? 'w-64' : 'w-20'
+          } bg-[#004c99] text-white flex flex-col transition-all duration-300 ease-in-out shadow-2xl z-20`}
+        >
         <div className="p-4 flex items-center justify-between border-b border-blue-800/50">
           <div className={`flex items-center gap-3 overflow-hidden ${!isSidebarOpen && 'justify-center w-full'}`}>
              <div className="bg-white p-1.5 rounded-full shrink-0 shadow-lg overflow-hidden flex items-center justify-center w-10 h-10">
@@ -294,7 +327,8 @@ const Layout: React.FC<LayoutProps> = ({
             <HelpCircle size={16} /> Suporte
           </button>
         </div>
-      </aside>
+        </aside>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -303,28 +337,32 @@ const Layout: React.FC<LayoutProps> = ({
             <span>{institutionName || 'UNIDADE'}</span>
             <ChevronRight size={14} />
             <span className="text-gray-900">
-              {activeRoute === AppRoute.RESIDENTS ? 'Módulo de Residentes' : 
+              {activeRoute === AppRoute.VISITANTES ? 'Portal do Visitante' :
+               activeRoute === AppRoute.RESIDENTS ? 'Módulo de Residentes' : 
                activeRoute === AppRoute.SCREENING ? 'Módulo de Triagens Social' : 
                activeRoute === AppRoute.SAUDE_CUIDADOS ? 'Saúde e Cuidados' :
                activeRoute === AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES ? 'Atendimento Multidisciplinar' :
                activeRoute === AppRoute.CONSULTAS_MEDICAS ? 'Consulta Médica' :
+               activeRoute === AppRoute.AGENDA ? 'Agenda Multidisciplinar' :
                'Configurações do Sistema'}
             </span>
           </div>
           
           <div className="flex items-center gap-6">
-            <button 
-              onClick={() => setIsTeamChatOpen(true)}
-              className="relative p-2 text-gray-500 hover:text-[#004c99] transition-colors"
-              title="Mural Institucional"
-            >
-              <MessageCircle size={24} />
-              {unreadMural > 0 && (
-                <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
-                  {unreadMural > 99 ? '99+' : unreadMural}
-                </span>
-              )}
-            </button>
+            {!isVisitante && (
+              <button 
+                onClick={() => setIsTeamChatOpen(true)}
+                className="relative p-2 text-gray-500 hover:text-[#004c99] transition-colors"
+                title="Mural Institucional"
+              >
+                <MessageCircle size={24} />
+                {unreadMural > 0 && (
+                  <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
+                    {unreadMural > 99 ? '99+' : unreadMural}
+                  </span>
+                )}
+              </button>
+            )}
             <div className="flex flex-col text-right">
               <span className="text-xs font-black text-gray-900 uppercase tracking-tighter">{institutionName || 'Lar São Vicente de Paulo'}</span>
               <span className="text-[10px] text-gray-400 font-bold uppercase">{councilInfo || 'SSVP - Conselho'}</span>
@@ -338,13 +376,15 @@ const Layout: React.FC<LayoutProps> = ({
             </div>
             
             <div className="flex items-center gap-1 border-l border-gray-100 pl-6">
-               <button 
-                 onClick={() => setIsPasswordModalOpen(true)}
-                 className="p-2.5 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
-                 title="Alterar Senha"
-               >
-                 <Key size={20} />
-               </button>
+               {!isVisitante && (
+                 <button 
+                   onClick={() => setIsPasswordModalOpen(true)}
+                   className="p-2.5 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
+                   title="Alterar Senha"
+                 >
+                   <Key size={20} />
+                 </button>
+               )}
               {onLogout && (
                  <button 
                    onClick={onLogout}

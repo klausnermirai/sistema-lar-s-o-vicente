@@ -12,9 +12,12 @@ import {
   AlertCircle,
   Megaphone,
   ClipboardList,
-  Clock
+  Clock,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface HandoverTabProps {
   residents: Resident[];
@@ -29,59 +32,92 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
   onSaveHandover, 
   onPostToMural 
 }) => {
-  const [activeMode, setActiveMode] = useState<'intercorrencia' | 'plantao'>('intercorrencia');
+  const [shift, setShift] = useState<ShiftHandover['shift']>('manha');
+  const [summary, setSummary] = useState('');
+  const [pendingTasks, setPendingTasks] = useState('');
+  
+  const [hasIncident, setHasIncident] = useState(false);
   const [selectedResidentIds, setSelectedResidentIds] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [conduct, setConduct] = useState('');
   const [incidentType, setIncidentType] = useState<IncidentReport['type']>('clinica');
-  const [shareOnMural, setShareOnMural] = useState(true);
   
-  // Handover state
-  const [shift, setShift] = useState<ShiftHandover['shift']>('manha');
-  const [summary, setSummary] = useState('');
-  const [pendingTasks, setPendingTasks] = useState('');
+  const [shareOnMural, setShareOnMural] = useState(true);
 
-  const handleSaveIncident = () => {
-    if (selectedResidentIds.length === 0 || !description.trim()) return;
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const dateStr = new Date().toLocaleDateString('pt-BR');
+    
+    doc.setFontSize(16);
+    doc.text(`Relatório Unificado de Plantão e Intercorrências`, 14, 20);
+    
+    doc.setFontSize(12);
+    doc.text(`Data: ${dateStr}`, 14, 28);
+    doc.text(`Turno: ${shift.toUpperCase()}`, 14, 34);
 
-    const incident: IncidentReport = {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: Date.now(),
-      residentIds: selectedResidentIds,
-      type: incidentType,
-      description,
-      conduct,
-      shareOnMural,
-      professionalName: 'Equipe de Enfermagem' // Placeholder
-    };
+    let currentY = 44;
 
-    onSaveIncident(incident);
+    // Plantão Details
+    doc.setFontSize(14);
+    doc.text('Passagem de Plantão', 14, currentY);
+    currentY += 8;
+    
+    doc.setFontSize(10);
+    autoTable(doc, {
+      startY: currentY,
+      head: [['Relatório de Atividades / Eventos', 'Pendências']],
+      body: [
+        [summary || 'Nenhum relato', pendingTasks || 'Nenhuma pendência']
+      ],
+      headStyles: { fillColor: [0, 76, 153] },
+      styles: { cellPadding: 4, minCellHeight: 20 }
+    });
 
-    if (shareOnMural) {
+    currentY = (doc as any).lastAutoTable.finalY + 15;
+
+    // Intercorrência Details
+    if (hasIncident) {
+      doc.setFontSize(14);
+      doc.text('Intercorrência Registrada', 14, currentY);
+      currentY += 8;
+
       const residentNames = residents
         .filter(r => selectedResidentIds.includes(r.id))
         .map(r => r.name)
         .join(', ');
 
-      onPostToMural({
-        institutionId: residents[0]?.institutionId || '',
-        author: 'Relatório de Intercorrência',
-        content: `🚨 INTERCORRÊNCIA [${incidentType.toUpperCase()}]: Residentes envolvidos: ${residentNames}. Descrição: ${description}. Conduta: ${conduct}`,
-        category: 'saude' as any,
-        priority: 'alta' as any
+      doc.setFontSize(10);
+      autoTable(doc, {
+        startY: currentY,
+        head: [['Tipo', 'Residentes', 'Descrição', 'Conduta']],
+        body: [
+          [
+            incidentType.toUpperCase(),
+            residentNames || 'Nenhum selecionado',
+            description || '-',
+            conduct || '-'
+          ]
+        ],
+        headStyles: { fillColor: [220, 38, 38] },
+        styles: { cellPadding: 4, minCellHeight: 20 }
       });
     }
 
-    // Reset state
-    setSelectedResidentIds([]);
-    setDescription('');
-    setConduct('');
-    alert('Intercorrência registrada com sucesso!');
+    doc.save(`plantao_${shift}_${dateStr.replace(/\//g, '-')}.pdf`);
   };
 
-  const handleSaveHandover = () => {
-    if (!summary.trim()) return;
+  const handleSaveAll = () => {
+    if (!summary.trim()) {
+      alert("Por favor, preencha o resumo do plantão.");
+      return;
+    }
 
+    if (hasIncident && (!description.trim() || selectedResidentIds.length === 0)) {
+      alert("Para registrar uma intercorrência, selecione os residentes e preencha a descrição.");
+      return;
+    }
+
+    // 1. Save Handover
     const handover: ShiftHandover = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: Date.now(),
@@ -91,23 +127,49 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
       shareOnMural,
       professionalName: 'Supervisor de Turno' // Placeholder
     };
-
     onSaveHandover(handover);
 
+    let incidentMsg = '';
+
+    // 2. Save Incident if applied
+    if (hasIncident) {
+      const incident: IncidentReport = {
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: Date.now(),
+        residentIds: selectedResidentIds,
+        type: incidentType,
+        description,
+        conduct,
+        shareOnMural,
+        professionalName: 'Equipe de Enfermagem' // Placeholder
+      };
+      onSaveIncident(incident);
+
+      const residentNames = residents
+        .filter(r => selectedResidentIds.includes(r.id))
+        .map(r => r.name)
+        .join(', ');
+      
+      incidentMsg = `\n🚨 INTERCORRÊNCIA [${incidentType.toUpperCase()}]: Residentes: ${residentNames}. Descrição: ${description}. Conduta: ${conduct}`;
+    }
+
+    // 3. Post Unified Message to Mural
     if (shareOnMural) {
       onPostToMural({
-        institutionId: residents[0]?.institutionId || '',
-        author: `Passagem de Plantão - ${shift.toUpperCase()}`,
-        content: `🔄 RESUMO DO TURNO: ${summary}. PENDÊNCIAS: ${pendingTasks || 'Nenhuma'}`,
-        category: 'equipe' as any,
-        priority: 'media' as any
+        author: `Relatório de Plantão - ${shift.toUpperCase()}`,
+        text: `🔄 RESUMO DO TURNO: ${summary}. PENDÊNCIAS: ${pendingTasks || 'Nenhuma'}${incidentMsg}`
       });
     }
 
-    // Reset
+    // Reset State
     setSummary('');
     setPendingTasks('');
-    alert('Passagem de plantão registrada!');
+    setHasIncident(false);
+    setSelectedResidentIds([]);
+    setDescription('');
+    setConduct('');
+    
+    alert('Plantão (e intercorrências) registrados com sucesso!');
   };
 
   return (
@@ -115,28 +177,12 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
       {/* Header Selector */}
       <div className="bg-white border-b px-8 py-6 flex items-center justify-between shadow-sm">
         <div className="flex gap-4">
-          <button 
-            onClick={() => setActiveMode('intercorrencia')}
-            className={`px-6 py-3 rounded-2xl flex items-center gap-3 transition-all ${
-              activeMode === 'intercorrencia' 
-                ? 'bg-red-50 text-red-600 ring-2 ring-red-100' 
-                : 'text-gray-400 hover:bg-gray-50'
-            }`}
-          >
-            <AlertTriangle size={20} />
-            <span className="text-xs font-black uppercase tracking-widest">Intercorrência</span>
-          </button>
-          <button 
-            onClick={() => setActiveMode('plantao')}
-            className={`px-6 py-3 rounded-2xl flex items-center gap-3 transition-all ${
-              activeMode === 'plantao' 
-                ? 'bg-blue-50 text-blue-600 ring-2 ring-blue-100' 
-                : 'text-gray-400 hover:bg-gray-50'
-            }`}
-          >
-            <RotateCcw size={20} />
-            <span className="text-xs font-black uppercase tracking-widest">Passagem de Plantão</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <ClipboardList className="text-[#004c99]" size={24} />
+            <h2 className="text-sm font-black uppercase text-gray-800 tracking-widest">
+              Passagem de Plantão Diária
+            </h2>
+          </div>
         </div>
 
         <div className="flex items-center gap-4">
@@ -155,50 +201,94 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                 </div>
               </div>
            </div>
+
+           <button 
+             onClick={handleExportPDF}
+             className="px-6 py-4 bg-gray-100 text-gray-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all flex items-center gap-2 border"
+           >
+             <Download size={18} /> Exportar PDF
+           </button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-        {activeMode === 'intercorrencia' ? (
-          <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom duration-500">
-            {/* Resident Selection */}
-            <div className="bg-white p-8 rounded-[40px] border shadow-sm">
-              <div className="flex items-center gap-3 mb-6">
-                <Users className="text-red-500" size={24} />
-                <h4 className="text-sm font-black uppercase text-gray-800 tracking-widest">Residentes Envolvidos</h4>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {residents.map(r => (
+        <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom duration-500">
+          
+          <div className="bg-white p-8 rounded-[40px] border shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+               {['manha', 'tarde', 'noite'].map((s) => (
                   <button
-                    key={r.id}
-                    onClick={() => setSelectedResidentIds(prev => 
-                      prev.includes(r.id) ? prev.filter(id => id !== r.id) : [...prev, r.id]
-                    )}
-                    className={`p-3 rounded-2xl text-[10px] font-black uppercase transition-all border text-center ${
-                      selectedResidentIds.includes(r.id) 
-                        ? 'bg-red-50 border-red-200 text-red-600' 
-                        : 'bg-gray-50 border-gray-100 text-gray-400 hover:border-gray-300'
+                    key={s}
+                    onClick={() => setShift(s as any)}
+                    className={`py-6 rounded-3xl flex flex-col items-center justify-center gap-2 transition-all border ${
+                      shift === s 
+                        ? 'bg-[#004c99] text-white border-[#004c99] shadow-lg scale-[1.02]' 
+                        : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-100'
                     }`}
                   >
-                    {r.name.split(' ')[0]}
+                    <Clock size={24} />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Turno {s}</span>
                   </button>
-                ))}
-              </div>
+               ))}
             </div>
 
-            {/* Incident Details */}
-            <div className="bg-white p-8 rounded-[40px] border shadow-sm space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-6">
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Relatório de Atividades e Eventos (obrigatório)</label>
+                <textarea 
+                  value={summary}
+                  onChange={e => setSummary(e.target.value)}
+                  placeholder="Resuma como foi o turno, estado geral dos idosos..."
+                  className="w-full p-6 bg-gray-50 border rounded-3xl text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-[#004c99]/20 transition-all min-h-[150px]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Pendências para o próximo turno</label>
+                <textarea 
+                  value={pendingTasks}
+                  onChange={e => setPendingTasks(e.target.value)}
+                  placeholder="Medicamentos a chegar, agendamentos confirmados, observações específicas..."
+                  className="w-full p-6 bg-gray-50 border rounded-3xl text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-[#004c99]/20 transition-all min-h-[100px]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Intercorrência Toggle */}
+          <div className="bg-white p-8 rounded-[40px] border shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className={hasIncident ? "text-red-500" : "text-gray-400"} size={24} />
+                <div>
+                  <h4 className="text-sm font-black uppercase text-gray-800 tracking-widest">Houve Intercorrência neste plantão?</h4>
+                  <p className="text-[10px] text-gray-500 uppercase font-black">Marque se deseja registrar uma intercorrência associada a este plantão</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setHasIncident(!hasIncident)}
+                className={`w-14 h-8 rounded-full relative transition-all ${hasIncident ? 'bg-red-500' : 'bg-gray-200'}`}
+              >
+                <div className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-all shadow-sm ${hasIncident ? 'left-7' : 'left-1'}`} />
+              </button>
+            </div>
+
+            {hasIncident && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="pt-8 border-t mt-8 space-y-6"
+              >
                 <div>
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Tipo de Ocorrência</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {['queda', 'comportamental', 'clinica', 'outros'].map((t) => (
                       <button
                         key={t}
                         onClick={() => setIncidentType(t as any)}
                         className={`py-3 rounded-xl text-[9px] font-black uppercase transition-all border ${
                           incidentType === t 
-                            ? 'bg-[#004c99] text-white border-[#004c99]' 
+                            ? 'bg-red-500 text-white border-red-500' 
                             : 'bg-gray-50 text-gray-500 border-gray-100 hover:bg-white transition-all'
                         }`}
                       >
@@ -207,109 +297,75 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                     ))}
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Descrição dos Fatos</label>
-                <textarea 
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  placeholder="Relate detalhadamente o ocorrido..."
-                  className="w-full p-6 bg-gray-50 border rounded-3xl text-sm font-medium outline-none focus:bg-white transition-all min-h-[150px]"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Condutas Tomadas / Primeiros Socorros</label>
-                <textarea 
-                  value={conduct}
-                  onChange={e => setConduct(e.target.value)}
-                  placeholder="Ex: Realizada higienização, aplicado gelo, comunicado enfermeiro responsável..."
-                  className="w-full p-6 bg-gray-50 border rounded-3xl text-sm font-medium outline-none focus:bg-white transition-all min-h-[100px]"
-                />
-              </div>
-
-              <div className="pt-6 border-t flex justify-end">
-                <button 
-                  onClick={handleSaveIncident}
-                  disabled={selectedResidentIds.length === 0 || !description.trim()}
-                  className="px-10 py-4 bg-red-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-2"
-                >
-                  <Save size={18} /> Registrar Intercorrência
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom duration-500">
-             <div className="bg-white p-8 rounded-[40px] border shadow-sm">
-                <div className="flex items-center gap-3 mb-8">
-                  <RotateCcw className="text-blue-500" size={24} />
-                  <h4 className="text-sm font-black uppercase text-gray-800 tracking-widest">Resumo do Turno Atual</h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                   {['manha', 'tarde', 'noite'].map((s) => (
+                <div>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Residentes Envolvidos ({selectedResidentIds.length})</label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-h-[150px] overflow-y-auto custom-scrollbar p-1">
+                    {residents.map(r => (
                       <button
-                        key={s}
-                        onClick={() => setShift(s as any)}
-                        className={`py-6 rounded-3xl flex flex-col items-center justify-center gap-2 transition-all border ${
-                          shift === s 
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-xl scale-105' 
-                            : 'bg-gray-50 text-gray-400 border-gray-100'
+                        key={r.id}
+                        onClick={() => setSelectedResidentIds(prev => 
+                          prev.includes(r.id) ? prev.filter(id => id !== r.id) : [...prev, r.id]
+                        )}
+                        className={`p-3 rounded-2xl text-[10px] font-black uppercase transition-all border text-center ${
+                          selectedResidentIds.includes(r.id) 
+                            ? 'bg-red-50 border-red-200 text-red-600' 
+                            : 'bg-gray-50 border-gray-100 text-gray-400 hover:border-gray-300'
                         }`}
                       >
-                        <Clock size={24} />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Turno {s}</span>
+                        {r.name.split(' ')[0]}
                       </button>
-                   ))}
+                    ))}
+                  </div>
                 </div>
 
-                <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Relatório de Atividades e Eventos</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Descrição dos Fatos</label>
                     <textarea 
-                      value={summary}
-                      onChange={e => setSummary(e.target.value)}
-                      placeholder="Resuma como foi o turno, estado geral dos idosos..."
-                      className="w-full p-6 bg-gray-50 border rounded-3xl text-sm font-medium outline-none focus:bg-white transition-all min-h-[200px]"
+                      value={description}
+                      onChange={e => setDescription(e.target.value)}
+                      placeholder="Relate detalhadamente o ocorrido..."
+                      className="w-full p-4 bg-gray-50 border rounded-2xl text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-red-100 transition-all min-h-[120px]"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Pendências para o próximo turno</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Condutas Tomadas</label>
                     <textarea 
-                      value={pendingTasks}
-                      onChange={e => setPendingTasks(e.target.value)}
-                      placeholder="Medicamentos a chegar, agendamentos confirmados, observações específicas..."
-                      className="w-full p-6 bg-gray-50 border rounded-3xl text-sm font-medium outline-none focus:bg-white transition-all min-h-[120px]"
+                      value={conduct}
+                      onChange={e => setConduct(e.target.value)}
+                      placeholder="Ex: Realizada higienização, comunicado enfermeiro responsável..."
+                      className="w-full p-4 bg-gray-50 border rounded-2xl text-sm font-medium outline-none focus:bg-white focus:ring-2 focus:ring-red-100 transition-all min-h-[120px]"
                     />
                   </div>
-
-                  <div className="pt-6 border-t flex justify-end">
-                    <button 
-                      onClick={handleSaveHandover}
-                      disabled={!summary.trim()}
-                      className="px-10 py-4 bg-[#004c99] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 disabled:opacity-30 transition-all flex items-center gap-2"
-                    >
-                      <CheckCircle2 size={18} /> Finalizar e Passar Plantão
-                    </button>
-                  </div>
                 </div>
-             </div>
-
-             <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100 flex items-start gap-4">
-                <AlertCircle className="text-blue-600 shrink-0" size={24} />
-                <div className="space-y-1">
-                  <p className="text-xs font-black text-blue-800 uppercase tracking-tight">Dica de Segurança</p>
-                  <p className="text-[11px] text-blue-600 font-medium">Todas as passagens de plantão são arquivadas cronologicamente para auditoria e histórico de cuidados.</p>
-                </div>
-             </div>
+              </motion.div>
+            )}
           </div>
-        )}
+
+          <div className="pt-4 flex justify-end">
+            <button 
+              onClick={handleSaveAll}
+              disabled={!summary.trim() || (hasIncident && (!description.trim() || selectedResidentIds.length === 0))}
+              className="px-10 py-5 bg-[#004c99] text-white rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 hover:scale-105 disabled:opacity-30 disabled:hover:scale-100 transition-all flex items-center gap-3"
+            >
+              <Save size={20} /> Finalizar Turno e Salvar Registros
+            </button>
+          </div>
+
+          <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100 flex items-start gap-4 mt-8">
+            <AlertCircle className="text-blue-600 shrink-0" size={24} />
+            <div className="space-y-1">
+              <p className="text-xs font-black text-blue-800 uppercase tracking-tight">Registro Unificado</p>
+              <p className="text-[11px] text-blue-600 font-medium">As informações deste painel criam um relatório unificado em PDF e, caso ativado, publicam automaticamente no mural.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
 export default HandoverTab;
+

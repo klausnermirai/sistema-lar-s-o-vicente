@@ -1,104 +1,32 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    // Default deny for EVERYTHING securely
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Helper functions
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function belongsToInstitution(institutionId) {
-      return isSignedIn() && getUserData().institutionId == institutionId;
-    }
-
-    function hasAccessTo(institutionId, data) {
-      return isSignedIn() && (
-        getUserData().institutionId == institutionId || 
-        getUserData().institutionId == data.institutionId ||
-        (
-          getUserData().institutionId != null &&
-          get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type != null &&
-          (
-            (get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type == 'nacional' && data.nacionalId == getUserData().institutionId) ||
-            (get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type == 'metropolitano' && data.metropolitanoId == getUserData().institutionId) ||
-            (get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type == 'central' && data.centralId == getUserData().institutionId) ||
-            (get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type == 'particular' && data.particularId == getUserData().institutionId) ||
-            (get(/databases/$(database)/documents/institutions/$(getUserData().institutionId)).data.type == 'conferencia' && data.conferenciaId == getUserData().institutionId)
-          )
-        )
-      );
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    // Institutions
-    match /institutions/{institutionId} {
-      allow read: if belongsToInstitution(institutionId);
-      allow write: if false; 
-    }
-
-    // Users
-    match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow write: if false; 
-    }
-
-    // Residents
-    match /residents/{residentId} {
-      allow read: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
-      allow create: if isSignedIn() && hasAccessTo(incoming().institutionId, incoming());
-      allow update: if isSignedIn() && (hasAccessTo(incoming().institutionId, incoming()) || hasAccessTo(resource.data.institutionId, resource.data));
-      allow delete: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
-    }
-
-    // Candidates
-    match /candidates/{candidateId} {
-      allow read: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
-      allow create: if isSignedIn() && hasAccessTo(incoming().institutionId, incoming());
-      allow update: if isSignedIn() && (hasAccessTo(incoming().institutionId, incoming()) || hasAccessTo(resource.data.institutionId, resource.data));
-      allow delete: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
-    }
-
-    // Mural Messages
+    // Mural Messages - Public Read for app frontend, Schema-Validated Create
     match /muralMessages/{messageId} {
-      allow read, create, update: if true; // Permissivo para desenvolvimento/protótipo
-      allow delete: if isSignedIn();
+      allow read: if true; 
+      allow create: if
+        request.resource.data.keys().hasAll(['institutionId', 'author', 'text', 'timestamp']) &&
+        request.resource.data.institutionId is string && request.resource.data.institutionId.size() > 0 && request.resource.data.institutionId.size() <= 128 &&
+        request.resource.data.author is string && request.resource.data.author.size() > 0 && request.resource.data.author.size() <= 128 &&
+        request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 5000;
+      allow update, delete: if false; // Only server can update/delete
     }
 
-    // Support Messages
+    // Support Messages - Public Read, Schema-Validated Create
     match /support_messages/{messageId} {
-      allow read, create, update: if true; // Permissivo para desenvolvimento/protótipo
-      allow delete: if isSignedIn();
-    }
-
-    // Group Activities
-    match /groupActivities/{activityId} {
-      allow read: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
-      allow create: if isSignedIn() && hasAccessTo(incoming().institutionId, incoming());
-      allow update: if isSignedIn() && (hasAccessTo(incoming().institutionId, incoming()) || hasAccessTo(resource.data.institutionId, resource.data));
-      allow delete: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
-    }
-
-    // Assisted Families (Conferences)
-    match /assistedFamilies/{familyId} {
-      allow read: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
-      allow create: if isSignedIn() && hasAccessTo(incoming().institutionId, incoming());
-      allow update: if isSignedIn() && (hasAccessTo(incoming().institutionId, incoming()) || hasAccessTo(resource.data.institutionId, resource.data));
-      allow delete: if isSignedIn() && hasAccessTo(resource.data.institutionId, resource.data);
+      allow read: if true; 
+      allow create: if
+        request.resource.data.keys().hasAll(['institutionId', 'sender', 'text', 'role', 'createdAt']) &&
+        request.resource.data.institutionId is string && request.resource.data.institutionId.size() > 0 && request.resource.data.institutionId.size() <= 128 &&
+        request.resource.data.sender is string && request.resource.data.sender.size() > 0 && request.resource.data.sender.size() <= 128 &&
+        request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 5000 &&
+        (request.resource.data.role == 'user' || request.resource.data.role == 'support');
+      allow update, delete: if false;
     }
   }
 }

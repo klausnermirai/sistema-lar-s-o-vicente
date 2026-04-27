@@ -76,11 +76,8 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
 
     // Post to Mural
     onPostToMural({
-      institutionId: resident.institutionId,
       author: 'Sistema de Agendamento',
-      content: `Pós-${selectedAppointment.type === 'consulta' ? 'Consulta' : 'Exame'} - ${resident.name}: ${notes}`,
-      category: 'saude' as any,
-      priority: 'media' as any
+      text: `Pós-${selectedAppointment.type === 'consulta' ? 'Consulta' : 'Exame'} - ${resident.name}: ${notes}`
     });
 
     setIsNotesModalOpen(false);

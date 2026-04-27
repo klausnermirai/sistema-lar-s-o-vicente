@@ -18,6 +18,7 @@ interface MultidisciplinaryModuleProps {
 const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ residents, onSaveResident, accessLevel, onPostToMural }) => {
   const [selectedResidentId, setSelectedResidentId] = useState<string>('');
   const [activeCompetence, setActiveCompetence] = useState<string | null>(null);
+  const [competenceMode, setCompetenceMode] = useState<'individual' | 'grupo'>('individual');
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   
@@ -27,7 +28,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
   const isFisioterapeuta = accessLevel === 'fisioterapeuta';
   const isNutricionista = accessLevel === 'nutricionista';
 
-  const [activeTab, setActiveTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos' | 'anamnese' | 'grupo'>('avaliacao');
+  const [activeTab, setActiveTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos' | 'anamnese'>('avaliacao');
   
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -220,112 +221,151 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
   return (
     <div className="p-8 animate-in fade-in duration-500 overflow-visible max-w-7xl mx-auto">
       {/* Header with Search and Navigation */}
-      <div className="mb-8 flex flex-col md:flex-row items-center justify-between gap-6 bg-white p-8 rounded-[40px] border shadow-sm">
-        <div className="flex items-center gap-5">
-          <button 
-            onClick={() => {
-              setActiveCompetence(null);
-              setSelectedResidentId('');
-              setSearchTerm('');
-            }}
-            className="p-4 bg-gray-50 hover:bg-gray-100 text-gray-400 hover:text-gray-900 rounded-2xl transition-all shadow-sm active:scale-95"
-            title="Voltar para seleção de área"
-          >
-            <ArrowLeft size={24} />
-          </button>
-          <div>
-            <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter flex items-center gap-3">
-              <span className="p-2 bg-blue-50 text-[#004c99] rounded-xl">
-                {competencies.find(c => c.id === activeCompetence)?.icon && React.createElement(competencies.find(c => c.id === activeCompetence)!.icon, { size: 24 })}
-              </span>
-              {competencies.find(c => c.id === activeCompetence)?.label}
-            </h2>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
-              Atendimento Multidisciplinar
-            </p>
-          </div>
-        </div>
-
-        <div className="flex-1 w-full max-w-xl relative search-container group/search">
-          <div className={`relative transition-all duration-300 ${selectedResidentId ? 'ring-4 ring-blue-50 rounded-[28px]' : ''}`}>
-            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-            <input
-              type="text"
-              placeholder={`Buscar Residente para ${competencies.find(c => c.id === activeCompetence)?.label}...`}
-              value={searchTerm}
-              onFocus={() => setIsDropdownOpen(true)}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                if (selectedResidentId) setSelectedResidentId('');
-                setIsDropdownOpen(true);
-              }}
-              className="w-full pl-16 pr-12 py-5 bg-gray-50 border-2 border-transparent focus:border-blue-100 focus:bg-white rounded-[24px] text-sm font-black uppercase tracking-tight outline-none transition-all shadow-inner"
-            />
+      <div className="mb-8 flex flex-col items-start gap-6 bg-white p-8 rounded-[40px] border shadow-sm">
+        <div className="flex w-full items-center justify-between gap-6">
+          <div className="flex items-center gap-5">
             <button 
               onClick={() => {
-                setIsDropdownOpen(!isDropdownOpen);
-                if (selectedResidentId) {
-                  setSelectedResidentId('');
-                  setSearchTerm('');
-                }
+                setActiveCompetence(null);
+                setSelectedResidentId('');
+                setSearchTerm('');
+                setCompetenceMode('individual');
               }}
-              className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#004c99] transition-all p-2 flex items-center gap-1 group"
-              title="Listar todos os residentes"
+              className="p-4 bg-gray-50 hover:bg-gray-100 text-gray-400 hover:text-gray-900 rounded-2xl transition-all shadow-sm active:scale-95"
+              title="Voltar para seleção de área"
             >
-              <span className="text-[9px] font-black uppercase mr-1 hidden sm:inline opacity-60 group-hover:opacity-100">Ver Todos</span>
-              <ChevronDown size={20} className={`transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+              <ArrowLeft size={24} />
             </button>
+            <div>
+              <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter flex items-center gap-3">
+                <span className="p-2 bg-blue-50 text-[#004c99] rounded-xl">
+                  {competencies.find(c => c.id === activeCompetence)?.icon && React.createElement(competencies.find(c => c.id === activeCompetence)!.icon, { size: 24 })}
+                </span>
+                {competencies.find(c => c.id === activeCompetence)?.label}
+              </h2>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
+                Atendimento Multidisciplinar
+              </p>
+            </div>
           </div>
 
-          {/* Search Dropdown */}
-          {(searchTerm || isDropdownOpen) && !selectedResidentId && (
-            <div className="absolute top-full left-0 right-0 mt-3 bg-white border border-gray-100 rounded-[32px] shadow-2xl z-50 max-h-80 overflow-y-auto no-scrollbar py-4 px-2">
-              {filteredResidents.length > 0 ? (
-                filteredResidents.map(r => (
-                  <button
-                    key={r.id}
-                    onClick={() => {
-                      setSelectedResidentId(r.id);
-                      setSearchTerm(r.name);
-                      setIsDropdownOpen(false);
-                    }}
-                    className="w-full px-5 py-4 text-left hover:bg-blue-50 rounded-2xl flex items-center gap-5 transition-all group"
-                  >
-                    <div className="w-12 h-12 bg-white border-2 border-gray-50 rounded-2xl flex items-center justify-center font-black text-blue-600 shadow-sm group-hover:border-blue-200">
-                      {r.name.charAt(0)}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-black text-gray-800 uppercase tracking-tight group-hover:text-blue-900">{r.name}</p>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Quarto {r.room} • CPF {r.cpf.slice(0,3)}...</p>
-                    </div>
-                    <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-300 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                      <Plus size={16} />
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <div className="py-12 flex flex-col items-center justify-center text-gray-400 opacity-50">
-                  <Search size={32} className="mb-2" />
-                  <p className="text-[10px] font-black uppercase">Nenhum residente encontrado</p>
-                </div>
-              )}
+          {activeCompetence !== 'assistente_social' && (
+            <div className="flex bg-gray-50 p-1 rounded-2xl border">
+              <button
+                onClick={() => setCompetenceMode('individual')}
+                className={`flex-1 px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                  competenceMode === 'individual'
+                  ? 'bg-white text-[#004c99] shadow-sm'
+                  : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                Individual
+              </button>
+              <button
+                onClick={() => setCompetenceMode('grupo')}
+                className={`flex-1 px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                  competenceMode === 'grupo'
+                  ? 'bg-white text-[#004c99] shadow-sm'
+                  : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                Em Grupo
+              </button>
             </div>
+          )}
+
+          {activeCompetence !== 'assistente_social' && (
+            <button
+              onClick={handleExportGeneralCSV}
+              className="flex items-center justify-center gap-2 px-6 py-4 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-2xl transition-all shadow-sm font-black text-[10px] uppercase tracking-widest border border-emerald-100 whitespace-nowrap"
+              title="Exportar todos os dados desta área no formato CSV"
+            >
+              <FileSpreadsheet size={20} />
+              CSV da Base ({competencies.find(c => c.id === activeCompetence)?.label})
+            </button>
           )}
         </div>
 
-        {activeCompetence !== 'assistente_social' && (
-          <button
-            onClick={handleExportGeneralCSV}
-            className="flex items-center justify-center gap-2 px-6 py-4 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-2xl transition-all shadow-sm font-black text-[10px] uppercase tracking-widest border border-emerald-100 whitespace-nowrap"
-            title="Exportar todos os dados desta área no formato CSV"
-          >
-            <FileSpreadsheet size={20} />
-            CSV da Base ({competencies.find(c => c.id === activeCompetence)?.label})
-          </button>
+        {competenceMode === 'individual' && (
+          <div className="flex-1 w-full max-w-xl relative search-container group/search">
+            <div className={`relative transition-all duration-300 ${selectedResidentId ? 'ring-4 ring-blue-50 rounded-[28px]' : ''}`}>
+              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder={`Buscar Residente para ${competencies.find(c => c.id === activeCompetence)?.label}...`}
+                value={searchTerm}
+                onFocus={() => setIsDropdownOpen(true)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  if (selectedResidentId) setSelectedResidentId('');
+                  setIsDropdownOpen(true);
+                }}
+                className="w-full pl-16 pr-12 py-5 bg-gray-50 border-2 border-transparent focus:border-blue-100 focus:bg-white rounded-[24px] text-sm font-black uppercase tracking-tight outline-none transition-all shadow-inner"
+              />
+              <button 
+                onClick={() => {
+                  setIsDropdownOpen(!isDropdownOpen);
+                  if (selectedResidentId) {
+                    setSelectedResidentId('');
+                    setSearchTerm('');
+                  }
+                }}
+                className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#004c99] transition-all p-2 flex items-center gap-1 group"
+                title="Listar todos os residentes"
+              >
+                <span className="text-[9px] font-black uppercase mr-1 hidden sm:inline opacity-60 group-hover:opacity-100">Ver Todos</span>
+                <ChevronDown size={20} className={`transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            {/* Search Dropdown */}
+            {(searchTerm || isDropdownOpen) && !selectedResidentId && (
+              <div className="absolute top-full left-0 right-0 mt-3 bg-white border border-gray-100 rounded-[32px] shadow-2xl z-50 max-h-80 overflow-y-auto no-scrollbar py-4 px-2">
+                {filteredResidents.length > 0 ? (
+                  filteredResidents.map(r => (
+                    <button
+                      key={r.id}
+                      onClick={() => {
+                        setSelectedResidentId(r.id);
+                        setSearchTerm(r.name);
+                        setIsDropdownOpen(false);
+                      }}
+                      className="w-full px-5 py-4 text-left hover:bg-blue-50 rounded-2xl flex items-center gap-5 transition-all group"
+                    >
+                      <div className="w-12 h-12 bg-white border-2 border-gray-50 rounded-2xl flex items-center justify-center font-black text-blue-600 shadow-sm group-hover:border-blue-200">
+                        {r.name.charAt(0)}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs font-black text-gray-800 uppercase tracking-tight group-hover:text-blue-900">{r.name}</p>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Quarto {r.room} • CPF {r.cpf.slice(0,3)}...</p>
+                      </div>
+                      <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-300 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                        <Plus size={16} />
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="py-12 flex flex-col items-center justify-center text-gray-400 opacity-50">
+                    <Search size={32} className="mb-2" />
+                    <p className="text-[10px] font-black uppercase">Nenhum residente encontrado</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {selectedResident ? (
+      {competenceMode === 'grupo' ? (
+        <div className="animate-in slide-in-from-bottom duration-700 bg-white rounded-[40px] border shadow-sm overflow-hidden p-10">
+          <GroupActivityTab
+            competence={activeCompetence as 'nutricionista' | 'psicologia' | 'terapeuta_ocupacional' | 'fisioterapeuta'}
+            residents={residents}
+            onSaveResident={onSaveResident}
+            onPostToMural={onPostToMural}
+          />
+        </div>
+      ) : selectedResident ? (
         <div className="animate-in slide-in-from-bottom duration-700 bg-white rounded-[40px] border shadow-sm overflow-hidden">
           {activeCompetence === 'fisioterapeuta' && (
             <PhysiotherapyTab 
@@ -343,8 +383,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                 {[
                   { id: 'avaliacao', label: 'Primeira Avaliação Nutricional' },
                   { id: 'evolucao', label: 'Evolução Nutricional' },
-                  { id: 'atendimentos', label: 'Atendimentos' },
-                  { id: 'grupo', label: 'Atividade em Grupo' }
+                  { id: 'atendimentos', label: 'Atendimentos' }
                 ].map(tab => (
                   <button
                     key={tab.id}
@@ -407,14 +446,6 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                     }} 
                   />
                 )}
-                {activeTab === 'grupo' && (
-                  <GroupActivityTab
-                    competence="nutricionista"
-                    residents={residents}
-                    onSaveResident={onSaveResident}
-                    onPostToMural={onPostToMural}
-                  />
-                )}
               </div>
             </>
           )}
@@ -425,8 +456,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                 {[
                   { id: 'anamnese', label: 'Anamnese (Primeira Avaliação)' },
                   { id: 'evolucao', label: 'Evolução Psicológica' },
-                  { id: 'atendimentos', label: 'Atendimentos' },
-                  { id: 'grupo', label: 'Atividade em Grupo' }
+                  { id: 'atendimentos', label: 'Atendimentos' }
                 ].map(tab => (
                   <button
                     key={tab.id}
@@ -489,14 +519,6 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                       };
                       onSaveResident(updatedResident);
                     }} 
-                  />
-                )}
-                {activeTab === 'grupo' && (
-                  <GroupActivityTab
-                    competence="psicologia"
-                    residents={residents}
-                    onSaveResident={onSaveResident}
-                    onPostToMural={onPostToMural}
                   />
                 )}
               </div>

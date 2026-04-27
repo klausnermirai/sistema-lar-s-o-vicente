@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Building2, 
   ShieldCheck, 
@@ -16,7 +16,8 @@ import {
   Shield,
   Settings,
   Image as ImageIcon,
-  Camera
+  Camera,
+  CalendarCheck
 } from 'lucide-react';
 import { User } from '../types';
 import { fetchUsers, saveUser, deleteUser, fetchSettings, saveSettings } from '../lib/api';
@@ -306,11 +307,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nível de Acesso</label>
                     <p className="text-sm font-black text-[#004c99] uppercase tracking-tight mt-1">
                       {accessLevel === 'administrador' ? 'Administrador' : 
+                       accessLevel === 'enfermeira' ? 'Enfermeira' : 
+                       accessLevel === 'visitante' ? 'Visitante' : 
                        accessLevel === 'assistente_social' ? 'Assistente Social' :
                        accessLevel === 'psicologia' ? 'Psicologia' : 
                        accessLevel === 'terapeuta_ocupacional' ? 'Terapeuta Ocupacional' : 
                        accessLevel === 'nutricionista' ? 'Nutricionista' : 
                        accessLevel === 'medico' ? 'Médico' :
+                       accessLevel === 'cuidados' ? 'Cuidados (Cuidadores)' :
                        accessLevel === 'fisioterapeuta' ? 'Fisioterapeuta' : accessLevel}
                     </p>
                   </div>
@@ -436,6 +440,17 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                     />
                   </div>
                 )}
+                <div className="md:col-span-2 space-y-1">
+                  <label className="text-[10px] font-black text-gray-400 uppercase">E-mail Centralizado para Agenda Institucional</label>
+                  <input
+                    type="email"
+                    placeholder="agenda@instituicao.org.br"
+                    value={institution.agendaCentralEmail || ''}
+                    onChange={e => setInstitution({ ...institution, agendaCentralEmail: e.target.value })}
+                    className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 placeholder:text-gray-300"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Este e-mail será utilizado para listar a agenda institucional.</p>
+                </div>
                 <div className="md:col-span-2 space-y-4 pt-4 border-t border-dashed">
                   <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Linhagem Hierárquica SSVP (IDs)</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -597,7 +612,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                 <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest">Usuários do Sistema</h3>
                 <span className="px-3 py-1 bg-white border rounded-full text-[10px] font-black uppercase text-gray-400">{users.length} usuários</span>
               </div>
-              <div className="divide-y divide-gray-50 overflow-y-auto max-h-[600px] no-scrollbar">
+              <div className="divide-y divide-gray-50">
                 {users.length === 0 && (
                   <div className="p-20 text-center text-gray-400">
                     <Shield size={48} className="mx-auto mb-4 opacity-20" />
@@ -615,11 +630,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                         <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
                           @{user.username} • {user.role || 'Sem cargo'} • <span className="text-[#004c99]">
                             {user.accessLevel === 'administrador' ? 'Administrador' : 
+                             user.accessLevel === 'enfermeira' ? 'Enfermeira' : 
+                             user.accessLevel === 'visitante' ? 'Visitante' : 
                              user.accessLevel === 'assistente_social' ? 'Assistente Social' :
                              user.accessLevel === 'psicologia' ? 'Psicologia' : 
                              user.accessLevel === 'terapeuta_ocupacional' ? 'Terapeuta Ocupacional' : 
                              user.accessLevel === 'nutricionista' ? 'Nutricionista' : 
                              user.accessLevel === 'medico' ? 'Médico' :
+                             user.accessLevel === 'cuidados' ? 'Cuidados' :
                              user.accessLevel === 'fisioterapeuta' ? 'Fisioterapeuta' : user.accessLevel}
                           </span>
                         </div>
@@ -718,12 +736,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                     className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 bg-white max-h-48"
                   >
                     <option value="administrador">Administrador (Total)</option>
+                    <option value="enfermeira">Enfermeira</option>
+                    <option value="visitante">Visitante</option>
                     <option value="assistente_social">Assistente Social</option>
                     <option value="psicologia">Psicologia</option>
                     <option value="terapeuta_ocupacional">Terapeuta Ocupacional</option>
                     <option value="fisioterapeuta">Fisioterapeuta</option>
                     <option value="nutricionista">Nutricionista</option>
                     <option value="medico">Médico</option>
+                    <option value="cuidados">Cuidados (Cuidadores)</option>
                   </select>
                 </div>
                 <div className="space-y-1">

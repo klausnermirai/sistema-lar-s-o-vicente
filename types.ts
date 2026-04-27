@@ -1,6 +1,20 @@
 
 export type InstitutionType = 'nacional' | 'metropolitano' | 'central' | 'particular' | 'conferencia' | 'obra_unida';
 
+export interface AgendaEvent {
+  id: string;
+  institutionId: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm
+  description?: string;
+  professionalName: string;
+  professionalRole: string;
+  residentId?: string; // Optional related resident
+  type?: 'comum' | 'consulta_exame' | 'atividade_grupo' | 'triagem' | string;
+  companion?: string;
+}
+
 export interface Institution {
   id: string;
   cnpj: string;
@@ -28,6 +42,7 @@ export interface InstitutionSettings {
   name: string;
   cnpj: string;
   city?: string;
+  agendaCentralEmail?: string;
   
   // Hierarchy
   nacionalId?: string;
@@ -72,7 +87,7 @@ export interface User {
   password?: string;
   fullName: string;
   role: string;
-  accessLevel: 'administrador' | 'assistente_social' | 'psicologia' | 'terapeuta_ocupacional' | 'fisioterapeuta' | 'nutricionista' | 'medico';
+  accessLevel: 'administrador' | 'assistente_social' | 'psicologia' | 'terapeuta_ocupacional' | 'fisioterapeuta' | 'nutricionista' | 'medico' | 'cuidados';
   institutionType?: InstitutionType;
 }
 
@@ -92,6 +107,23 @@ export interface FamilyMemberRecord {
   age: string;
   job: string;
   income: string;
+}
+
+export interface GlobalVisitRecord {
+  id: string;
+  institutionId: string;
+  type: 'residente' | 'instituicao' | 'ssvp' | 'orgao_fiscalizador';
+  date: string;
+  rating: number; // 0 a 5
+  comments: string;
+  phone?: string;
+  
+  // Specific fields
+  agencyName?: string; // orgao_fiscalizador
+  conferenceName?: string; // ssvp
+  residentId?: string; // residente
+  visitorName?: string; // residente
+  kinship?: string; // residente
 }
 
 export interface VisitRecord {
@@ -126,6 +158,17 @@ export interface HealthUpdate {
   summary: string;
   professional: string;
   observation: string;
+}
+
+export interface ExamRequest {
+  id: string;
+  date: string;
+  doctorName: string;
+  exams: string[];
+  otherExams?: string;
+  status: 'solicitado' | 'realizado';
+  results?: string;
+  resultsDate?: string;
 }
 
 export interface Medication {
@@ -282,6 +325,7 @@ export interface Candidate {
   scheduledPeriod?: 'manha' | 'tarde' | 'noite';
   scheduledNotes?: string;
   requestOrigin?: 'CREAS/PREFEITURA' | 'JUDICIAL' | 'CONFERÊNCIAS' | 'CONTATO DIRETO';
+  exams?: ExamRequest[];
   requestDescription?: string;
 
   // Níveis de Decisão
@@ -446,32 +490,51 @@ export interface PsychologyData {
 
 export interface OccupationalTherapyAssessment {
   date: string;
-  independenceLevel: string;
-  mobility: string;
-  feeding: string;
-  personalHygiene: string;
-  clothing: string;
-  bathing: string;
-  orientation: string;
-  attentionAndMemory: string;
-  participation: string;
-  occupationalInterest: string;
-  motorLimitations: string;
-  fallRisk: string;
-  deviceUsage: string;
-  environmentalAdaptationNeeds: string;
-  functionalSynthesis: string;
-  piaGoals: string;
+  independenceLevel?: string;
+  mobility?: string;
+  feeding?: string;
+  personalHygiene?: string;
+  clothing?: string;
+  bathing?: string;
+  orientation?: string;
+  attentionAndMemory?: string;
+  participation?: string;
+  occupationalInterest?: string;
+  motorLimitations?: string;
+  fallRisk?: string;
+  deviceUsage?: string;
+  environmentalAdaptationNeeds?: string;
+  functionalSynthesis?: string;
+  piaGoals?: string;
+
+  adlOptions?: string[];
+  adlObservations?: string;
+  cognitiveOptions?: string[];
+  cognitiveObservations?: string;
+  motorSensoryOptions?: string[];
+  motorSensoryObservations?: string;
+  therapeuticGoalsOptions?: string[];
+  therapeuticGoalsObservations?: string;
+  treatmentConductOptions?: string[];
+  treatmentConductObservations?: string;
 }
 
 export interface OccupationalTherapyEvolution {
   id: string;
   date: string;
-  functionalEvolution: string;
-  participationEvolution: string;
-  currentIndependenceLevel: string;
-  piaGoalStatus: string;
-  newConduct: string;
+  functionalEvolution?: string;
+  participationEvolution?: string;
+  currentIndependenceLevel?: string;
+  piaGoalStatus?: string;
+  newConduct?: string;
+
+  currentSituationOptions?: string[];
+  evolutionDescription?: string;
+  piaGoalsUpdateOptions?: string[];
+  updatedGoals?: string;
+  conductUpdateOptions?: string[];
+  updatedConduct?: string;
+  finalObservations?: string;
 }
 
 export interface OccupationalTherapyAttendance {
@@ -494,18 +557,41 @@ export interface OccupationalTherapyData {
 
 export interface PhysiotherapyAssessment {
   date: string;
-  motorAssessment: string;
-  respiratoryAssessment: string;
-  kineticFunctionalDiagnosis: string;
-  objectives: string;
-  conduct: string;
+  motorAssessment?: string;
+  respiratoryAssessment?: string;
+  kineticFunctionalDiagnosis?: string;
+  objectives?: string;
+  conduct?: string;
+
+  mobilityConditions?: string[];
+  mobilityObservations?: string;
+  balanceAndStrength?: string[];
+  balanceObservations?: string;
+  painAndLimitations?: string[];
+  painObservations?: string;
+  functionalDiagnosis?: string;
+  therapeuticGoals?: string[];
+  specificGoals?: string;
+  treatmentConducts?: string[];
+  detailedTreatmentPlan?: string;
+  finalObservations?: string;
 }
 
 export interface PhysiotherapyEvolution {
   id: string;
   date: string;
-  description: string;
-  treatmentResponse: string;
+  description?: string;
+  treatmentResponse?: string;
+
+  currentSituationOptions?: string[];
+  evolutionDescription?: string;
+  currentMobilityOptions?: string[];
+  functionalObservations?: string;
+  piaGoalsUpdateOptions?: string[];
+  updatedGoals?: string;
+  conductUpdateOptions?: string[];
+  updatedConduct?: string;
+  finalObservations?: string;
 }
 
 export interface PhysiotherapyAttendance {
@@ -626,6 +712,7 @@ export interface Resident {
   personalItems: PersonalItem[];
   healthUpdates: HealthUpdate[];
   medications: Medication[];
+  exams?: ExamRequest[];
 
   // Hierarchy fields for querying
   nacionalId?: string;
@@ -656,6 +743,13 @@ export interface Resident {
   physiotherapy?: PhysiotherapyData;
   pia?: PiaData;
   per?: PerData;
+  careNeeds?: {
+    bathAssistance?: boolean;
+    oralHygieneAssistance?: boolean;
+    diaperChangeAssistance?: boolean;
+    decubitusChangeAssistance?: boolean;
+    feedingAssistance?: boolean;
+  };
   dailyRoutines?: DailyRoutineLog[];
   appointments?: Appointment[];
   incidents?: IncidentReport[];
@@ -740,6 +834,8 @@ export interface DailyRoutineLog {
   taskName: string;
   status: 'concluido' | 'nao_concluido' | 'ausente';
   date: string; // ISO Date YYYY-MM-DD
+  time?: string; // HH:mm
+  shift?: 'Manhã' | 'Tarde' | 'Noite';
   timestamp: string;
   performedBy: string;
   observation?: string;
@@ -775,7 +871,8 @@ export interface MuralMessage {
 export interface GroupActivity {
   id: string;
   institutionId: string;
-  competence: 'nutricionista' | 'psicologia' | 'terapeuta_ocupacional';
+  competence: 'nutricionista' | 'psicologia' | 'terapeuta_ocupacional' | 'fisioterapeuta';
+  status?: 'agendada' | 'realizada' | 'cancelada';
   date: string;
   time: string;
   type: string;
@@ -784,8 +881,8 @@ export interface GroupActivity {
   selectedResidents: string[]; // IDs of residents
   responsibleProfessional: string;
   involvedProfessionals: string[];
-  result: 'Excelente' | 'Boa' | 'Regular' | 'Baixa adesão';
-  observations: string;
+  result?: 'Excelente' | 'Boa' | 'Regular' | 'Baixa adesão' | string;
+  observations?: string;
   sharedToMural: boolean;
   timestamp: number;
 }
@@ -797,7 +894,64 @@ export enum AppRoute {
   ATENDIMENTOS_MULTIDISCIPLINARES = 'atendimentos-multidisciplinares',
   CONSULTAS_MEDICAS = 'consultas-medicas',
   SETTINGS = 'settings',
-  AMENDMENTS = 'amendments'
+  AMENDMENTS = 'amendments',
+  AGENDA = 'agenda',
+  MEDICAMENTOS = 'medicamentos',
+  GUIAS = 'guias',
+  VISITANTES = 'visitantes'
 }
 
 export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'prontuario' | 'pia' | 'prontuario-medico' | 'medicamentos';
+
+export interface MedicationProduct {
+  id: string;
+  name: string;
+  activePrinciple?: string;
+  concentration: string;
+  form: 'Comprimido' | 'Gota' | 'Ampola' | 'Mililitro' | 'Pomada' | 'Outro';
+  institutionStock: number;
+  residentStock: Record<string, number>; // residentId -> quantity
+  minimumStock: number;
+  lastRestockDate?: string;
+}
+
+export interface MedicationStockEntry {
+  id: string;
+  medicationProductId: string;
+  residentId?: string; // null/undefined means institution stock
+  quantity: number;
+  origin: 'Comprado' | 'Doação' | 'Prefeitura' | 'Alto Custo';
+  date: string;
+  note?: string;
+}
+
+export interface MedicationAdministrationLog {
+  id: string;
+  residentId: string;
+  medicationId: string; // Refers to Resident's Medication ID in their prescription
+  medicationName: string;
+  dose: string;
+  plannedTime: string;
+  administeredTime?: string;
+  date: string;
+  status: 'administrado' | 'nao_administrado' | 'recusado' | 'pendente';
+  professionalName?: string;
+  observation?: string;
+  shift: 'Manhã' | 'Tarde' | 'Noite';
+}
+
+export interface MedicationSeparationLog {
+  id: string;
+  date: string;
+  shift: 'Manhã' | 'Tarde' | 'Noite';
+  residentId: string;
+  status: 'pendente' | 'separado';
+  separatedBy?: string;
+  separatedAt?: string;
+  medications: {
+    medicationId: string;
+    medicationName: string;
+    dose: string;
+    plannedTime: string;
+  }[];
+}

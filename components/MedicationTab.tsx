@@ -26,7 +26,7 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
     concentration: '',
     dose: '',
     frequency: 1,
-    times: ['08:00'],
+    times: ['Manhã'],
     type: 'continuo',
     startDate: new Date().toISOString().split('T')[0],
     observation: ''
@@ -44,24 +44,6 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
       setFormData(initialMedState);
     }
     setIsModalOpen(true);
-  };
-
-  const handleFrequencyChange = (freq: number) => {
-    const newTimes = [...formData.times];
-    if (freq > newTimes.length) {
-      for (let i = newTimes.length; i < freq; i++) {
-        newTimes.push('');
-      }
-    } else {
-      newTimes.splice(freq);
-    }
-    setFormData({ ...formData, frequency: freq, times: newTimes });
-  };
-
-  const handleTimeChange = (index: number, val: string) => {
-    const newTimes = [...formData.times];
-    newTimes[index] = val;
-    setFormData({ ...formData, times: newTimes });
   };
 
   const handleSave = () => {
@@ -108,57 +90,70 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="space-y-8">
         {(resident.medications || []).length === 0 ? (
-          <div className="col-span-full py-20 text-center bg-gray-50 rounded-[40px] border-2 border-dashed border-gray-200">
+          <div className="py-20 text-center bg-gray-50 rounded-[40px] border-2 border-dashed border-gray-200">
             <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-sm">
               <Pill className="text-gray-200" size={40} />
             </div>
             <p className="text-sm font-black text-gray-400 uppercase tracking-widest">Nenhum medicamento cadastrado</p>
           </div>
         ) : (
-          (resident.medications || []).map(med => (
-            <div key={med.id} className="bg-white border rounded-[32px] p-6 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
-              <div className={`absolute top-0 right-0 px-4 py-1 text-[8px] font-black uppercase tracking-widest ${med.type === 'continuo' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
-                {med.type === 'continuo' ? 'Uso Contínuo' : `Temporário (${med.durationDays} dias)`}
-              </div>
+          (() => {
+            const allMeds = resident.medications || [];
+            const allDefinedTimes = Array.from(new Set(allMeds.flatMap(m => m.times || [])));
+            const defaultShifts = ['Manhã', 'Tarde', 'Noite'];
+            const customTimes = allDefinedTimes.filter(t => !defaultShifts.includes(t as string)).sort();
+            const displayGroups = [...defaultShifts, ...customTimes];
 
-              <div className="flex justify-between items-start mb-4">
-                <div className="w-12 h-12 bg-blue-50 text-[#004c99] rounded-2xl flex items-center justify-center">
-                  <Pill size={24} />
-                </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                   <button onClick={() => handleOpenModal(med)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"><Edit2 size={14} /></button>
-                   <button onClick={() => handleDelete(med.id)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"><Trash2 size={14} /></button>
-                </div>
-              </div>
+            return displayGroups.map(timeGroup => {
+              const medsInGroup = allMeds.filter(m => m.times?.includes(timeGroup));
+              if (medsInGroup.length === 0) return null;
 
-              <h4 className="text-base font-black text-gray-800 uppercase tracking-tight truncate">{med.name}</h4>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">
-                {med.concentration} - {med.dose}
-              </p>
-
-              <div className="mt-6 flex flex-wrap gap-2">
-                {med.times.map((t, i) => (
-                  <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 border rounded-xl">
-                    <Clock size={12} className="text-blue-500" />
-                    <span className="text-[10px] font-black text-gray-700">{t}</span>
+              return (
+                <div key={timeGroup} className="bg-white border rounded-[32px] p-6 shadow-sm">
+                  <h4 className="text-base font-black text-[#004c99] uppercase tracking-widest flex items-center gap-2 mb-4">
+                    <Clock size={18} /> {timeGroup}
+                  </h4>
+                  <div className="space-y-3">
+                    {medsInGroup.map(med => (
+                      <div key={med.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group gap-4 transition-all hover:border-blue-100 hover:bg-blue-50/30">
+                        <div className="flex items-start sm:items-center gap-4">
+                          <div className="w-10 h-10 bg-white shadow-sm text-[#004c99] rounded-xl flex items-center justify-center shrink-0">
+                            <Pill size={20} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h5 className="font-black text-gray-800 uppercase text-sm">{med.name}</h5>
+                              <span className={`px-2 py-0.5 text-[8px] font-black uppercase tracking-widest rounded-full ${med.type === 'continuo' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                                {med.type === 'continuo' ? 'Contínuo' : `${med.durationDays} dias`}
+                              </span>
+                            </div>
+                            <p className="text-xs font-bold text-gray-500 uppercase mt-0.5">
+                              {med.concentration} • <span className="text-[#004c99]">{med.dose}</span>
+                            </p>
+                            {med.observation && (
+                              <p className="text-[10px] text-gray-400 italic mt-1 bg-white px-2 py-1 rounded border inline-block">
+                                Obs: {med.observation}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 sm:opacity-0 group-hover:opacity-100 transition-opacity ml-14 sm:ml-0">
+                          <button onClick={() => handleOpenModal(med)} className="p-2.5 bg-white shadow-sm hover:bg-blue-50 text-blue-600 rounded-xl transition-colors border">
+                            <Edit2 size={14} />
+                          </button>
+                          <button onClick={() => handleDelete(med.id)} className="p-2.5 bg-white shadow-sm hover:bg-red-50 text-red-600 rounded-xl transition-colors border">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-
-              {med.observation && (
-                <div className="mt-4 p-3 bg-gray-50 rounded-xl border-l-4 border-blue-200">
-                  <p className="text-[10px] text-gray-500 leading-tight italic">{med.observation}</p>
                 </div>
-              )}
-
-              <div className="mt-6 pt-4 border-t flex justify-between items-center text-[9px] font-black uppercase tracking-widest">
-                <span className="text-gray-400">Início: {new Date(med.startDate).toLocaleDateString('pt-BR')}</span>
-                <span className="text-[#004c99]">{med.frequency}x ao dia</span>
-              </div>
-            </div>
-          ))
+              );
+            });
+          })()
         )}
       </div>
 
@@ -194,11 +189,31 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Nome do Medicamento</label>
                   <input 
                     type="text" 
+                    list="sus-meds-prescribe"
                     placeholder="Ex: Losartana Potássica"
                     value={formData.name}
-                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    onChange={e => {
+                      const searchName = e.target.value;
+                      const allMeds = JSON.parse(localStorage.getItem('susMedicationsFull') || '[]');
+                      const match = allMeds.find((m: any) => `${m.name} - ${m.concentration}` === searchName || m.name === searchName);
+                      if (match) {
+                        setFormData({
+                          ...formData,
+                          name: match.name,
+                          concentration: match.concentration || formData.concentration,
+                          form: match.form ? match.form : formData.form
+                        });
+                      } else {
+                        setFormData({ ...formData, name: searchName });
+                      }
+                    }}
                     className="w-full p-4 bg-white border border-gray-200 rounded-2xl text-xs font-black uppercase outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                   />
+                  <datalist id="sus-meds-prescribe">
+                    {JSON.parse(localStorage.getItem('susMedicationsFull') || '[]').map((m: any) => (
+                      <option key={`${m.name} - ${m.concentration}`} value={`${m.name} - ${m.concentration}`} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Concentração</label>
@@ -254,38 +269,73 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
                      </div>
                    )}
 
-                   <div>
-                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Frequência</label>
-                     <div className="flex items-center gap-3">
-                        <input 
-                          type="number" 
-                          min="1"
-                          max="24"
-                          value={formData.frequency}
-                          onChange={e => handleFrequencyChange(parseInt(e.target.value))}
-                          className="w-16 p-2 bg-gray-50 border rounded-xl text-sm font-black outline-none"
-                        />
-                        <span className="text-[10px] font-black text-gray-400 uppercase">vezes ao dia</span>
+                   <div className="md:col-span-2 space-y-4">
+                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Turnos / Horários de Administração</label>
+                     <div className="flex flex-wrap gap-4 items-center">
+                       {['Manhã', 'Tarde', 'Noite'].map(shift => (
+                         <label key={shift} className="flex items-center gap-2 cursor-pointer bg-gray-50 px-4 py-2 rounded-xl border border-gray-200">
+                           <input 
+                             type="checkbox" 
+                             checked={formData.times.includes(shift)} 
+                             onChange={(e) => {
+                               const newTimes = e.target.checked 
+                                 ? [...formData.times, shift] 
+                                 : formData.times.filter(t => t !== shift);
+                               setFormData({...formData, times: newTimes, frequency: newTimes.length});
+                             }}
+                             className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                           />
+                           <span className="text-xs font-black text-gray-700 uppercase">{shift}</span>
+                         </label>
+                       ))}
+                       <button 
+                         type="button" 
+                         onClick={() => {
+                           const newTimes = [...formData.times, '08:00'];
+                           setFormData({...formData, times: newTimes, frequency: newTimes.length});
+                         }} 
+                         className="text-[#004c99] hover:bg-blue-50 px-3 py-2 flex items-center gap-1 rounded-xl uppercase tracking-widest text-[10px] font-black border border-blue-200"
+                       >
+                         + Adicionar Horário Específico
+                       </button>
                      </div>
-                   </div>
-                 </div>
-
-                 <div className="space-y-3">
-                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Horários de Administração</label>
-                   <div className="flex flex-wrap gap-3">
-                     {formData.times.map((time, idx) => (
-                       <div key={idx} className="flex flex-col gap-1">
-                         <span className="text-[8px] font-black text-gray-400 uppercase ml-1">{idx + 1}ª Dose</span>
-                         <input 
-                           type="time" 
-                           value={time}
-                           onChange={e => handleTimeChange(idx, e.target.value)}
-                           className="p-3 bg-gray-50 border rounded-2xl text-xs font-black outline-none focus:ring-2 focus:ring-blue-100"
-                         />
+                     
+                     {formData.times.filter(t => t !== 'Manhã' && t !== 'Tarde' && t !== 'Noite').length > 0 && (
+                       <div className="flex flex-wrap gap-3 mt-4 p-4 border border-dashed rounded-2xl bg-gray-50/50">
+                         {formData.times.map((time, idx) => {
+                           if (time === 'Manhã' || time === 'Tarde' || time === 'Noite') return null;
+                           return (
+                             <div key={idx} className="flex flex-col gap-1 relative">
+                               <span className="text-[8px] font-black text-gray-400 uppercase ml-1">Horário {idx + 1}</span>
+                               <div className="flex items-center gap-1">
+                                 <input 
+                                   type="time" 
+                                   value={time}
+                                   onChange={e => {
+                                     const newTimes = [...formData.times];
+                                     newTimes[idx] = e.target.value;
+                                     setFormData({...formData, times: newTimes});
+                                   }}
+                                   className="p-3 bg-white border rounded-xl text-xs font-black outline-none focus:ring-2 focus:ring-blue-100"
+                                 />
+                                 <button 
+                                   type="button"
+                                   onClick={() => {
+                                     const newTimes = formData.times.filter((_, i) => i !== idx);
+                                     setFormData({...formData, times: newTimes, frequency: newTimes.length});
+                                   }}
+                                   className="p-3 text-red-500 hover:bg-red-50 rounded-xl"
+                                 >
+                                   Remover
+                                 </button>
+                               </div>
+                             </div>
+                           );
+                         })}
                        </div>
-                     ))}
-                   </div>
-                 </div>
+                     )}
+                    </div>
+                  </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

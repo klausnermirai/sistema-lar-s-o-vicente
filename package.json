@@ -18,7 +18,7 @@
     "firebase": "^12.12.1",
     "firebase-admin": "^12.6.0",
     "helmet": "^8.1.0",
-    "jspdf": "^4.2.0",
+    "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.563.0",
     "motion": "^12.38.0",

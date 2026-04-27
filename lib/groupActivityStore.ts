@@ -1,17 +1,24 @@
 import { GroupActivity } from '../types';
 
-const GROUP_ACTIVITY_KEY = 'ssvp_group_activities';
-
-export const loadGroupActivities = (institutionId: string): GroupActivity[] => {
-  const saved = localStorage.getItem(GROUP_ACTIVITY_KEY);
-  if (!saved) return [];
-  const allActivities: GroupActivity[] = JSON.parse(saved);
-  return allActivities.filter(a => a.institutionId === institutionId);
+export const loadGroupActivities = async (institutionId: string): Promise<GroupActivity[]> => {
+  const response = await fetch(`/api/groupActivities?institutionId=${institutionId}`);
+  if (!response.ok) throw new Error('Erro ao buscar atividades em grupo');
+  return response.json();
 };
 
-export const saveGroupActivity = (activity: GroupActivity) => {
-  const saved = localStorage.getItem(GROUP_ACTIVITY_KEY);
-  const allActivities: GroupActivity[] = saved ? JSON.parse(saved) : [];
-  allActivities.push(activity);
-  localStorage.setItem(GROUP_ACTIVITY_KEY, JSON.stringify(allActivities));
+export const saveGroupActivity = async (activity: GroupActivity): Promise<GroupActivity> => {
+  const response = await fetch('/api/groupActivities', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(activity)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar atividade em grupo');
+  return response.json();
+};
+
+export const deleteGroupActivity = async (activityId: string): Promise<void> => {
+  const response = await fetch(`/api/groupActivities/${activityId}`, {
+    method: 'DELETE'
+  });
+  if (!response.ok) throw new Error('Erro ao excluir atividade');
 };

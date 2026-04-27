@@ -727,6 +727,33 @@ async function startServer() {
     }
   });
 
+  // --- Global Visits API ---
+  app.get('/api/global-visits', async (req, res) => {
+    const { institutionId } = req.query;
+    try {
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('global_visits')
+        .where('institutionId', '==', realId)
+        .orderBy('date', 'desc')
+        .get();
+      const visits = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      res.json(visits);
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao buscar visitas.' });
+    }
+  });
+
+  app.post('/api/global-visits', async (req, res) => {
+    const { institutionId, ...data } = req.body;
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      const docRef = await db.collection('global_visits').add({ ...data, institutionId: realId });
+      res.json({ ...data, id: docRef.id, institutionId: realId });
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao salvar visita.' });
+    }
+  });
+
   // --- Suporte Routes ---
   app.get('/api/support/messages', async (req, res) => {
     const { institutionId } = req.query;
@@ -765,6 +792,126 @@ async function startServer() {
 
   // More CRUDs could be added here...
 
+  // --- Agenda API ---
+  app.get('/api/agenda', async (req, res) => {
+    const { institutionId } = req.query;
+    try {
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('agenda_events')
+        .where('institutionId', '==', realId)
+        .get();
+      const events = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id }));
+      res.json(events);
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao buscar agenda.' });
+    }
+  });
+
+  app.post('/api/agenda', async (req, res) => {
+    const { institutionId, ...data } = req.body;
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      if (data.id && data.id.length > 10) {
+        await db.collection('agenda_events').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
+        res.json({ ...data, id: data.id, institutionId: realId });
+      } else {
+        const docRef = await db.collection('agenda_events').add({ ...data, institutionId: realId });
+        res.json({ ...data, id: docRef.id, institutionId: realId });
+      }
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao salvar evento.' });
+    }
+  });
+
+  app.delete('/api/agenda/:id', async (req, res) => {
+    try {
+      await db.collection('agenda_events').doc(req.params.id).delete();
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao excluir evento.' });
+    }
+  });
+
+  // --- Group Activities API ---
+  app.get('/api/groupActivities', async (req, res) => {
+    const { institutionId } = req.query;
+    try {
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('group_activities')
+        .where('institutionId', '==', realId)
+        .get();
+      const events = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id }));
+      res.json(events);
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao buscar atividades em grupo.' });
+    }
+  });
+
+  app.post('/api/groupActivities', async (req, res) => {
+    const { institutionId, ...data } = req.body;
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      if (data.id && data.id.length > 10) {
+        await db.collection('group_activities').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
+        res.json({ ...data, id: data.id, institutionId: realId });
+      } else {
+        const docRef = await db.collection('group_activities').add({ ...data, institutionId: realId });
+        res.json({ ...data, id: docRef.id, institutionId: realId });
+      }
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao salvar atividade em grupo.' });
+    }
+  });
+
+  app.delete('/api/groupActivities/:id', async (req, res) => {
+    try {
+      await db.collection('group_activities').doc(req.params.id).delete();
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao excluir atividade.' });
+    }
+  });
+
+  // --- Inventory API ---
+  app.get('/api/inventory', async (req, res) => {
+    const { institutionId } = req.query;
+    try {
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('medication_inventory')
+        .where('institutionId', '==', realId)
+        .get();
+      const inventory = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      res.json(inventory);
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao buscar estoque de medicamentos.' });
+    }
+  });
+
+  app.post('/api/inventory/bulk', async (req, res) => {
+    const { institutionId, items } = req.body;
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      const batch = db.batch();
+      const newItems: any[] = [];
+      for (const item of items) {
+         let docRef;
+         if (item.id && !item.id.startsWith('new_')) {
+           docRef = db.collection('medication_inventory').doc(item.id);
+         } else {
+           docRef = db.collection('medication_inventory').doc();
+           item.id = docRef.id;
+         }
+         const { id, ...data } = item;
+         batch.set(docRef, { ...data, institutionId: realId }, { merge: true });
+         newItems.push(item);
+      }
+      await batch.commit();
+      res.json(newItems);
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao salvar estoque em massa.' });
+    }
+  });
+  
   // --- Vite / Static Files ---
 
   if (process.env.NODE_ENV !== 'production') {

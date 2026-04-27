@@ -13,8 +13,6 @@ import {
   Stethoscope,
   RotateCcw
 } from 'lucide-react';
-import PerTab from './PerTab';
-import MedicationTab from './MedicationTab';
 import DailyRoutineTab from './DailyRoutineTab';
 import VitalSignsTab from './VitalSignsTab';
 import AppointmentTab from './AppointmentTab';
@@ -24,11 +22,12 @@ import { INITIAL_COMPANIONS } from '../constants';
 interface HealthCareModuleProps {
   residents: Resident[];
   onSaveResident: (resident: Resident) => void;
+  onBulkSaveResidents?: (residents: Resident[]) => void;
   onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
 }
 
-const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveResident, onPostToMural }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'per' | 'medicacao' | 'sinais_vitais' | 'rotinas' | 'consultas' | 'plantao'>('per');
+const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveResident, onBulkSaveResidents, onPostToMural }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'sinais_vitais' | 'rotinas' | 'consultas' | 'plantao'>('rotinas');
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -54,15 +53,29 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isDropdownOpen]);
 
-  const handleCollectiveLogsSave = (updates: { residentId: string, log: DailyRoutineLog }[]) => {
-    // In a real app, this would be an atomic batch update
-    updates.forEach(({ residentId, log }) => {
-      const resident = residents.find(r => r.id === residentId);
-      if (resident) {
-        const updatedRoutines = [...(resident.dailyRoutines || []), log];
-        onSaveResident({ ...resident, dailyRoutines: updatedRoutines });
+  const handleCollectiveLogsSave = async (updates: { residentId: string, log: DailyRoutineLog }[]) => {
+    if (onBulkSaveResidents) {
+      const updatedResidents = residents.map(r => {
+        const updateForRes = updates.find(u => u.residentId === r.id);
+        if (updateForRes) {
+          const newRoutine = updateForRes.log;
+          const filtered = (r.dailyRoutines || []).filter(log => !(log.taskId === newRoutine.taskId && log.date === newRoutine.date));
+          return { ...r, dailyRoutines: [...filtered, newRoutine] };
+        }
+        return r;
+      }).filter(r => updates.some(u => u.residentId === r.id));
+      
+      await onBulkSaveResidents(updatedResidents);
+    } else {
+      for (const { residentId, log } of updates) {
+        const resident = residents.find(r => r.id === residentId);
+        if (resident) {
+          const filtered = (resident.dailyRoutines || []).filter(l => !(l.taskId === log.taskId && l.date === log.date));
+          const updatedRoutines = [...filtered, log];
+          onSaveResident({ ...resident, dailyRoutines: updatedRoutines });
+        }
       }
-    });
+    }
   };
 
   const renderContent = () => {
@@ -124,28 +137,6 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
             onSaveResident({ ...selectedResident, appointments: newApps });
           }}
           onPostToMural={onPostToMural}
-        />
-      );
-    }
-
-    if (activeSubTab === 'per') {
-      return (
-        <PerTab 
-          resident={selectedResident} 
-          onUpdatePer={(newPer) => {
-            onSaveResident({ ...selectedResident, per: newPer });
-          }} 
-        />
-      );
-    }
-
-    if (activeSubTab === 'medicacao') {
-      return (
-        <MedicationTab 
-          resident={selectedResident}
-          onUpdateMedications={(newMeds) => {
-            onSaveResident({ ...selectedResident, medications: newMeds });
-          }}
         />
       );
     }
@@ -274,28 +265,6 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
             Intercorrências / Plantão
           </button>
           <button
-            onClick={() => setActiveSubTab('per')}
-            className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
-              activeSubTab === 'per' 
-                ? 'border-[#004c99] text-[#004c99]' 
-                : 'border-transparent text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            <ShieldCheck size={16} />
-            Prontuário (PER)
-          </button>
-          <button
-            onClick={() => setActiveSubTab('medicacao')}
-            className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
-              activeSubTab === 'medicacao' 
-                ? 'border-[#004c99] text-[#004c99]' 
-                : 'border-transparent text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            <Pill size={16} />
-            Controle de Medicação
-          </button>
-          <button
             onClick={() => setActiveSubTab('sinais_vitais')}
             className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
               activeSubTab === 'sinais_vitais' 
@@ -320,7 +289,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
         </div>
 
         {/* Dynamic Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50/10">
+        <div className={`flex-1 ${activeSubTab === 'rotinas' || activeSubTab === 'plantao' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'} custom-scrollbar bg-gray-50/10`}>
           {renderContent()}
         </div>
       </div>

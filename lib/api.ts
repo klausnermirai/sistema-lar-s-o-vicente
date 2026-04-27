@@ -165,3 +165,35 @@ export const deleteResident = async (residentId: string) => {
   if (!response.ok) throw new Error('Erro ao excluir residente');
   return response.json();
 };
+
+export const fetchInventory = async (institutionId: string) => {
+  const response = await fetch(`/api/inventory?institutionId=${institutionId}`);
+  if (!response.ok) throw new Error('Erro ao buscar estoque');
+  return response.json();
+};
+
+export const bulkSaveInventory = async (institutionId: string, items: any[]) => {
+  const response = await fetch('/api/inventory/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ institutionId, items })
+  });
+  if (!response.ok) throw new Error('Erro ao salvar estoque de medicamentos');
+  return response.json();
+};
+
+export const fetchGlobalVisits = async (institutionId: string) => {
+  const response = await fetch(`/api/global-visits?institutionId=${institutionId}`);
+  if (!response.ok) throw new Error('Erro ao buscar visitas');
+  return response.json();
+};
+
+export const saveGlobalVisit = async (visit: any) => {
+  const response = await fetch('/api/global-visits', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(visit)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar visita');
+  return response.json();
+};

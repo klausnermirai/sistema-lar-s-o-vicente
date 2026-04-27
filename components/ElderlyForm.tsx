@@ -552,7 +552,57 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
               <FormField label="Motivo do Acolhimento" name="admissionReason" value={formData.admissionReason} onChange={handleChange} />
               <FormField label="Grupo do Residente" name="residentGroup" value={formData.residentGroup} onChange={handleChange} />
               <FormField label="Grau de Dependência" name="dependencyLevel" type="select" options={['Grau I', 'Grau II', 'Grau III']} value={formData.dependencyLevel} onChange={handleChange} />
-              <div className="hidden md:block"></div>
+              
+              <div className="md:col-span-4 mt-4">
+                <label className="text-[10px] font-black uppercase text-gray-400 mb-3 block border-b pb-2">Necessidades de Auxílio (Rotinas Comuns)</label>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox" id="bathAssistance"
+                      checked={formData.careNeeds?.bathAssistance || false}
+                      onChange={(e) => setFormData({ ...formData, careNeeds: { ...(formData.careNeeds || {}), bathAssistance: e.target.checked } })}
+                      className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                    />
+                    <label htmlFor="bathAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">Banho</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox" id="oralHygieneAssistance"
+                      checked={formData.careNeeds?.oralHygieneAssistance || false}
+                      onChange={(e) => setFormData({ ...formData, careNeeds: { ...(formData.careNeeds || {}), oralHygieneAssistance: e.target.checked } })}
+                      className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                    />
+                    <label htmlFor="oralHygieneAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">Higiene Oral</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox" id="feedingAssistance"
+                      checked={formData.careNeeds?.feedingAssistance || false}
+                      onChange={(e) => setFormData({ ...formData, careNeeds: { ...(formData.careNeeds || {}), feedingAssistance: e.target.checked } })}
+                      className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                    />
+                    <label htmlFor="feedingAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">Alimentação</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox" id="diaperChangeAssistance"
+                      checked={formData.careNeeds?.diaperChangeAssistance || false}
+                      onChange={(e) => setFormData({ ...formData, careNeeds: { ...(formData.careNeeds || {}), diaperChangeAssistance: e.target.checked } })}
+                      className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                    />
+                    <label htmlFor="diaperChangeAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">Troca de Fraldas</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox" id="decubitusChangeAssistance"
+                      checked={formData.careNeeds?.decubitusChangeAssistance || false}
+                      onChange={(e) => setFormData({ ...formData, careNeeds: { ...(formData.careNeeds || {}), decubitusChangeAssistance: e.target.checked } })}
+                      className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                    />
+                    <label htmlFor="decubitusChangeAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">M. de Decúbito</label>
+                  </div>
+                </div>
+              </div>
               
               <FormField label="Nome da Instituição Anterior" name="previousInstitution" value={formData.previousInstitution} onChange={handleChange} />
               <FormField label="Tempo de Estadia" name="stayTime" value={formData.stayTime} onChange={handleChange} />
