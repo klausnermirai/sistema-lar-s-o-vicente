@@ -216,7 +216,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
   };
 
   const handleDeleteActivity = async (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir esta atividade permanentemente?')) {
+    if (window.confirm('Tem certeza que deseja arquivar esta atividade? O histórico será preservado.')) {
       await deleteGroupActivity(id);
       setActivities(prev => prev.filter(a => a.id !== id));
       

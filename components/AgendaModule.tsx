@@ -90,7 +90,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onPostT
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("Deseja realmente excluir este compromisso?")) {
+    if (window.confirm("Deseja realmente arquivar este compromisso?")) {
       await deleteAgendaEvent(id);
       loadAgendaEvents(session.institutionId || 'default-inst').then(setEvents);
     }

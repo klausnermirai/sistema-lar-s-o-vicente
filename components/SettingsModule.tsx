@@ -198,7 +198,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
   };
 
   const handleDeleteUser = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este acesso?')) return;
+    if (!window.confirm('Tem certeza que deseja arquivar este acesso?')) return;
     
     try {
       await deleteUser(id);

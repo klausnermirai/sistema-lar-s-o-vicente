@@ -1,4 +1,6 @@
 
+import { getAuthHeaders } from './api';
+
 export interface SupportMessage {
   id?: string;
   institutionId: string;
@@ -9,7 +11,9 @@ export interface SupportMessage {
 }
 
 export async function fetchSupportMessages(institutionId: string): Promise<SupportMessage[]> {
-  const response = await fetch(`/api/support/messages?institutionId=${institutionId}`);
+  const response = await fetch(`/api/support/messages?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Erro ao buscar mensagens de suporte');
   return response.json();
 }
@@ -17,7 +21,7 @@ export async function fetchSupportMessages(institutionId: string): Promise<Suppo
 export async function sendSupportMessage(institutionId: string, text: string, sender: string): Promise<SupportMessage> {
   const response = await fetch('/api/support/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ institutionId, text, sender, role: 'user' })
   });
   if (!response.ok) throw new Error('Erro ao enviar mensagem de suporte');

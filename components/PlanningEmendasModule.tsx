@@ -155,12 +155,12 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
   };
 
   const handleDeleteCategory = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta categoria? Isso pode afetar as análises se houver emendas alocadas nela.")) return;
+    if (!confirm("Tem certeza que deseja arquivar esta categoria? Isto não apagará os dados associados.")) return;
     try {
       await deleteAmendmentCategory(id);
       setCategories(prev => prev.filter(c => c.id !== id));
     } catch (error) {
-      console.error("Erro ao excluir categoria:", error);
+      console.error("Erro ao arquivar categoria:", error);
     }
   };
 
@@ -219,12 +219,12 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
   };
 
   const handleDeleteGrant = async (grantId: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta emenda?")) return;
+    if (!confirm("Tem certeza que deseja arquivar esta emenda?")) return;
     try {
       await deleteAmendmentGrant(grantId);
       setGrants(prev => prev.filter(g => g.id !== grantId));
     } catch (error) {
-      console.error("Erro ao excluir emenda:", error);
+      console.error("Erro ao arquivar emenda:", error);
     }
   };
 

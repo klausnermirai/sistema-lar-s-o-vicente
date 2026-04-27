@@ -210,6 +210,11 @@ async function startServer() {
 
       // Find user in this institution
       const usersRef = db.collection('users');
+      
+      // TODO (Segurança): Atualmente as senhas são comparadas em texto puro. 
+      // Futuramente, as senhas devem ser hasheadas no momento do cadastro (ex: usando bcrypt ou crypto.createHash('sha256'))
+      // e aqui a comparação deve ser feita verificando o hash gerado. Ou migrar para o Firebase Authentication.
+      
       // Tentar buscar por Firestore ID
       let userSnapshot = await usersRef
         .where('institutionId', '==', institutionId)
@@ -334,7 +339,7 @@ async function startServer() {
       else query = query.where('institutionId', '==', realId);
 
       const snapshot = await query.get();
-      const dbResidents = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id }));
+      const dbResidents = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       
       if (institutionId === 'demo-institution-id') {
         const demoResidents = [
@@ -424,7 +429,7 @@ async function startServer() {
       else query = query.where('institutionId', '==', realId);
 
       const snapshot = await query.get();
-      const dbCandidates = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id }));
+      const dbCandidates = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       
       if (institutionId === 'demo-institution-id') {
         const demoCandidates = [
@@ -595,7 +600,7 @@ async function startServer() {
         .where('institutionId', '==', institutionId)
         .orderBy('timestamp', 'asc')
         .get();
-      const messages = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      const messages = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(messages);
     } catch (error) {
       console.error('Error fetching mural:', error);
@@ -614,12 +619,12 @@ async function startServer() {
   });
 
   // User Management
-  app.get('/api/users', async (req, res) => {
+  app.get('/api/users', requireRole(['administrador', 'gerencial']), async (req, res) => {
     const { institutionId } = req.query;
     try {
       const realId = await getRealInstitutionId(institutionId as string);
       const snapshot = await db.collection('users').where('institutionId', '==', realId).get();
-      const dbUsers = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      const dbUsers = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived).filter((u: any) => !u.archived);
       
       let finalUsers = dbUsers;
       if (institutionId === 'demo-institution-id') {
@@ -638,18 +643,28 @@ async function startServer() {
     }
   });
 
-  app.post('/api/users', async (req, res) => {
+  app.post('/api/users', requireRole(['administrador', 'gerencial']), async (req, res) => {
     const data = req.body;
     try {
+      const auditEntry = {
+        action: data.id ? 'update' : 'create',
+        timestamp: new Date().toISOString(),
+        userId: (req as any).user?.id || 'unknown',
+        username: (req as any).user?.username || 'unknown',
+      };
+
       const realId = await getRealInstitutionId(data.institutionId);
       data.institutionId = realId;
 
-      if (data.id) {
-        const { id, ...updateData } = data;
+      const payload = { ...data };
+      payload.auditLog = admin.firestore.FieldValue.arrayUnion(auditEntry);
+
+      if (payload.id) {
+        const { id, ...updateData } = payload;
         await db.collection('users').doc(id).set(updateData, { merge: true });
         res.json(data);
       } else {
-        const docRef = await db.collection('users').add(data);
+        const docRef = await db.collection('users').add(payload);
         res.json({ ...data, id: docRef.id });
       }
     } catch (error) {
@@ -658,13 +673,25 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/users/:id', async (req, res) => {
+  app.delete('/api/users/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
     const { id } = req.params;
     try {
-      await db.collection('users').doc(id).delete();
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao excluir usuário.' });
+      const auditEntry = {
+        action: 'archive',
+        timestamp: new Date().toISOString(),
+        userId: (req as any).user?.id || 'unknown',
+        username: (req as any).user?.username || 'unknown',
+      };
+      await db.collection('users').doc(id).update({
+        archived: true,
+        archivedAt: new Date().toISOString(),
+        archivedBy: (req as any).user?.id || 'unknown',
+        auditLog: admin.firestore.FieldValue.arrayUnion(auditEntry)
+      });
+      res.json({ success: true, message: 'Arquivado com sucesso.' });
+    } catch (error: any) {
+      if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
+      res.status(500).json({ error: 'Erro ao arquivar usuário.' });
     }
   });
 
@@ -705,7 +732,7 @@ async function startServer() {
       const snapshot = await db.collection('amendment_categories')
         .where('institutionId', '==', realId)
         .get();
-      const categories = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      const categories = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(categories);
     } catch (error) {
       res.status(500).json({ error: 'Erro ao buscar categorias de emendas.' });
@@ -729,12 +756,13 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/amendments/categories/:id', async (req, res) => {
+  app.delete('/api/amendments/categories/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
     try {
-      await db.collection('amendment_categories').doc(req.params.id).delete();
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao excluir categoria.' });
+      await db.collection('amendment_categories').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      res.json({ success: true, message: 'Arquivado com sucesso.' });
+    } catch (error: any) {
+      if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
+      res.status(500).json({ error: 'Erro ao arquivar categoria.' });
     }
   });
 
@@ -745,7 +773,7 @@ async function startServer() {
       const snapshot = await db.collection('amendment_grants')
         .where('institutionId', '==', realId)
         .get();
-      const grants = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      const grants = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(grants);
     } catch (error) {
       res.status(500).json({ error: 'Erro ao buscar emendas.' });
@@ -769,12 +797,13 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/amendments/grants/:id', async (req, res) => {
+  app.delete('/api/amendments/grants/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
     try {
-      await db.collection('amendment_grants').doc(req.params.id).delete();
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao excluir emenda.' });
+      await db.collection('amendment_grants').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      res.json({ success: true, message: 'Arquivado com sucesso.' });
+    } catch (error: any) {
+      if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
+      res.status(500).json({ error: 'Erro ao arquivar emenda.' });
     }
   });
 
@@ -825,7 +854,7 @@ async function startServer() {
         .where('institutionId', '==', realId)
         .orderBy('date', 'desc')
         .get();
-      const visits = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      const visits = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(visits);
     } catch (error) {
       res.status(500).json({ error: 'Erro ao buscar visitas.' });
@@ -852,7 +881,7 @@ async function startServer() {
         .where('institutionId', '==', realId)
         .orderBy('createdAt', 'asc')
         .get();
-      const messages = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      const messages = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(messages);
     } catch (error) {
       console.error('Error fetching support messages:', error);
@@ -889,7 +918,7 @@ async function startServer() {
       const snapshot = await db.collection('agenda_events')
         .where('institutionId', '==', realId)
         .get();
-      const events = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id }));
+      const events = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(events);
     } catch (error) {
       res.status(500).json({ error: 'Erro ao buscar agenda.' });
@@ -912,12 +941,13 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/agenda/:id', async (req, res) => {
+  app.delete('/api/agenda/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico']), async (req, res) => {
     try {
-      await db.collection('agenda_events').doc(req.params.id).delete();
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao excluir evento.' });
+      await db.collection('agenda_events').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      res.json({ success: true, message: 'Arquivado com sucesso.' });
+    } catch (error: any) {
+      if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
+      res.status(500).json({ error: 'Erro ao arquivar evento.' });
     }
   });
 
@@ -929,7 +959,7 @@ async function startServer() {
       const snapshot = await db.collection('group_activities')
         .where('institutionId', '==', realId)
         .get();
-      const events = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id }));
+      const events = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(events);
     } catch (error) {
       res.status(500).json({ error: 'Erro ao buscar atividades em grupo.' });
@@ -952,12 +982,13 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/groupActivities/:id', async (req, res) => {
+  app.delete('/api/groupActivities/:id', requireRole(['assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'gerencial']), async (req, res) => {
     try {
-      await db.collection('group_activities').doc(req.params.id).delete();
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao excluir atividade.' });
+      await db.collection('group_activities').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      res.json({ success: true, message: 'Arquivado com sucesso.' });
+    } catch (error: any) {
+      if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
+      res.status(500).json({ error: 'Erro ao arquivar atividade.' });
     }
   });
 
@@ -969,7 +1000,7 @@ async function startServer() {
       const snapshot = await db.collection('medication_inventory')
         .where('institutionId', '==', realId)
         .get();
-      const inventory = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      const inventory = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(inventory);
     } catch (error) {
       res.status(500).json({ error: 'Erro ao buscar estoque de medicamentos.' });

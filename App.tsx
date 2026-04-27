@@ -222,21 +222,21 @@ const App: React.FC = () => {
 
   const handleDeleteCandidate = async (candidateId: string) => {
     try {
-      if (!window.confirm('Deseja realmente excluir este cadastro permanentemente?')) return;
+      if (!window.confirm('Deseja realmente arquivar este cadastro? Ele não aparecerá mais na lista principal, mas o histórico será preservado.')) return;
       await apiDeleteCandidate(candidateId);
       setCandidates(prev => prev.filter(c => c.id !== candidateId));
     } catch (error) {
-      alert('Erro ao excluir candidato');
+      alert('Erro ao arquivar candidato');
     }
   };
 
   const handleDeleteResident = async (residentId: string) => {
     try {
-      if (!window.confirm('Deseja realmente excluir este residente permanentemente? Esta ação não pode ser desfeita e todo o histórico será perdido.')) return;
+      if (!window.confirm('Deseja realmente arquivar este residente? Ele não aparecerá mais na lista principal, mas o histórico será preservado.')) return;
       await apiDeleteResident(residentId);
       setResidents(prev => prev.filter(r => r.id !== residentId));
     } catch (error) {
-      alert('Erro ao excluir residente');
+      alert('Erro ao arquivar residente');
     }
   };
 

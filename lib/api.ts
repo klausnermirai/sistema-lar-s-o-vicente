@@ -42,7 +42,7 @@ export const setup = async (data: any) => {
 };
 
 // Helper function to get auth headers from local storage
-const getAuthHeaders = (): HeadersInit => {
+export const getAuthHeaders = (): HeadersInit => {
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
   try {
     const saved = localStorage.getItem('ssvp_session');

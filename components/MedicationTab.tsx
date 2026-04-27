@@ -64,7 +64,7 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Deseja excluir este medicamento?')) {
+    if (confirm('Deseja arquivar este medicamento?')) {
       const updatedMeds = (resident.medications || []).filter(m => m.id !== id);
       onUpdateMedications(updatedMeds);
     }
