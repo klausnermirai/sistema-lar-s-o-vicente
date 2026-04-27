@@ -75,11 +75,27 @@ export const saveResident = async (resident: any) => {
   return response.json();
 };
 
+export const fetchResidentById = async (id: string, institutionId: string) => {
+  const response = await fetch(`/api/residents/${id}?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar residente completo');
+  return response.json();
+};
+
 export const fetchCandidates = async (institutionId: string, type: string = 'obra_unida') => {
   const response = await fetch(`/api/candidates?institutionId=${institutionId}&type=${type}`, {
     headers: getAuthHeaders()
   });
   if (!response.ok) throw new Error('Erro ao buscar candidatos');
+  return response.json();
+};
+
+export const fetchCandidateById = async (id: string, institutionId: string) => {
+  const response = await fetch(`/api/candidates/${id}?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar candidato completo');
   return response.json();
 };
 

@@ -360,7 +360,7 @@ async function startServer() {
   });
 
   // CRUD for Residents
-  app.get('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante']), async (req, res) => {
+  app.get('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'administrador']), async (req, res) => {
     const { institutionId, type } = req.query;
     if (!institutionId) return res.status(400).json({ error: 'institutionId requerido' });
     
@@ -374,8 +374,32 @@ async function startServer() {
       else if (type === 'nacional') query = query.where('nacionalId', '==', realId);
       else query = query.where('institutionId', '==', realId);
 
+      
       const snapshot = await query.get();
-      const dbResidents = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
+      const dbResidents = snapshot.docs.map((doc: any) => {
+        const data = doc.data();
+        if (data.nutrition) {
+            delete data.nutrition.evolutions;
+            delete data.nutrition.attendances;
+        }
+        if (data.psychology) {
+            delete data.psychology.evolutions;
+            delete data.psychology.attendances;
+        }
+        if (data.occupationalTherapy) {
+            delete data.occupationalTherapy.evolutions;
+            delete data.occupationalTherapy.attendances;
+        }
+        if (data.physiotherapy) {
+            delete data.physiotherapy.evolutions;
+            delete data.physiotherapy.attendances;
+        }
+        delete data.piaData;
+        delete data.medicalRecord;
+        delete data.auditLog;
+        return { ...data, id: doc.id };
+      }).filter((item: any) => !item.archived);
+
       
       if (institutionId === 'demo-institution-id') {
         const demoResidents = [
@@ -389,6 +413,28 @@ async function startServer() {
     
     res.json(residents);
   });
+
+  
+  app.get('/api/residents/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'administrador']), async (req, res) => {
+    try {
+      const doc = await db.collection('residents').doc(req.params.id).get();
+      if (!doc.exists) return res.status(404).json({ error: 'Residente não encontrado' });
+      res.json({ ...doc.data(), id: doc.id });
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao buscar residente' });
+    }
+  });
+
+  app.get('/api/candidates/:id', requireRole(['assistente_social', 'enfermeira', 'gerencial', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'administrador']), async (req, res) => {
+    try {
+      const doc = await db.collection('candidates').doc(req.params.id).get();
+      if (!doc.exists) return res.status(404).json({ error: 'Candidato não encontrado' });
+      res.json({ ...doc.data(), id: doc.id });
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao buscar candidato' });
+    }
+  });
+
 
   app.post('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico']), async (req, res) => {
     const data = req.body;
@@ -454,7 +500,7 @@ async function startServer() {
   });
 
   // CRUD for Candidates
-  app.get('/api/candidates', requireRole(['assistente_social', 'enfermeira', 'gerencial']), async (req, res) => {
+  app.get('/api/candidates', requireRole(['assistente_social', 'enfermeira', 'gerencial', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'administrador']), async (req, res) => {
     const { institutionId, type } = req.query;
     const candidates = await safeQuery(async () => {
       const realId = await getRealInstitutionId(institutionId as string);

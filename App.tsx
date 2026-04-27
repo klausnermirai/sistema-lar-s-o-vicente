@@ -142,12 +142,37 @@ const App: React.FC = () => {
     setEditingResident(INITIAL_RESIDENT);
   };
 
-  const handleEditResident = (resident: Resident) => {
-    setEditingResident(resident);
+  const handleEditResident = async (resident: Resident) => {
+    setIsLoading(true);
+    try {
+      const fullRes = await import('./lib/api').then(m => m.fetchResidentById(resident.id, session?.institutionId || session?.cnpj || ''));
+      setEditingResident(fullRes);
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao buscar dados completos');
+      setEditingResident(resident); // Fallback
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSaveResident = async (data: Resident) => {
     try {
+      if (!data.id || data.id.startsWith('new_')) {
+        const allPeople: any[] = [...residents, ...candidates];
+        const dup = allPeople.find(p => (
+           (data.cpf && data.cpf.replace(/\D/g, '').length === 11 && p.cpf?.replace(/\D/g, '') === data.cpf.replace(/\D/g, '')) ||
+           (data.rg && data.rg.length > 3 && p.rg === data.rg) ||
+           (data.sus && data.sus.length > 5 && p.sus === data.sus) ||
+           (data.name && data.birthDate && p.name?.toLowerCase().trim() === data.name?.toLowerCase().trim() && p.birthDate === data.birthDate)
+        ));
+        if (dup) {
+           if (!window.confirm(`Atenção: Possível cadastro duplicado encontrado (mesmo CPF, RG, SUS ou Nome e Data de Nascimento).\nCadastro existente: "${dup.name}".\n\nDeseja continuar e salvar mesmo assim?`)) {
+              return;
+           }
+        }
+      }
+
       const saved = await apiSaveResident({ 
         ...data, 
         institutionId: session?.institutionId,
@@ -173,6 +198,21 @@ const App: React.FC = () => {
 
   const handleSaveCandidate = async (candidate: Candidate) => {
     try {
+      if (!candidate.id || candidate.id.startsWith('new_')) {
+        const allPeople: any[] = [...residents, ...candidates];
+        const dup = allPeople.find(p => (
+           (candidate.cpf && candidate.cpf.replace(/\D/g, '').length === 11 && p.cpf?.replace(/\D/g, '') === candidate.cpf.replace(/\D/g, '')) ||
+           (candidate.rg && candidate.rg.length > 3 && p.rg === candidate.rg) ||
+           (candidate.sus && candidate.sus.length > 5 && p.sus === candidate.sus) ||
+           (candidate.name && candidate.birthDate && p.name?.toLowerCase().trim() === candidate.name?.toLowerCase().trim() && p.birthDate === candidate.birthDate)
+        ));
+        if (dup) {
+           if (!window.confirm(`Atenção: Possível cadastro duplicado encontrado (mesmo CPF, RG, SUS ou Nome e Data de Nascimento).\nCadastro existente: "${dup.name}".\n\nDeseja continuar e salvar mesmo assim?`)) {
+              return;
+           }
+        }
+      }
+
       const saved = await apiSaveCandidate({ 
         ...candidate, 
         institutionId: session?.institutionId,

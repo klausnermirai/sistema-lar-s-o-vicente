@@ -190,82 +190,69 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50/80 text-gray-400 text-[10px] uppercase font-black tracking-widest border-b">
-              <tr>
-                <th className="px-8 py-5">Identificação do Residente</th>
-                <th className="px-8 py-5">Resumo {activeSubTab.replace('-', ' ')}</th>
-                <th className="px-8 py-5 text-right">Ação Direta</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredResidents.map((resident) => (
-                <tr key={resident.id} className="hover:bg-blue-50/20 transition-all group">
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-4">
-                      <div className="relative">
-                        <img 
-                          src={resident.photo || `https://ui-avatars.com/api/?name=${resident.name}&background=004c99&color=fff`} 
-                          alt={resident.name}
-                          className="w-12 h-12 rounded-2xl object-cover border-2 border-white shadow-md group-hover:scale-105 transition-transform"
-                        />
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
-                      </div>
-                      <div>
-                        <div className="font-black text-gray-900 uppercase text-xs tracking-tighter">{resident.name}</div>
-                        <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">CPF: {resident.cpf}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    {renderModuleSummary(resident)}
-                  </td>
-                  <td className="px-8 py-5 text-right">
-                    <div className="flex justify-end items-center gap-2">
-                      <button 
-                        onClick={() => onEdit(resident)}
-                        className={`px-6 py-2.5 bg-white border border-gray-200 rounded-xl transition-all inline-flex items-center gap-2 font-black text-[10px] uppercase shadow-sm ${
-                          showArchived ? 'text-amber-600 hover:bg-amber-50' : 'text-[#004c99] hover:bg-[#004c99] hover:text-white'
-                        }`}
-                      >
-                        <span>{showArchived ? 'Ver Histórico' : getActionText()}</span>
-                        <ChevronRight size={14} />
-                      </button>
-                      
-                      {showArchived ? (
-                        <button 
-                          onClick={() => onDelete(resident.id)}
-                          className="p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all border border-red-100 shadow-sm"
-                          title="Arquivar"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      ) : (
-                        <button 
-                          onClick={() => setArchivingResident(resident)}
-                          className="p-2.5 bg-gray-50 text-gray-400 hover:bg-amber-100 hover:text-amber-700 rounded-xl transition-all border border-gray-100 shadow-sm"
-                          title="Arquivar Residente"
-                        >
-                          <Archive size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredResidents.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-8 py-20 text-center">
-                    <div className="flex flex-col items-center gap-3 opacity-20">
-                      <Search size={48} />
-                      <span className="font-black uppercase text-xs">Nenhum residente encontrado</span>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 md:p-6 bg-gray-50/30">
+          {filteredResidents.map((resident) => (
+            <div key={resident.id} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] transition-all flex flex-col justify-between overflow-hidden relative group">
+              
+              <div className="flex items-start gap-4 mb-4">
+                <div className="relative">
+                  <img 
+                    src={resident.photo || `https://ui-avatars.com/api/?name=${resident.name}&background=004c99&color=fff`} 
+                    alt={resident.name}
+                    className="w-14 h-14 rounded-2xl object-cover border border-gray-100 shadow-sm"
+                  />
+                  {!showArchived && <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-black text-gray-900 uppercase text-xs tracking-tighter truncate" title={resident.name}>{resident.name}</div>
+                  <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">CPF: {resident.cpf || 'N/D'}</div>
+                </div>
+              </div>
+
+              <div className="py-4 border-y border-gray-50 mb-4 flex-1">
+                {renderModuleSummary(resident)}
+              </div>
+
+              <div className="flex justify-between items-center mt-auto pt-2 gap-2">
+                
+                {showArchived ? (
+                  <button 
+                    onClick={() => onDelete(resident.id)}
+                    className="p-3 md:p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all border border-red-100 shadow-sm"
+                    title="Arquivar"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => setArchivingResident(resident)}
+                    className="p-3 md:p-2.5 bg-gray-50 text-gray-400 hover:bg-amber-100 hover:text-amber-700 rounded-xl transition-all border border-gray-100 shadow-sm"
+                    title="Arquivar Residente"
+                  >
+                    <Archive size={18} />
+                  </button>
+                )}
+
+                <button 
+                  onClick={() => onEdit(resident)}
+                  className={`flex-1 py-3 md:py-2.5 bg-white border border-gray-200 rounded-xl transition-all inline-flex justify-center items-center gap-2 font-black text-[10px] md:text-[11px] uppercase shadow-sm ${
+                    showArchived ? 'text-amber-600 hover:bg-amber-50' : 'text-[#004c99] hover:bg-[#004c99] hover:text-white'
+                  }`}
+                >
+                  <span>{showArchived ? 'Ver Histórico' : getActionText()}</span>
+                  <ChevronRight size={14} />
+                </button>
+
+              </div>
+            </div>
+          ))}
+
+          {filteredResidents.length === 0 && (
+            <div className="col-span-full py-20 text-center flex flex-col items-center gap-3 opacity-30">
+              <Search size={48} />
+              <span className="font-black uppercase text-sm">Nenhum residente encontrado</span>
+            </div>
+          )}
         </div>
       </div>
       {/* Modal de Arquivamento */}

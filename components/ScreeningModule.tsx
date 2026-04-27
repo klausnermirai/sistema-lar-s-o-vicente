@@ -123,8 +123,21 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
   onAdmit,
   settings,
 }) => {
-  const [editingCandidate, setEditingCandidate] =
-    React.useState<Candidate | null>(null);
+  const [editingCandidateState, setEditingCandidateState] = React.useState<Candidate | null>(null);
+
+  const setEditingCandidate = async (cand: Candidate | null) => {
+    if (!cand || !cand.id || cand.id.startsWith('new_')) {
+       setEditingCandidateState(cand);
+       return;
+    }
+    // @ts-ignore
+    const fullCand = await import('../lib/api').then(m => m.fetchCandidateById(cand.id, cand.institutionId)).catch(e => {
+       console.error("Failed to fetch full candidate", e);
+       return cand;
+    });
+    setEditingCandidateState(fullCand);
+  };
+  const editingCandidate = editingCandidateState;
   const [managingCandidate, setManagingCandidate] =
     React.useState<Candidate | null>(null);
   const [isCreatingSimple, setIsCreatingSimple] = React.useState(false);
