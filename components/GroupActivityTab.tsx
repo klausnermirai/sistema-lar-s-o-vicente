@@ -578,7 +578,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
                   <button 
                     onClick={() => handleDeleteActivity(activity.id)}
                     className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg bg-white shadow-sm border border-gray-100 transition-colors"
-                    title="Excluir Atividade"
+                    title="Arquivar Atividade"
                   >
                     <Trash2 size={16} />
                   </button>

@@ -661,7 +661,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                       <button 
                         onClick={() => handleDeleteUser(user.id)}
                         className="p-2.5 text-red-400 hover:bg-red-100 rounded-xl transition-colors" 
-                        title="Excluir"
+                        title="Arquivar"
                       >
                         <Trash2 size={16} />
                       </button>

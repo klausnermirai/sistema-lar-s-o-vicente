@@ -1617,7 +1617,7 @@ function StatusManagementModal({
                 onClick={() => onDelete(data.id)}
                 className="w-full py-4 bg-red-50 text-red-600 rounded-2xl text-[11px] font-black uppercase hover:bg-red-100 transition-all flex items-center justify-center gap-3 border border-red-100"
               >
-                <Trash2 size={18} /> Excluir Registro Permanentemente
+                <Trash2 size={18} /> Arquivar Registro
               </button>
             </div>
           </div>

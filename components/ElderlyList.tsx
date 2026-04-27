@@ -237,7 +237,7 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
                         <button 
                           onClick={() => onDelete(resident.id)}
                           className="p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all border border-red-100 shadow-sm"
-                          title="Excluir Definitivamente"
+                          title="Arquivar"
                         >
                           <Trash2 size={16} />
                         </button>

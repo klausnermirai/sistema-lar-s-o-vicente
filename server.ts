@@ -81,6 +81,42 @@ async function safeQuery(fn: () => Promise<any>, fallback: any = null) {
   }
 }
 
+// Centralized Audit Log Utility
+async function logAudit(
+  action: string,
+  module: string,
+  entityId: string,
+  req: any,
+  institutionId: string,
+  summary: string,
+  details: any = {}
+) {
+  try {
+    const user = req.user || {};
+    const userId = user.id || 'system';
+    const username = user.username || 'Sistema';
+    
+    // Convert undefined to null to prevent Firestore errors
+    const safeDetails = JSON.parse(JSON.stringify(details || {}));
+
+    const auditEntry = {
+      action,
+      module,
+      entityId,
+      userId,
+      username,
+      institutionId,
+      summary,
+      details: safeDetails,
+      timestamp: new Date().toISOString()
+    };
+
+    await db.collection('audit_logs').add(auditEntry);
+  } catch (err) {
+    console.error('Failed to write to central audit_logs collection:', err);
+  }
+}
+
 // Helper to get real institution doc.id from either id or cnpj
 async function getRealInstitutionId(idOrCnpj: string): Promise<string> {
   if (!idOrCnpj) return "";
@@ -375,10 +411,12 @@ async function startServer() {
         // Update
         const { id, ...updateData } = payload;
         await db.collection('residents').doc(id).set(updateData, { merge: true });
+        await logAudit('update', 'residents', id, req, payload.institutionId, `Atualização do residente ${payload.name}`);
         res.json(data);
       } else {
         // Create
-        const docRef = await db.collection('residents').add(data);
+        const docRef = await db.collection('residents').add(payload);
+        await logAudit('create', 'residents', docRef.id, req, payload.institutionId, `Novo residente cadastrado: ${payload.name}`);
         res.json({ ...data, id: docRef.id });
       }
     } catch (error) {
@@ -463,9 +501,11 @@ async function startServer() {
       if (payload.id) {
         const { id, ...updateData } = payload;
         await db.collection('candidates').doc(id).set(updateData, { merge: true });
+        await logAudit('update', 'candidates', id, req, payload.institutionId, `Atualização da triagem: ${payload.name}`);
         res.json(data);
       } else {
-        const docRef = await db.collection('candidates').add(data);
+        const docRef = await db.collection('candidates').add(payload);
+        await logAudit('create', 'candidates', docRef.id, req, payload.institutionId, `Nova triagem cadastrada: ${payload.name}`);
         res.json({ ...data, id: docRef.id });
       }
     } catch (error) {
@@ -548,11 +588,20 @@ async function startServer() {
     res.json(settings);
   });
 
-  app.post('/api/settings', async (req, res) => {
+  app.post('/api/settings', requireRole(['administrador', 'gerencial']), async (req, res) => {
     const { institutionId, ...settings } = req.body;
     if (!institutionId) return res.status(400).json({ error: 'ID da instituição não informado' });
 
     try {
+      await logAudit(
+        'update',
+        'settings',
+        institutionId,
+        req,
+        institutionId,
+        'Atualização de configurações institucionais',
+        settings
+      );
       // Normalização
       if (settings.entityType) settings.type = settings.entityType;
       if (settings.type) settings.entityType = settings.type;
@@ -612,6 +661,7 @@ async function startServer() {
     const data = req.body;
     try {
       const docRef = await db.collection('muralMessages').add(data);
+      await logAudit('create', 'mural', docRef.id, req, data.institutionId, 'Nova mensagem no mural', { title: data.title });
       res.json({ ...data, id: docRef.id });
     } catch (error) {
       res.status(500).json({ error: 'Erro ao salvar mensagem no mural.' });
@@ -662,9 +712,11 @@ async function startServer() {
       if (payload.id) {
         const { id, ...updateData } = payload;
         await db.collection('users').doc(id).set(updateData, { merge: true });
+        await logAudit('update', 'users', id, req, data.institutionId, `Atualização do usuário ${payload.username}`);
         res.json(data);
       } else {
         const docRef = await db.collection('users').add(payload);
+        await logAudit('create', 'users', docRef.id, req, data.institutionId, `Novo usuário cadastrado: ${payload.username}`);
         res.json({ ...data, id: docRef.id });
       }
     } catch (error) {
@@ -739,16 +791,18 @@ async function startServer() {
     }
   });
 
-  app.post('/api/amendments/categories', async (req, res) => {
+  app.post('/api/amendments/categories', requireRole(['administrador', 'gerencial']), async (req, res) => {
     const { institutionId, ...data } = req.body;
     try {
       const realId = await getRealInstitutionId(institutionId);
       if (data.id && !data.id.startsWith('new_')) {
         await db.collection('amendment_categories').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
+        await logAudit('update', 'amendment_categories', data.id, req, realId, `Atualização de categoria de emenda`);
         res.json(data);
       } else {
         const { id, ...saveData } = data;
         const docRef = await db.collection('amendment_categories').add({ ...saveData, institutionId: realId });
+        await logAudit('create', 'amendment_categories', docRef.id, req, realId, `Nova categoria de emenda`);
         res.json({ ...saveData, id: docRef.id });
       }
     } catch (error) {
@@ -780,16 +834,18 @@ async function startServer() {
     }
   });
 
-  app.post('/api/amendments/grants', async (req, res) => {
+  app.post('/api/amendments/grants', requireRole(['administrador', 'gerencial']), async (req, res) => {
     const { institutionId, ...data } = req.body;
     try {
       const realId = await getRealInstitutionId(institutionId);
       if (data.id && !data.id.startsWith('new_')) {
         await db.collection('amendment_grants').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
+        await logAudit('update', 'amendment_grants', data.id, req, realId, `Atualização de emenda`);
         res.json(data);
       } else {
         const { id, ...saveData } = data;
         const docRef = await db.collection('amendment_grants').add({ ...saveData, institutionId: realId });
+        await logAudit('create', 'amendment_grants', docRef.id, req, realId, `Nova emenda`);
         res.json({ ...saveData, id: docRef.id });
       }
     } catch (error) {
@@ -808,7 +864,7 @@ async function startServer() {
   });
 
   // Bulk save for bootstrap
-  app.post('/api/amendments/bulk-bootstrap', async (req, res) => {
+  app.post('/api/amendments/bulk-bootstrap', requireRole(['administrador', 'gerencial']), async (req, res) => {
     const { institutionId, categories, grants } = req.body;
     try {
       const realId = await getRealInstitutionId(institutionId);
@@ -861,11 +917,12 @@ async function startServer() {
     }
   });
 
-  app.post('/api/global-visits', async (req, res) => {
+  app.post('/api/global-visits', requireRole(['visitante', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'administrador', 'medico']), async (req, res) => {
     const { institutionId, ...data } = req.body;
     try {
       const realId = await getRealInstitutionId(institutionId);
       const docRef = await db.collection('global_visits').add({ ...data, institutionId: realId });
+      await logAudit('create', 'global_visits', docRef.id, req, realId, `Nova visita registrada`);
       res.json({ ...data, id: docRef.id, institutionId: realId });
     } catch (error) {
       res.status(500).json({ error: 'Erro ao salvar visita.' });
@@ -889,7 +946,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/support/messages', async (req, res) => {
+  app.post('/api/support/messages', requireRole(['administrador', 'gerencial', 'enfermeira']), async (req, res) => {
     const { institutionId, text, sender, role } = req.body;
     try {
       const realId = await getRealInstitutionId(institutionId);
@@ -901,6 +958,7 @@ async function startServer() {
         createdAt: new Date().toISOString()
       };
       const docRef = await db.collection('support_messages').add(newMessage);
+      await logAudit('create', 'support_messages', docRef.id, req, realId, `Nova solicitação de suporte`);
       res.json({ ...newMessage, id: docRef.id });
     } catch (error) {
       console.error('Error saving support message:', error);
@@ -925,15 +983,17 @@ async function startServer() {
     }
   });
 
-  app.post('/api/agenda', async (req, res) => {
+  app.post('/api/agenda', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico', 'administrador']), async (req, res) => {
     const { institutionId, ...data } = req.body;
     try {
       const realId = await getRealInstitutionId(institutionId);
       if (data.id && data.id.length > 10) {
         await db.collection('agenda_events').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
+        await logAudit('update', 'agenda_events', data.id, req, realId, `Atualização do evento: ${data.title}`);
         res.json({ ...data, id: data.id, institutionId: realId });
       } else {
         const docRef = await db.collection('agenda_events').add({ ...data, institutionId: realId });
+        await logAudit('create', 'agenda_events', docRef.id, req, realId, `Novo evento na agenda: ${data.title}`);
         res.json({ ...data, id: docRef.id, institutionId: realId });
       }
     } catch (error) {
@@ -966,15 +1026,17 @@ async function startServer() {
     }
   });
 
-  app.post('/api/groupActivities', async (req, res) => {
+  app.post('/api/groupActivities', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico', 'administrador']), async (req, res) => {
     const { institutionId, ...data } = req.body;
     try {
       const realId = await getRealInstitutionId(institutionId);
       if (data.id && data.id.length > 10) {
         await db.collection('group_activities').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
+        await logAudit('update', 'group_activities', data.id, req, realId, `Atualização da atividade: ${data.title}`);
         res.json({ ...data, id: data.id, institutionId: realId });
       } else {
         const docRef = await db.collection('group_activities').add({ ...data, institutionId: realId });
+        await logAudit('create', 'group_activities', docRef.id, req, realId, `Nova atividade em grupo: ${data.title}`);
         res.json({ ...data, id: docRef.id, institutionId: realId });
       }
     } catch (error) {
@@ -1007,7 +1069,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/inventory/bulk', async (req, res) => {
+  app.post('/api/inventory/bulk', requireRole(['enfermeira', 'gerencial', 'administrador']), async (req, res) => {
     const { institutionId, items } = req.body;
     try {
       const realId = await getRealInstitutionId(institutionId);
