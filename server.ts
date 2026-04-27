@@ -135,6 +135,54 @@ async function startServer() {
 
   // --- API Routes ---
 
+  // Auth Middleware
+  const requireAuth = async (req: any, res: express.Response, next: express.NextFunction) => {
+    // Allows skipping auth for login, setup, health, etc. (we'll apply it specifically or conditionally)
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Não autorizado. Token ausente.' });
+    }
+    const userId = authHeader.split(' ')[1];
+    
+    // Fast path: if the user ID is "admin", it's the default admin
+    if (userId === 'admin') {
+       req.user = { id: 'admin', accessLevel: 'administrador' };
+       return next();
+    }
+
+    try {
+      const userDoc = await safeQuery(async () => await db.collection('users').doc(userId).get());
+      if (!userDoc.exists) return res.status(401).json({ error: 'Usuário inválido.' });
+      
+      req.user = { id: userDoc.id, ...userDoc.data() };
+      next();
+    } catch (err) {
+       console.error("Auth error:", err);
+       return res.status(500).json({ error: 'Erro de autorização.' });
+    }
+  };
+
+  // Helper inside routes to enforce permissions
+  const requireRole = (allowedRoles: string[]) => {
+    return (req: any, res: express.Response, next: express.NextFunction) => {
+       const userLevel = req.user?.accessLevel;
+       // 'administrador' usually has full access
+       if (userLevel === 'administrador' || allowedRoles.includes(userLevel)) {
+         return next();
+       }
+       return res.status(403).json({ error: 'Acesso negado. Perfil sem permissão.' });
+    };
+  };
+
+  app.use('/api', (req: any, res, next) => {
+    // Skip auth for public endpoints
+    const publicRoutes = ['/health', '/login', '/setup'];
+    if (publicRoutes.includes(req.path)) {
+       return next();
+    }
+    return requireAuth(req, res, next);
+  });
+
   // Login
   app.post('/api/login', async (req, res) => {
     const { cnpj, username, password } = req.body;
@@ -149,7 +197,7 @@ async function startServer() {
         if (username === 'admin' && password === 'admin123' && cnpj === '') {
            return res.json({
              success: true,
-             user: { username: 'admin', fullName: 'Administrador Padrão', role: 'TI / Gestão', accessLevel: 'administrador' },
+             user: { id: 'admin', username: 'admin', fullName: 'Administrador Padrão', role: 'TI / Gestão', accessLevel: 'administrador' },
              cnpj: ''
            });
         }
@@ -271,7 +319,7 @@ async function startServer() {
   });
 
   // CRUD for Residents
-  app.get('/api/residents', async (req, res) => {
+  app.get('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante']), async (req, res) => {
     const { institutionId, type } = req.query;
     if (!institutionId) return res.status(400).json({ error: 'institutionId requerido' });
     
@@ -295,21 +343,32 @@ async function startServer() {
         ];
         return [...demoResidents, ...dbResidents];
       }
-      return dbResidents;
+      return dbResidents.filter((r: any) => !r.archived);
     }, []);
     
     res.json(residents);
   });
 
-  app.post('/api/residents', async (req, res) => {
+  app.post('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico']), async (req, res) => {
     const data = req.body;
     try {
+      const auditEntry = {
+        action: data.id ? 'update' : 'create',
+        timestamp: new Date().toISOString(),
+        userId: (req as any).user?.id || 'unknown',
+        username: (req as any).user?.username || 'unknown',
+      };
+
       if (data.institutionId) {
         data.institutionId = await getRealInstitutionId(data.institutionId);
       }
-      if (data.id) {
+      
+      const payload = { ...data };
+      payload.auditLog = admin.firestore.FieldValue.arrayUnion(auditEntry);
+
+      if (payload.id) {
         // Update
-        const { id, ...updateData } = data;
+        const { id, ...updateData } = payload;
         await db.collection('residents').doc(id).set(updateData, { merge: true });
         res.json(data);
       } else {
@@ -352,7 +411,7 @@ async function startServer() {
   });
 
   // CRUD for Candidates
-  app.get('/api/candidates', async (req, res) => {
+  app.get('/api/candidates', requireRole(['assistente_social', 'enfermeira', 'gerencial']), async (req, res) => {
     const { institutionId, type } = req.query;
     const candidates = await safeQuery(async () => {
       const realId = await getRealInstitutionId(institutionId as string);
@@ -373,20 +432,31 @@ async function startServer() {
         ];
         return [...demoCandidates, ...dbCandidates];
       }
-      return dbCandidates;
+      return dbCandidates.filter((c: any) => !c.archived);
     }, []);
     
     res.json(candidates);
   });
 
-  app.post('/api/candidates', async (req, res) => {
+  app.post('/api/candidates', requireRole(['assistente_social', 'enfermeira', 'gerencial']), async (req, res) => {
     const data = req.body;
     try {
+      const auditEntry = {
+        action: data.id ? 'update' : 'create',
+        timestamp: new Date().toISOString(),
+        userId: (req as any).user?.id || 'unknown',
+        username: (req as any).user?.username || 'unknown',
+      };
+
       if (data.institutionId) {
         data.institutionId = await getRealInstitutionId(data.institutionId);
       }
-      if (data.id) {
-        const { id, ...updateData } = data;
+
+      const payload = { ...data };
+      payload.auditLog = admin.firestore.FieldValue.arrayUnion(auditEntry);
+
+      if (payload.id) {
+        const { id, ...updateData } = payload;
         await db.collection('candidates').doc(id).set(updateData, { merge: true });
         res.json(data);
       } else {
@@ -598,13 +668,32 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/candidates/:id', async (req, res) => {
+  app.delete('/api/candidates/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial']), async (req, res) => {
     const { id } = req.params;
     try {
-      await db.collection('candidates').doc(id).delete();
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao excluir candidato.' });
+      // Inativar em vez de excluir definitivamente
+      await db.collection('candidates').doc(id).update({ archived: true, archivedAt: new Date().toISOString() });
+      res.json({ success: true, message: 'Arquivado com sucesso.' });
+    } catch (error: any) {
+      if (error.code === 5 || error.message.includes('NOT_FOUND')) {
+        // Se já não existe, tudo bem
+        return res.json({ success: true });
+      }
+      res.status(500).json({ error: 'Erro ao arquivar candidato.' });
+    }
+  });
+
+  app.delete('/api/residents/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico']), async (req, res) => {
+    const { id } = req.params;
+    try {
+      // Inativar em vez de excluir definitivamente
+      await db.collection('residents').doc(id).update({ archived: true, archivedAt: new Date().toISOString() });
+      res.json({ success: true, message: 'Arquivado com sucesso.' });
+    } catch (error: any) {
+      if (error.code === 5 || error.message.includes('NOT_FOUND')) {
+        return res.json({ success: true });
+      }
+      res.status(500).json({ error: 'Erro ao arquivar residente.' });
     }
   });
 

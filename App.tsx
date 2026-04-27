@@ -23,7 +23,7 @@ import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Pill, B
 import { fetchResidents, fetchCandidates, saveResident as apiSaveResident, saveCandidate as apiSaveCandidate, bulkSaveCandidates as apiBulkSaveCandidates, bulkSaveResidents as apiBulkSaveResidents, deleteCandidate as apiDeleteCandidate, deleteResident as apiDeleteResident, fetchSettings, Session, saveMuralMessage as apiSaveMuralMessage } from './lib/api';
 
 // TEMPORÁRIO PARA PROTOTIPAÇÃO: Pular Login/Setup se true
-const DEV_BYPASS_AUTH = true;
+const DEV_BYPASS_AUTH = false;
 
 const App: React.FC = () => {
   const [session, setSession] = React.useState<Session | null>(() => {

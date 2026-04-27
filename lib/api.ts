@@ -41,8 +41,26 @@ export const setup = async (data: any) => {
   return response.json();
 };
 
+// Helper function to get auth headers from local storage
+const getAuthHeaders = (): HeadersInit => {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  try {
+    const saved = localStorage.getItem('ssvp_session');
+    if (saved) {
+      const session = JSON.parse(saved);
+      if (session.id) {
+        headers['Authorization'] = `Bearer ${session.id}`;
+        headers['x-institution-id'] = session.institutionId || session.cnpj;
+      }
+    }
+  } catch (e) {}
+  return headers;
+};
+
 export const fetchResidents = async (institutionId: string, type: string = 'obra_unida') => {
-  const response = await fetch(`/api/residents?institutionId=${institutionId}&type=${type}`);
+  const response = await fetch(`/api/residents?institutionId=${institutionId}&type=${type}`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Erro ao buscar residentes');
   return response.json();
 };
@@ -50,7 +68,7 @@ export const fetchResidents = async (institutionId: string, type: string = 'obra
 export const saveResident = async (resident: any) => {
   const response = await fetch('/api/residents', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(resident)
   });
   if (!response.ok) throw new Error('Erro ao salvar residente');
@@ -58,7 +76,9 @@ export const saveResident = async (resident: any) => {
 };
 
 export const fetchCandidates = async (institutionId: string, type: string = 'obra_unida') => {
-  const response = await fetch(`/api/candidates?institutionId=${institutionId}&type=${type}`);
+  const response = await fetch(`/api/candidates?institutionId=${institutionId}&type=${type}`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Erro ao buscar candidatos');
   return response.json();
 };
@@ -66,7 +86,7 @@ export const fetchCandidates = async (institutionId: string, type: string = 'obr
 export const saveCandidate = async (candidate: any) => {
   const response = await fetch('/api/candidates', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(candidate)
   });
   if (!response.ok) throw new Error('Erro ao salvar candidato');
@@ -76,7 +96,7 @@ export const saveCandidate = async (candidate: any) => {
 export const bulkSaveCandidates = async (candidates: any[]) => {
   const response = await fetch('/api/candidates/bulk', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ candidates })
   });
   if (!response.ok) throw new Error('Erro ao salvar candidatos em massa');
@@ -86,7 +106,7 @@ export const bulkSaveCandidates = async (candidates: any[]) => {
 export const bulkSaveResidents = async (residents: any[]) => {
   const response = await fetch('/api/residents/bulk', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ residents })
   });
   if (!response.ok) throw new Error('Erro ao salvar residentes em massa');
@@ -94,7 +114,9 @@ export const bulkSaveResidents = async (residents: any[]) => {
 };
 
 export const fetchSettings = async (institutionId: string) => {
-  const response = await fetch(`/api/settings?institutionId=${institutionId}`);
+  const response = await fetch(`/api/settings?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error("Erro ao buscar configurações");
   return response.json();
@@ -103,7 +125,7 @@ export const fetchSettings = async (institutionId: string) => {
 export const saveSettings = async (institutionId: string, settings: any) => {
   const response = await fetch('/api/settings', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ institutionId, ...settings })
   });
   if (!response.ok) throw new Error('Erro ao salvar configurações');
@@ -111,7 +133,9 @@ export const saveSettings = async (institutionId: string, settings: any) => {
 };
 
 export const fetchMural = async (institutionId: string) => {
-  const response = await fetch(`/api/mural?institutionId=${institutionId}`);
+  const response = await fetch(`/api/mural?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Erro ao buscar mural');
   return response.json();
 };
@@ -119,7 +143,7 @@ export const fetchMural = async (institutionId: string) => {
 export const saveMuralMessage = async (message: any) => {
   const response = await fetch('/api/mural', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(message)
   });
   if (!response.ok) throw new Error('Erro ao salvar no mural');
@@ -127,7 +151,9 @@ export const saveMuralMessage = async (message: any) => {
 };
 
 export const fetchUsers = async (institutionId: string) => {
-  const response = await fetch(`/api/users?institutionId=${institutionId}`);
+  const response = await fetch(`/api/users?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Erro ao buscar usuários');
   return response.json();
 };
@@ -135,7 +161,7 @@ export const fetchUsers = async (institutionId: string) => {
 export const saveUser = async (user: any) => {
   const response = await fetch('/api/users', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(user)
   });
   if (!response.ok) throw new Error('Erro ao salvar usuário');
@@ -144,7 +170,8 @@ export const saveUser = async (user: any) => {
 
 export const deleteUser = async (userId: string) => {
   const response = await fetch(`/api/users/${userId}`, {
-    method: 'DELETE'
+    method: 'DELETE',
+    headers: getAuthHeaders()
   });
   if (!response.ok) throw new Error('Erro ao excluir usuário');
   return response.json();
@@ -152,7 +179,8 @@ export const deleteUser = async (userId: string) => {
 
 export const deleteCandidate = async (candidateId: string) => {
   const response = await fetch(`/api/candidates/${candidateId}`, {
-    method: 'DELETE'
+    method: 'DELETE',
+    headers: getAuthHeaders()
   });
   if (!response.ok) throw new Error('Erro ao excluir candidato');
   return response.json();
@@ -160,14 +188,17 @@ export const deleteCandidate = async (candidateId: string) => {
 
 export const deleteResident = async (residentId: string) => {
   const response = await fetch(`/api/residents/${residentId}`, {
-    method: 'DELETE'
+    method: 'DELETE',
+    headers: getAuthHeaders()
   });
   if (!response.ok) throw new Error('Erro ao excluir residente');
   return response.json();
 };
 
 export const fetchInventory = async (institutionId: string) => {
-  const response = await fetch(`/api/inventory?institutionId=${institutionId}`);
+  const response = await fetch(`/api/inventory?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Erro ao buscar estoque');
   return response.json();
 };
@@ -175,7 +206,7 @@ export const fetchInventory = async (institutionId: string) => {
 export const bulkSaveInventory = async (institutionId: string, items: any[]) => {
   const response = await fetch('/api/inventory/bulk', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ institutionId, items })
   });
   if (!response.ok) throw new Error('Erro ao salvar estoque de medicamentos');
@@ -183,7 +214,9 @@ export const bulkSaveInventory = async (institutionId: string, items: any[]) => 
 };
 
 export const fetchGlobalVisits = async (institutionId: string) => {
-  const response = await fetch(`/api/global-visits?institutionId=${institutionId}`);
+  const response = await fetch(`/api/global-visits?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Erro ao buscar visitas');
   return response.json();
 };
@@ -191,7 +224,7 @@ export const fetchGlobalVisits = async (institutionId: string) => {
 export const saveGlobalVisit = async (visit: any) => {
   const response = await fetch('/api/global-visits', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(visit)
   });
   if (!response.ok) throw new Error('Erro ao salvar visita');
