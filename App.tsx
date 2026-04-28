@@ -25,6 +25,8 @@ import { fetchResidents, fetchCandidates, saveResident as apiSaveResident, saveC
 // TEMPORÁRIO PARA PROTOTIPAÇÃO: Pular Login/Setup se true
 const DEV_BYPASS_AUTH = false;
 
+import BirthdaySection from './components/BirthdaySection';
+
 const App: React.FC = () => {
   const [session, setSession] = React.useState<Session | null>(() => {
     const saved = localStorage.getItem('ssvp_session');
@@ -47,9 +49,8 @@ const App: React.FC = () => {
   );
   const [activeRoute, setActiveRoute] = React.useState<AppRoute>(() => {
     if (session?.accessLevel === 'medico') return AppRoute.CONSULTAS_MEDICAS;
-    if (session?.accessLevel === 'cuidados') return AppRoute.SAUDE_CUIDADOS;
     if (session?.accessLevel === 'visitante') return AppRoute.VISITANTES;
-    return AppRoute.RESIDENTS;
+    return AppRoute.HOME;
   });
 
   React.useEffect(() => {
@@ -57,7 +58,7 @@ const App: React.FC = () => {
       setActiveRoute(AppRoute.CONSULTAS_MEDICAS);
     } else if (session?.accessLevel === 'cuidados' && activeRoute === AppRoute.RESIDENTS) {
       setActiveRoute(AppRoute.SAUDE_CUIDADOS);
-    } else if (session?.accessLevel === 'visitante' && activeRoute === AppRoute.RESIDENTS) {
+    } else if (session?.accessLevel === 'visitante' && (activeRoute === AppRoute.RESIDENTS || activeRoute === AppRoute.HOME)) {
       setActiveRoute(AppRoute.VISITANTES);
     }
   }, [session?.accessLevel]);
@@ -163,7 +164,7 @@ const App: React.FC = () => {
         const dup = allPeople.find(p => (
            (data.cpf && data.cpf.replace(/\D/g, '').length === 11 && p.cpf?.replace(/\D/g, '') === data.cpf.replace(/\D/g, '')) ||
            (data.rg && data.rg.length > 3 && p.rg === data.rg) ||
-           (data.sus && data.sus.length > 5 && p.sus === data.sus) ||
+           ((data as any).sus && (data as any).sus.length > 5 && (p as any).sus === (data as any).sus) ||
            (data.name && data.birthDate && p.name?.toLowerCase().trim() === data.name?.toLowerCase().trim() && p.birthDate === data.birthDate)
         ));
         if (dup) {
@@ -203,7 +204,7 @@ const App: React.FC = () => {
         const dup = allPeople.find(p => (
            (candidate.cpf && candidate.cpf.replace(/\D/g, '').length === 11 && p.cpf?.replace(/\D/g, '') === candidate.cpf.replace(/\D/g, '')) ||
            (candidate.rg && candidate.rg.length > 3 && p.rg === candidate.rg) ||
-           (candidate.sus && candidate.sus.length > 5 && p.sus === candidate.sus) ||
+           ((candidate as any).sus && (candidate as any).sus.length > 5 && (p as any).sus === (candidate as any).sus) ||
            (candidate.name && candidate.birthDate && p.name?.toLowerCase().trim() === candidate.name?.toLowerCase().trim() && p.birthDate === candidate.birthDate)
         ));
         if (dup) {
@@ -381,6 +382,23 @@ const App: React.FC = () => {
       onLogout={handleLogout}
       accessLevel={session?.accessLevel}
     >
+      
+      {activeRoute === AppRoute.HOME && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full min-h-[500px]">
+          <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col pt-4">
+            <MuralModule 
+              institutionId={session?.institutionId || session?.cnpj || ''} 
+              cnpj={session?.cnpj} 
+              username={session?.username || ''}
+              muralPhone={settings?.muralPhone}
+            />
+          </div>
+          <div className="lg:col-span-1">
+            <BirthdaySection residents={residents} />
+          </div>
+        </div>
+      )}
+
       {activeRoute === AppRoute.RESIDENTS && (
         <div className="space-y-6">
           {/* Sub-navigation Tabs */}
@@ -508,6 +526,8 @@ const App: React.FC = () => {
         <MultidisciplinaryModule 
           residents={residents} 
           onSaveResident={handleSaveResident} 
+          candidates={candidates}
+          onSaveCandidate={handleSaveCandidate}
           accessLevel={session?.accessLevel}
           onPostToMural={handlePostToMural}
         />
@@ -520,6 +540,7 @@ const App: React.FC = () => {
           candidates={candidates}
           onSaveCandidate={handleSaveCandidate}
           session={session}
+          onPostToMural={handlePostToMural}
         />
       )}
 

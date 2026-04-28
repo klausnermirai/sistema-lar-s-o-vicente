@@ -247,10 +247,12 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         attendances: [attendance, ...(otData.attendances || [])]
       });
 
-      if (attendance.muralNotes && onPostToMural) {
+      if (onPostToMural) {
+        let muralText = `[T.O.] Atendimento de ${resident.name} finalizado.`;
+        if (attendance.muralNotes) muralText += ` Notas: ${attendance.muralNotes}`;
         onPostToMural({
           author: attendance.signature || 'Terapeuta Ocupacional',
-          text: `[T.O.] ${resident.name}: ${attendance.muralNotes}`,
+          text: muralText,
         });
       }
 

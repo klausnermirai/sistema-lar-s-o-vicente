@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Resident, Candidate, Medication, ClinicalProgressEntry, ExamRequest } from '../types';
+import { Resident, Candidate, Medication, ClinicalProgressEntry, ExamRequest, MuralMessage } from '../types';
 import { 
   Stethoscope, 
   Search, 
@@ -25,9 +25,10 @@ interface MedicalModuleProps {
   candidates?: Candidate[];
   onSaveCandidate?: (candidate: Candidate) => void;
   session?: any;
+  onPostToMural?: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
 }
 
-const MedicalModule: React.FC<MedicalModuleProps> = ({ residents, onSaveResident, candidates = [], onSaveCandidate, session }) => {
+const MedicalModule: React.FC<MedicalModuleProps> = ({ residents, onSaveResident, candidates = [], onSaveCandidate, session, onPostToMural }) => {
   const [viewMode, setViewMode] = useState<'selection' | 'acolhimento' | 'interna'>('selection');
   
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -202,6 +203,12 @@ const MedicalModule: React.FC<MedicalModuleProps> = ({ residents, onSaveResident
     setNewNote('');
     setNextAppointmentDate('');
     setNextAppointmentTime('');
+    if (onPostToMural) {
+      onPostToMural({
+        author: session?.username || 'Médico',
+        text: `[Médico] Evolução clínica salva para o residente ${resident.name}.`
+      });
+    }
     alert('Evolução médica salva com sucesso!');
   };
 

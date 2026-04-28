@@ -314,10 +314,12 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, onChange,
       attendances: newAttendances
     });
 
-    if (newAttendance.muralNotes && onPostToMural) {
+    if (onPostToMural) {
+      let muralText = `[Fisio] Atendimento de ${resident.name} finalizado.`;
+      if (newAttendance.muralNotes) muralText += ` Notas: ${newAttendance.muralNotes}`;
       onPostToMural({
         author: newAttendance.signature || 'Fisioterapeuta',
-        text: `[Fisio] ${resident.name}: ${newAttendance.muralNotes}`
+        text: muralText
       });
     }
     

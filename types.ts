@@ -59,6 +59,7 @@ export interface InstitutionSettings {
   roomsFemale?: number;
   logoUrl?: string;
   roles?: string[];
+  muralPhone?: string;
 }
 
 export interface AssistedFamily {
@@ -314,6 +315,24 @@ export interface NursingScreening {
   signatureDate: string;
 }
 
+export interface JobCandidate {
+  id: string;
+  name: string;
+  jobPosition: string;
+  date: string;
+  empathy: 'adequado' | 'a_desenvolver' | 'inadequado' | '';
+  emotionalStability: 'adequado' | 'a_desenvolver' | 'inadequado' | '';
+  teamwork: 'adequado' | 'a_desenvolver' | 'inadequado' | '';
+  communication: 'adequado' | 'a_desenvolver' | 'inadequado' | '';
+  strengths: string;
+  attentionPoints: string;
+  descriptiveReport: string;
+  recommendation: 'recomendado' | 'nao_recomendado' | '';
+  processStatus: 'pendente' | 'contratado' | 'nao_contratado' | 'cadastro_reserva';
+  institutionId: string;
+  isArchived: boolean;
+}
+
 export interface Candidate {
   id: string;
   stage: CandidateStage;
@@ -334,6 +353,8 @@ export interface Candidate {
   medicalStatus?: 'favoravel' | 'desfavoravel';
   integrationDate?: string;
   integrationReport?: string;
+  
+  psychology?: PsychologyData; // Para atendimentos na triagem
   contractStatus?: 'pendente' | 'assinado';
   admissionDate?: string;
 
@@ -478,6 +499,7 @@ export interface PsychologicalAttendance {
   needsTeamReport: boolean;
   notifyFamily?: boolean;
   signature: string;
+  candidateStatus?: 'apto' | 'inapto' | 'necessita_atencao';
 }
 
 export interface PsychologyData {
@@ -888,6 +910,7 @@ export interface GroupActivity {
 }
 
 export enum AppRoute {
+  HOME = 'home',
   RESIDENTS = 'residents',
   SCREENING = 'screening',
   SAUDE_CUIDADOS = 'saude-cuidados',

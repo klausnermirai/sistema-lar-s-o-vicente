@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, X, MessageSquare, User, ShieldCheck } from 'lucide-react';
+import { Send, X, MessageSquare, User, ShieldCheck, Edit2, Trash2, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SupportMessage } from '../lib/supportService';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 interface SupportChatProps {
@@ -18,6 +18,39 @@ export const SupportChat: React.FC<SupportChatProps> = ({ isOpen, onClose, insti
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editMsgText, setEditMsgText] = useState('');
+
+  const handleDelete = async (id: string) => {
+    if (confirm('Deseja realmente apagar esta mensagem?')) {
+      try {
+        await deleteDoc(doc(db, 'support_messages', id));
+      } catch (err) {
+        console.error('Erro ao apagar:', err);
+        alert('Erro ao apagar mensagem');
+      }
+    }
+  };
+
+  const handleStartEdit = (msg: SupportMessage) => {
+    setEditingMsgId(msg.id);
+    setEditMsgText(msg.text);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMsgId || !editMsgText.trim()) return;
+    try {
+      await updateDoc(doc(db, 'support_messages', editingMsgId), {
+        text: editMsgText.trim()
+      });
+      setEditingMsgId(null);
+      setEditMsgText('');
+    } catch (err) {
+      console.error('Erro ao editar:', err);
+      alert('Erro ao editar mensagem');
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,8 +82,8 @@ export const SupportChat: React.FC<SupportChatProps> = ({ isOpen, onClose, insti
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!inputText.trim() || loading) return;
 
     setLoading(true);
@@ -124,12 +157,56 @@ export const SupportChat: React.FC<SupportChatProps> = ({ isOpen, onClose, insti
                     key={msg.id || idx}
                     className={`flex flex-col ${msg.role === 'support' ? 'items-start' : 'items-end'}`}
                   >
-                    <div className={`max-w-[85%] p-4 rounded-2xl text-xs font-medium shadow-sm ${
+                    <div className={`group relative max-w-[85%] p-4 rounded-2xl text-xs font-medium shadow-sm ${
                       msg.role === 'support' 
                       ? 'bg-white text-gray-700 rounded-tl-none border border-gray-100' 
                       : 'bg-[#004c99] text-white rounded-tr-none'
                     }`}>
-                      <p>{msg.text}</p>
+                      {editingMsgId === msg.id ? (
+                        <div className="w-full flex gap-2">
+                           <textarea
+                             value={editMsgText}
+                             onChange={(e) => setEditMsgText(e.target.value)}
+                             className="flex-1 px-3 py-2 text-sm text-gray-800 rounded-lg outline-none resize-none min-h-[40px] max-h-[120px]"
+                             autoFocus
+                             onKeyDown={(e) => {
+                               if (e.key === 'Enter' && !e.shiftKey) {
+                                 e.preventDefault();
+                                 handleSaveEdit();
+                               } else if (e.key === 'Escape') {
+                                 setEditingMsgId(null);
+                               }
+                             }}
+                           />
+                           <div className="flex flex-col gap-1">
+                             <button type="button" onClick={handleSaveEdit} className="p-1.5 bg-green-500 text-white rounded-full hover:bg-green-600"><Check size={12} /></button>
+                             <button type="button" onClick={() => setEditingMsgId(null)} className="p-1.5 bg-gray-200 text-gray-600 rounded-full hover:bg-gray-300"><X size={12} /></button>
+                           </div>
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                      )}
+
+                      {msg.role !== 'support' && !editingMsgId && (
+                        <div className={`absolute top-2 -left-16 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1`}>
+                          <button 
+                            type="button"
+                            onClick={() => handleStartEdit(msg)}
+                            className="p-1.5 bg-white text-gray-600 rounded-full shadow-md hover:text-blue-600"
+                            title="Editar"
+                          >
+                            <Edit2 size={10} />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => handleDelete(msg.id)}
+                            className="p-1.5 bg-white text-red-500 rounded-full shadow-md hover:text-red-700"
+                            title="Apagar"
+                          >
+                            <Trash2 size={10} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 mt-1.5 px-1">
                       {msg.role === 'support' ? (
@@ -157,17 +234,29 @@ export const SupportChat: React.FC<SupportChatProps> = ({ isOpen, onClose, insti
             {/* Input Area */}
             <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-gray-100">
               <div className="relative flex items-center gap-2">
-                <input 
-                  type="text" 
+                <textarea 
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder="Descreva sua solicitação..."
-                  className="flex-1 bg-gray-50 border border-transparent focus:border-blue-200 focus:bg-white rounded-2xl px-4 py-3 text-xs outline-none transition-all placeholder:text-gray-400"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder="Descreva sua solicitação... (Shift + Enter para nova linha)"
+                  rows={1}
+                  className="flex-1 bg-gray-50 border border-transparent focus:border-blue-200 focus:bg-white rounded-2xl px-4 py-3 text-xs outline-none transition-all placeholder:text-gray-400 resize-none min-h-[44px] max-h-[120px]"
+                  style={{ height: 'auto' }}
+                  onInput={(e) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    target.style.height = 'auto';
+                    target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+                  }}
                 />
                 <button 
                   type="submit"
                   disabled={!inputText.trim() || loading}
-                  className="w-10 h-10 bg-[#004c99] text-white rounded-2xl flex items-center justify-center hover:shadow-lg shadow-blue-200 transition-all disabled:opacity-50 disabled:shadow-none"
+                  className="w-10 h-10 bg-[#004c99] text-white rounded-2xl flex items-center justify-center hover:shadow-lg shadow-blue-200 transition-all disabled:opacity-50 disabled:shadow-none shrink-0 self-end mb-1"
                 >
                   <Send size={18} />
                 </button>

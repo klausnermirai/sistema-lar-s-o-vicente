@@ -219,6 +219,16 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogi
                         className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                       />
                     </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase ml-1">WhatsApp Mural</label>
+                      <input 
+                        type="text"
+                        placeholder="5511999999999"
+                        value={institution.muralPhone || ''}
+                        onChange={e => setInstitution({ ...institution, muralPhone: e.target.value })}
+                        className="w-full px-5 py-4 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+                      />
+                    </div>
                     {institution.entityType === 'obra_unida' && (
                       <div className="space-y-1">
                         <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Cidade *</label>

@@ -106,8 +106,10 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
           }}
           onSaveHandover={(handover) => {
             // Handover is usually global, for now we log it as a mural post
-            // In a real DB we'd have a separate collection for this
-            console.log("Handover saved", handover);
+            onPostToMural({
+              author: handover.nurseName || 'Enfermagem',
+              text: `[Saúde/Cuidados] Plantão finalizado (${handover.shift}). Notas: ${handover.notes}`
+            });
           }}
           onPostToMural={onPostToMural}
         />

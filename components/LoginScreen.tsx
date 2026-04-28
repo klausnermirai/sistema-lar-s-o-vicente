@@ -7,7 +7,8 @@ import {
   Eye, 
   EyeOff, 
   Building2, 
-  AlertCircle 
+  AlertCircle,
+  Check
 } from 'lucide-react';
 import { login } from '../lib/api';
 
@@ -19,10 +20,30 @@ interface LoginScreenProps {
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, logoUrl }) => {
   const [cnpj, setCnpj] = React.useState('');
+  const [saveCnpj, setSaveCnpj] = React.useState(false);
   const [username, setUsername] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const saved = localStorage.getItem('ssvp_saved_cnpj');
+    if (saved) {
+      setCnpj(saved);
+      setSaveCnpj(true);
+    }
+  }, []);
+
+  const handleCnpjChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.replace(/\D/g, '');
+    if (val.length <= 14) {
+      val = val.replace(/^(\d{2})(\d)/, '$1.$2');
+      val = val.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
+      val = val.replace(/\.(\d{3})(\d)/, '.$1/$2');
+      val = val.replace(/(\d{4})(\d)/, '$1-$2');
+      setCnpj(val);
+    }
+  };
 
   // Dev Modal State
   const [isDevModalOpen, setIsDevModalOpen] = React.useState(false);
@@ -49,6 +70,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
     try {
       const data = await login({ cnpj, username, password });
       if (data.success) {
+        if (saveCnpj) {
+          localStorage.setItem('ssvp_saved_cnpj', cnpj);
+        } else {
+          localStorage.removeItem('ssvp_saved_cnpj');
+        }
         const session = { 
           id: data.user.id,
           cnpj: data.cnpj, 
@@ -78,55 +104,70 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
   };
 
   return (
-    <div className="fixed inset-0 bg-[#004c99] flex items-center justify-center p-6 z-[100]">
-      {/* Background Decor */}
-      <div className="absolute inset-0 opacity-10 overflow-hidden pointer-events-none">
-        <div className="absolute -top-24 -left-24 w-96 h-96 bg-white rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-red-600 rounded-full blur-3xl"></div>
-      </div>
-
-      <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden relative animate-in fade-in zoom-in duration-500">
-        <div className="p-10 flex flex-col items-center text-center">
-          <div className="w-20 h-20 bg-white border-4 border-gray-50 rounded-[24px] flex items-center justify-center text-white mb-6 shadow-xl transform -rotate-3 overflow-hidden">
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
-            ) : (
-              <div className="bg-[#004c99] w-full h-full flex items-center justify-center">
-                <svg width="48" height="48" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="50" cy="50" r="45" fill="#004c99" />
-                  <path d="M25 50C25 50 40 30 50 30C60 30 75 50 75 50C75 50 60 70 50 70C40 70 25 50 25 50Z" stroke="white" strokeWidth="5" />
-                  <circle cx="35" cy="50" r="3" fill="#e31b23" />
-                </svg>
-              </div>
-            )}
-          </div>
-          <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter leading-tight">Acesso ao Sistema</h1>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Lar São Vicente de Paulo • SSVP</p>
+    <div className="fixed inset-0 bg-[#004c99] z-[100] overflow-y-auto">
+      <div className="min-h-screen flex items-center justify-center p-6 relative">
+        {/* Background Decor */}
+        <div className="absolute inset-0 opacity-10 overflow-hidden pointer-events-none">
+          <div className="absolute -top-24 -left-24 w-96 h-96 bg-white rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-red-600 rounded-full blur-3xl"></div>
         </div>
 
-        <form onSubmit={handleLogin} className="px-10 pb-12 space-y-5">
-          {error && (
-            <div className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-600 animate-shake">
-              <AlertCircle size={18} className="shrink-0" />
-              <span className="text-[10px] font-black uppercase tracking-widest">{error}</span>
+        <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden relative animate-in fade-in zoom-in duration-500 my-auto shrink-0">
+          <div className="p-10 flex flex-col items-center text-center">
+            <div className="w-20 h-20 bg-white border-4 border-gray-50 rounded-[24px] flex items-center justify-center text-white mb-6 shadow-xl transform -rotate-3 overflow-hidden">
+              {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
+              ) : (
+                <div className="bg-[#004c99] w-full h-full flex items-center justify-center">
+                  <svg width="48" height="48" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="50" cy="50" r="45" fill="#004c99" />
+                    <path d="M25 50C25 50 40 30 50 30C60 30 75 50 75 50C75 50 60 70 50 70C40 70 25 50 25 50Z" stroke="white" strokeWidth="5" />
+                    <circle cx="35" cy="50" r="3" fill="#e31b23" />
+                  </svg>
+                </div>
+              )}
             </div>
-          )}
-
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-gray-400 uppercase ml-1">CNPJ da Instituição</label>
-            <div className="relative">
-              <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-              <input 
-                type="text"
-                placeholder="00.000.000/0000-00"
-                value={cnpj}
-                onChange={e => setCnpj(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 transition-all"
-              />
-            </div>
+            <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter leading-tight">Acesso ao Sistema</h1>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Lar São Vicente de Paulo • SSVP</p>
           </div>
 
-          <div className="space-y-1">
+          <form onSubmit={handleLogin} className="px-10 pb-12 space-y-5">
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-600 animate-shake">
+                <AlertCircle size={18} className="shrink-0" />
+                <span className="text-[10px] font-black uppercase tracking-widest">{error}</span>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-gray-400 uppercase ml-1">CNPJ da Instituição</label>
+              <div className="relative">
+                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                <input 
+                  type="text"
+                  placeholder="00.000.000/0000-00"
+                  value={cnpj}
+                  onChange={handleCnpjChange}
+                  className="w-full pl-12 pr-4 py-4 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+                />
+              </div>
+              <div className="flex items-center justify-between pt-2 ml-1">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <div className="relative flex items-center justify-center w-4 h-4">
+                    <input 
+                      type="checkbox" 
+                      checked={saveCnpj}
+                      onChange={(e) => setSaveCnpj(e.target.checked)}
+                      className="peer appearance-none w-4 h-4 border-2 border-gray-300 rounded checked:bg-[#004c99] checked:border-[#004c99] transition-all cursor-pointer"
+                    />
+                    <Check size={12} className="absolute text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-all" />
+                  </div>
+                  <span className="text-[10px] font-black text-gray-500 uppercase group-hover:text-[#004c99] transition-colors">Salvar CNPJ</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-1 pt-1">
             <label className="text-[10px] font-black text-gray-400 uppercase ml-1">E-mail de Acesso</label>
             <div className="relative">
               <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
@@ -186,6 +227,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
             </p>
           </div>
         </form>
+      </div>
       </div>
 
       {/* Dev Authentication Modal */}

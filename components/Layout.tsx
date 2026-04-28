@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity, MessageCircle, LogOut, DollarSign, Package, BarChart3, HelpCircle, Key, Calendar, Pill, FileText } from 'lucide-react';
+import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity, MessageCircle, LogOut, DollarSign, Package, BarChart3, HelpCircle, Key, Calendar, Pill, FileText, Home } from 'lucide-react';
 import { AppRoute } from '../types';
 import { getLastReadTimestamp } from '../lib/muralStore';
 import { SupportChat } from './SupportChat';
@@ -109,6 +109,7 @@ const Layout: React.FC<LayoutProps> = ({
     // Settings is now in both, so don't force switch if already in one that has it
     const gestaoRoutes = [AppRoute.AMENDMENTS, AppRoute.SETTINGS];
     const atendimentoRoutes = [
+      AppRoute.HOME,
       AppRoute.SCREENING, 
       AppRoute.RESIDENTS, 
       AppRoute.SAUDE_CUIDADOS, 
@@ -135,6 +136,7 @@ const Layout: React.FC<LayoutProps> = ({
   }, [activeRoute]);
 
   let atendimentoItems = [
+    { id: AppRoute.HOME, label: 'Página Inicial', icon: Home },
     { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
     { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
     { id: AppRoute.SAUDE_CUIDADOS, label: 'Saúde e Cuidados', icon: HeartPulse },
@@ -147,6 +149,7 @@ const Layout: React.FC<LayoutProps> = ({
 
   if (isEnfermeira) {
     atendimentoItems = [
+      { id: AppRoute.HOME, label: 'Página Inicial', icon: Home },
       { id: AppRoute.GUIAS, label: 'Guias', icon: FileText, disabled: true } as any,
       { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
       { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
@@ -167,6 +170,7 @@ const Layout: React.FC<LayoutProps> = ({
     ];
   } else if (isAssistenteSocial) {
     atendimentoItems = [
+      { id: AppRoute.HOME, label: 'Página Inicial', icon: Home },
       { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
       { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
       { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Activity },
@@ -175,6 +179,7 @@ const Layout: React.FC<LayoutProps> = ({
     ];
   } else if (isCuidados) {
     atendimentoItems = [
+      { id: AppRoute.HOME, label: 'Página Inicial', icon: Home },
       { id: AppRoute.AGENDA, label: 'Agenda', icon: Calendar },
       { id: AppRoute.SAUDE_CUIDADOS, label: 'Saúde e Cuidados', icon: HeartPulse },
       { id: AppRoute.MEDICAMENTOS, label: 'Medicamentos', icon: Pill },
@@ -182,6 +187,7 @@ const Layout: React.FC<LayoutProps> = ({
     ];
   } else if (isPsicologia || isTerapeutaOcupacional || isFisioterapeuta || isNutricionista) {
     atendimentoItems = [
+      { id: AppRoute.HOME, label: 'Página Inicial', icon: Home },
       { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
       { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Activity },
       { id: AppRoute.AGENDA, label: 'Agenda', icon: Calendar },

@@ -83,6 +83,33 @@ export const fetchResidentById = async (id: string, institutionId: string) => {
   return response.json();
 };
 
+export const fetchJobCandidates = async (institutionId: string) => {
+  const response = await fetch(`/api/job-candidates?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar candidatos a vagas');
+  return response.json();
+};
+
+export const saveJobCandidate = async (candidate: any) => {
+  const response = await fetch('/api/job-candidates', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(candidate)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar candidato a vaga');
+  return response.json();
+};
+
+export const deleteJobCandidate = async (candidateId: string) => {
+  const response = await fetch(`/api/job-candidates/${candidateId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao excluir candidato a vaga');
+  return response.json();
+};
+
 export const fetchCandidates = async (institutionId: string, type: string = 'obra_unida') => {
   const response = await fetch(`/api/candidates?institutionId=${institutionId}&type=${type}`, {
     headers: getAuthHeaders()
@@ -96,6 +123,14 @@ export const fetchCandidateById = async (id: string, institutionId: string) => {
     headers: getAuthHeaders()
   });
   if (!response.ok) throw new Error('Erro ao buscar candidato completo');
+  return response.json();
+};
+
+export const fetchMultidisciplinaryHistory = async (institutionId: string, competence: string) => {
+  const response = await fetch(`/api/multidisciplinary/history?institutionId=${institutionId}&competence=${competence}`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar histórico multidisciplinar');
   return response.json();
 };
 

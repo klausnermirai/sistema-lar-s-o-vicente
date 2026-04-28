@@ -451,6 +451,18 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                   />
                   <p className="text-[10px] text-gray-400 mt-1">Este e-mail será utilizado para listar a agenda institucional.</p>
                 </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-400 uppercase">WhatsApp do Mural</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 5511999999999"
+                    value={institution.muralPhone || ''}
+                    onChange={e => setInstitution({ ...institution, muralPhone: e.target.value })}
+                    className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                  <p className="text-[9px] text-gray-400 mt-1 uppercase font-bold text-blue-600">Este número será usado para enviar as notificações e exportações do mural.</p>
+                </div>
+
                 <div className="md:col-span-2 space-y-4 pt-4 border-t border-dashed">
                   <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Linhagem Hierárquica SSVP (IDs)</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

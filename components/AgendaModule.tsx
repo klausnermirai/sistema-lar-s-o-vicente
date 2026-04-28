@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AgendaEvent, Resident, InstitutionSettings, MuralMessage } from '../types';
 import { loadAgendaEvents, saveAgendaEvent, deleteAgendaEvent } from '../lib/agendaStore';
 import { fetchSettings } from '../lib/api';
-import { Calendar as CalendarIcon, Clock, Plus, ChevronLeft, ChevronRight, BookOpen, User, Search, Trash2, Mail } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Plus, ChevronLeft, ChevronRight, BookOpen, User, Search, Trash2, Mail, Share2 } from 'lucide-react';
 
 interface AgendaModuleProps {
   session: any;
@@ -96,39 +96,118 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onPostT
     }
   };
 
+  const handleExportWhatsApp = () => {
+    if (!settings?.muralPhone) {
+      alert("Nenhum número de WhatsApp cadastrado no Módulo de Configurações.");
+      return;
+    }
+
+    const today = new Date();
+    let text = "*Agendamentos dos próximos 7 dias*\n\n";
+    let hasEvents = false;
+
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() + i);
+        const dStr = formatDate(d);
+        const dayEvents = getEventsForDate(dStr);
+        
+        if (dayEvents.length > 0) {
+            hasEvents = true;
+            text += `*${d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}*\n`;
+            dayEvents.forEach(e => {
+                const resident = residents.find(r => r.id === e.residentId);
+                const isBirthday = e.id.startsWith('birthday-');
+                if (isBirthday) {
+                    text += `- 🎂 ${e.title}\n`;
+                } else {
+                    text += `- ${e.time} | ${e.title} ${resident ? `(${resident.name})` : ''}\n`;
+                }
+            });
+            text += "\n";
+        }
+    }
+
+    if (!hasEvents) {
+        text += "Nenhum compromisso marcado para os próximos 7 dias.";
+    }
+
+    const cleanPhone = settings.muralPhone.replace(/\D/g, '');
+    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
   const currentLabel = view === 'day' 
     ? currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
     : `Semana de ${getWeekDays()[0].toLocaleDateString('pt-BR')} até ${getWeekDays()[6].toLocaleDateString('pt-BR')}`;
 
+  const getEventsForDate = (dateStr: string) => {
+    const dbEvents = events.filter(e => e.date === dateStr);
+    
+    // Birthdays
+    const parts = dateStr.split('-');
+    if (parts.length < 3) return dbEvents;
+    const [, month, day] = parts;
+    
+    const bdayEvents: AgendaEvent[] = residents.filter(r => {
+      if (!r.birthDate) return false;
+      const bDateStr = r.birthDate.split('T')[0];
+      const rParts = bDateStr.split('-');
+      if (rParts.length >= 3) {
+         return rParts[1] === month && rParts[2].substring(0, 2) === day;
+      }
+      return false;
+    }).map(r => ({
+      id: `birthday-${r.id}-${dateStr}`,
+      institutionId: session?.institutionId || 'default-inst',
+      title: `🎂 Aniversário: ${r.name}`,
+      date: dateStr,
+      time: '00:00',
+      description: 'Aniversariante do dia!',
+      professionalName: 'Sistema',
+      professionalRole: '',
+      residentId: r.id,
+      type: 'comum',
+      companion: ''
+    }));
+
+    return [...bdayEvents, ...dbEvents].sort((a, b) => a.time.localeCompare(b.time));
+  };
+
   const renderEvents = (dateStr: string) => {
-    const dayEvents = events.filter(e => e.date === dateStr).sort((a, b) => a.time.localeCompare(b.time));
+    const dayEvents = getEventsForDate(dateStr);
     return (
       <div className="space-y-4">
         {dayEvents.map(e => {
             const resident = residents.find(r => r.id === e.residentId);
+            const isBirthday = e.id.startsWith('birthday-');
             return (
-              <div key={e.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm relative group hover:shadow-md transition-shadow">
-                <button onClick={() => handleDelete(e.id)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Trash2 size={16} />
-                </button>
+              <div key={e.id} className={`p-4 rounded-xl border border-gray-100 shadow-sm relative group hover:shadow-md transition-shadow ${isBirthday ? 'bg-pink-50 border-pink-200' : 'bg-white'}`}>
+                {!isBirthday && (
+                  <button onClick={() => handleDelete(e.id)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Trash2 size={16} />
+                  </button>
+                )}
                 <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[10px] font-black bg-blue-100 text-[#004c99] px-2 py-1 rounded uppercase tracking-widest">{e.time}</span>
-                    <h4 className="font-bold text-gray-800">{e.title}</h4>
+                    {!isBirthday && <span className="text-[10px] font-black bg-blue-100 text-[#004c99] px-2 py-1 rounded uppercase tracking-widest">{e.time}</span>}
+                    <h4 className={`font-bold ${isBirthday ? 'text-pink-600 text-lg' : 'text-gray-800'}`}>{e.title}</h4>
                 </div>
-                {e.description && <p className="text-sm text-gray-600 mb-2">{e.description}</p>}
+                {e.description && !isBirthday && <p className="text-sm text-gray-600 mb-2">{e.description}</p>}
                 
-                <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-gray-50">
-                    <div className="flex items-center gap-1 text-xs text-gray-500">
-                        <User size={12} />
-                        <span className="font-medium">{e.professionalName} ({e.professionalRole})</span>
-                    </div>
-                    {resident && (
-                        <div className="flex items-center gap-1 text-xs text-[#004c99] bg-blue-50 px-2 py-1 rounded">
-                            <BookOpen size={12} />
-                            <span className="font-bold">{resident.name}</span>
-                        </div>
-                    )}
-                </div>
+                {!isBirthday && (
+                  <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-gray-50">
+                      <div className="flex items-center gap-1 text-xs text-gray-500">
+                          <User size={12} />
+                          <span className="font-medium">{e.professionalName} {e.professionalRole ? `(${e.professionalRole})` : ''}</span>
+                      </div>
+                      {resident && (
+                          <div className="flex items-center gap-1 text-xs text-[#004c99] bg-blue-50 px-2 py-1 rounded">
+                              <BookOpen size={12} />
+                              <span className="font-bold">{resident.name}</span>
+                          </div>
+                      )}
+                  </div>
+                )}
               </div>
             )
         })}
@@ -166,6 +245,13 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onPostT
                  SEMANAL
              </button>
           </div>
+          <button
+            onClick={handleExportWhatsApp}
+            title="Exportar agenda dos próximos 7 dias para o WhatsApp do Mural"
+            className="flex items-center gap-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-4 py-3 rounded-xl font-black text-xs transition-all uppercase tracking-widest shadow-sm"
+          >
+            <Share2 size={16} /> <span className="hidden sm:inline">Exportar 7 Dias</span>
+          </button>
           <button 
             onClick={() => setIsFormOpen(true)}
             className="flex items-center gap-2 bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl font-black text-xs transition-all uppercase tracking-widest shadow-lg shadow-blue-900/20"
@@ -204,13 +290,16 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onPostT
                                   <div className="text-xl font-bold">{d.getDate()}</div>
                               </div>
                               <div className="p-2 flex-1 bg-gray-50/30">
-                                  {events.filter(e => e.date === dStr).sort((a, b) => a.time.localeCompare(b.time)).map(e => (
-                                      <div key={e.id} className="mb-2 p-2 bg-white rounded-lg border shadow-sm text-xs cursor-pointer hover:border-blue-300" onClick={() => { setCurrentDate(d); setView('day'); }}>
-                                          <div className="font-bold text-[#004c99]">{e.time}</div>
-                                          <div className="line-clamp-2 mt-1">{e.title}</div>
-                                      </div>
-                                  ))}
-                                  {events.filter(e => e.date === dStr).length === 0 && (
+                                  {getEventsForDate(dStr).map(e => {
+                                      const isBirthday = e.id.startsWith('birthday-');
+                                      return (
+                                        <div key={e.id} className={`mb-2 p-2 rounded-lg border shadow-sm text-xs cursor-pointer ${isBirthday ? 'bg-pink-100 border-pink-200 hover:border-pink-300' : 'bg-white hover:border-blue-300'}`} onClick={() => { setCurrentDate(d); setView('day'); }}>
+                                            {!isBirthday && <div className={`font-bold ${isBirthday ? 'text-pink-600' : 'text-[#004c99]'}`}>{e.time}</div>}
+                                            <div className={`line-clamp-2 ${!isBirthday ? 'mt-1' : 'font-bold text-pink-700'}`}>{e.title}</div>
+                                        </div>
+                                      );
+                                  })}
+                                  {getEventsForDate(dStr).length === 0 && (
                                       <div className="text-[10px] text-gray-300 text-center py-4">Livre</div>
                                   )}
                               </div>

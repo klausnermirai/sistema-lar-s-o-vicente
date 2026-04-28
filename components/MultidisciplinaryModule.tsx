@@ -1,24 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { Resident, NutritionalEvolution, NutritionalAttendance, PsychologicalEvolution, PsychologicalAttendance, MuralMessage } from '../types';
-import { Search, Save, AlertTriangle, Plus, ChevronRight, ChevronDown, ArrowLeft, HeartPulse, Users, Activity, FileSearch, X, User, Printer, FileSpreadsheet } from 'lucide-react';
+import { Resident, Candidate, NutritionalEvolution, NutritionalAttendance, PsychologicalEvolution, PsychologicalAttendance, MuralMessage } from '../types';
+import { Search, Save, AlertTriangle, Plus, ChevronRight, ChevronDown, ArrowLeft, HeartPulse, Users, Activity, FileSearch, X, User, Printer, FileSpreadsheet, Eye, Clock } from 'lucide-react';
+import { fetchResidentById, fetchMultidisciplinaryHistory } from '../lib/api';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import OccupationalTherapyTab from './OccupationalTherapyTab';
 import GroupActivityTab from './GroupActivityTab';
 import SocialWorkerTab from './SocialWorkerTab';
 import PhysiotherapyTab from './PhysiotherapyTab';
+import PsychologyJobCandidatesSection from './PsychologyJobCandidatesSection';
+import BirthdaySection from './BirthdaySection';
 
 interface MultidisciplinaryModuleProps {
   residents: Resident[];
   onSaveResident: (resident: Resident) => void;
+  candidates?: Candidate[];
+  onSaveCandidate?: (candidate: Candidate) => void;
   accessLevel?: string;
   onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
 }
 
-const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ residents, onSaveResident, accessLevel, onPostToMural }) => {
+const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ residents, onSaveResident, candidates = [], onSaveCandidate, accessLevel, onPostToMural }) => {
   const [selectedResidentId, setSelectedResidentId] = useState<string>('');
+  const [targetType, setTargetType] = useState<'resident' | 'candidate' | 'job_candidate'>('resident');
   const [activeCompetence, setActiveCompetence] = useState<string | null>(null);
-  const [competenceMode, setCompetenceMode] = useState<'individual' | 'grupo'>('individual');
+  const [competenceMode, setCompetenceMode] = useState<'individual' | 'grupo' | 'aniversariantes'>('individual');
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   
@@ -29,6 +35,62 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
   const isNutricionista = accessLevel === 'nutricionista';
 
   const [activeTab, setActiveTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos' | 'anamnese'>('avaliacao');
+  const [fullResident, setFullResident] = useState<Resident | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState<any | null>(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (targetType === 'candidate' && activeCompetence === 'psicologia') {
+      setActiveTab('atendimentos');
+    }
+  }, [targetType, activeCompetence]);
+
+  useEffect(() => {
+    if (selectedResidentId) {
+      const loadFullResident = async () => {
+        try {
+          const sessionStr = localStorage.getItem('ssvp_session');
+          if (sessionStr) {
+            const session = JSON.parse(sessionStr);
+            const instId = session.institutionId || session.cnpj;
+            const res = await fetchResidentById(selectedResidentId, instId);
+            setFullResident(res);
+          }
+        } catch (error) {
+          console.error("Erro ao carregar residente completo:", error);
+        }
+      };
+      loadFullResident();
+    } else {
+      setFullResident(null);
+    }
+  }, [selectedResidentId]);
+
+  useEffect(() => {
+    if (activeCompetence) {
+      const loadHistory = async () => {
+        setIsLoadingHistory(true);
+        try {
+          const sessionStr = localStorage.getItem('ssvp_session');
+          if (sessionStr) {
+            const session = JSON.parse(sessionStr);
+            const instId = session.institutionId || session.cnpj;
+            const historyData = await fetchMultidisciplinaryHistory(instId, activeCompetence);
+            setHistory(historyData);
+          }
+        } catch (error) {
+          console.error("Erro ao carregar histórico:", error);
+        } finally {
+          setIsLoadingHistory(false);
+        }
+      };
+      loadHistory();
+    } else {
+      setHistory([]);
+    }
+  }, [activeCompetence]);
   
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -51,11 +113,86 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
     { id: 'assistente_social', label: 'Assistente Social', icon: FileSearch, allowed: !isPsicologia && !isTerapeutaOcupacional && !isFisioterapeuta && !isNutricionista },
   ].filter(c => c.allowed);
 
-  const selectedResident = residents.find(r => r.id === selectedResidentId);
+  const selectedResident = targetType === 'resident' 
+    ? (fullResident || residents.find(r => r.id === selectedResidentId))
+    : candidates.find(c => c.id === selectedResidentId) as unknown as Resident; // Cast to Resident for now to avoid massive type restructures if the component expects Resident
 
-  const filteredResidents = residents.filter(r => 
+  // But we need to be careful with the typing. We should just pass the common interface elements.
+  // Actually, candidates and residents share a lot of fields, but we should make sure we're saving right.
+
+  const activeList = targetType === 'resident' ? residents : (targetType === 'candidate' ? candidates : []);
+  
+  const filteredResidents = activeList.filter(r => 
     r.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleSaveEntity = (updatedData: Resident | (Candidate & Resident)) => {
+    if (targetType === 'resident') {
+      onSaveResident(updatedData as Resident);
+    } else if (onSaveCandidate) {
+      onSaveCandidate(updatedData as Candidate);
+    }
+  };
+
+  const renderHistory = () => {
+    if (isLoadingHistory) {
+      return (
+        <div className="flex flex-col items-center justify-center p-12 bg-gray-50 rounded-[32px] border border-dashed animate-pulse">
+           <Clock size={32} className="text-blue-300 mb-4 animate-spin" />
+           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Carregando histórico recente...</p>
+        </div>
+      );
+    }
+
+    if (history.length === 0) {
+      return (
+        <div className="p-12 text-center bg-gray-50 rounded-[32px] border border-dashed">
+           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widestOpacity-50">Nenhum atendimento recente nesta área.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2 mb-4">
+          <Clock size={16} className="text-[#004c99]" /> Últimas Atividades {competencies.find(c => c.id === activeCompetence)?.label}
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {history.map((item, idx) => (
+            <div 
+              key={idx} 
+              className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:border-[#004c99] transition-all group flex items-start justify-between cursor-pointer"
+              onClick={() => {
+                setSelectedHistoryItem(item);
+                setIsHistoryModalOpen(true);
+              }}
+            >
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${
+                    item.type === 'Evolução' ? 'bg-orange-50 text-orange-600' : 
+                    item.type === 'Atendimento' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'
+                  }`}>
+                    {item.type}
+                  </span>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    {new Date(item.timestamp).toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+                <p className="text-xs font-black text-gray-800 uppercase tracking-tight group-hover:text-[#004c99]">{item.residentName}</p>
+                <p className="text-[10px] text-gray-400 font-bold uppercase mt-1 truncate max-w-[200px]">
+                  {item.attendanceEvolution || item.notes || item.institutionalAdaptationStatus || item.newConduct || 'Ver detalhes...'}
+                </p>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-300 group-hover:bg-[#004c99] group-hover:text-white transition-all">
+                <Eye size={16} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const handleExportGeneralCSV = () => {
     if (!activeCompetence) return;
@@ -250,7 +387,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
           </div>
 
           {activeCompetence !== 'assistente_social' && (
-            <div className="flex bg-gray-50 p-1 rounded-2xl border">
+            <div className="flex bg-gray-50 p-1 rounded-2xl border flex-wrap">
               <button
                 onClick={() => setCompetenceMode('individual')}
                 className={`flex-1 px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
@@ -261,16 +398,30 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
               >
                 Individual
               </button>
-              <button
-                onClick={() => setCompetenceMode('grupo')}
-                className={`flex-1 px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-                  competenceMode === 'grupo'
-                  ? 'bg-white text-[#004c99] shadow-sm'
-                  : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                Em Grupo
-              </button>
+              {['nutricionista', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta'].includes(activeCompetence || '') && (
+                <button
+                  onClick={() => setCompetenceMode('grupo')}
+                  className={`flex-1 px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                    competenceMode === 'grupo'
+                    ? 'bg-white text-[#004c99] shadow-sm'
+                    : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  Em Grupo
+                </button>
+              )}
+              {activeCompetence === 'terapeuta_ocupacional' && (
+                <button
+                  onClick={() => setCompetenceMode('aniversariantes')}
+                  className={`flex-1 px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                    competenceMode === 'aniversariantes'
+                    ? 'bg-white text-[#004c99] shadow-sm'
+                    : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  Aniversariantes
+                </button>
+              )}
             </div>
           )}
 
@@ -287,76 +438,186 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
         </div>
 
         {competenceMode === 'individual' && (
-          <div className="flex-1 w-full max-w-xl relative search-container group/search">
-            <div className={`relative transition-all duration-300 ${selectedResidentId ? 'ring-4 ring-blue-50 rounded-[28px]' : ''}`}>
-              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input
-                type="text"
-                placeholder={`Buscar Residente para ${competencies.find(c => c.id === activeCompetence)?.label}...`}
-                value={searchTerm}
-                onFocus={() => setIsDropdownOpen(true)}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  if (selectedResidentId) setSelectedResidentId('');
-                  setIsDropdownOpen(true);
-                }}
-                className="w-full pl-16 pr-12 py-5 bg-gray-50 border-2 border-transparent focus:border-blue-100 focus:bg-white rounded-[24px] text-sm font-black uppercase tracking-tight outline-none transition-all shadow-inner"
-              />
-              <button 
-                onClick={() => {
-                  setIsDropdownOpen(!isDropdownOpen);
-                  if (selectedResidentId) {
-                    setSelectedResidentId('');
-                    setSearchTerm('');
-                  }
-                }}
-                className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#004c99] transition-all p-2 flex items-center gap-1 group"
-                title="Listar todos os residentes"
-              >
-                <span className="text-[9px] font-black uppercase mr-1 hidden sm:inline opacity-60 group-hover:opacity-100">Ver Todos</span>
-                <ChevronDown size={20} className={`transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
+          <div className="w-full space-y-6">
+            <div className="flex-1 w-full max-w-xl relative search-container group/search">
+              {activeCompetence === 'psicologia' && (
+                <div className="flex flex-wrap gap-2 mb-4 bg-gray-50 p-1 rounded-2xl w-fit border shadow-sm">
+                  <button
+                    onClick={() => { setTargetType('resident'); setSelectedResidentId(''); setSearchTerm(''); }}
+                    className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                      targetType === 'resident' ? 'bg-white text-[#004c99] shadow-sm' : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    Residentes
+                  </button>
+                  {candidates && candidates.length > 0 && (
+                    <button
+                      onClick={() => { setTargetType('candidate'); setSelectedResidentId(''); setSearchTerm(''); }}
+                      className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                        targetType === 'candidate' ? 'bg-white text-[#004c99] shadow-sm' : 'text-gray-400 hover:text-gray-600'
+                      }`}
+                    >
+                      Triagem Idosos
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setTargetType('job_candidate'); setSelectedResidentId(''); setSearchTerm(''); }}
+                    className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                      targetType === 'job_candidate' ? 'bg-white text-[#004c99] shadow-sm' : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    Vagas de Emprego (RH)
+                  </button>
+                </div>
+              )}
+
+              {targetType !== 'job_candidate' && (
+                <>
+                  <div className={`relative transition-all duration-300 ${selectedResidentId ? 'ring-4 ring-blue-50 rounded-[28px]' : ''}`}>
+                    <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="text"
+                      placeholder={`Buscar ${targetType === 'resident' ? 'Residente' : 'Candidato'} para ${competencies.find(c => c.id === activeCompetence)?.label}...`}
+                      value={searchTerm}
+                    onFocus={() => setIsDropdownOpen(true)}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      if (selectedResidentId) setSelectedResidentId('');
+                      setIsDropdownOpen(true);
+                    }}
+                    className="w-full pl-16 pr-12 py-5 bg-gray-50 border-2 border-transparent focus:border-blue-100 focus:bg-white rounded-[24px] text-sm font-black uppercase tracking-tight outline-none transition-all shadow-inner"
+                  />
+                  <button 
+                    onClick={() => {
+                      setIsDropdownOpen(!isDropdownOpen);
+                      if (selectedResidentId) {
+                        setSelectedResidentId('');
+                        setSearchTerm('');
+                      }
+                    }}
+                    className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#004c99] transition-all p-2 flex items-center gap-1 group"
+                    title="Listar todos os residentes"
+                  >
+                    <span className="text-[9px] font-black uppercase mr-1 hidden sm:inline opacity-60 group-hover:opacity-100">Ver Todos</span>
+                    <ChevronDown size={20} className={`transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  </div>
+
+                  {/* Search Dropdown */}
+                  {(searchTerm || isDropdownOpen) && !selectedResidentId && (
+                    <div className="absolute top-full left-0 right-0 mt-3 bg-white border border-gray-100 rounded-[32px] shadow-2xl z-50 max-h-80 overflow-y-auto no-scrollbar py-4 px-2">
+                      {filteredResidents.length > 0 ? (
+                        filteredResidents.map(r => (
+                          <button
+                            key={r.id}
+                            onClick={() => {
+                              setSelectedResidentId(r.id);
+                              setSearchTerm(r.name);
+                              setIsDropdownOpen(false);
+                            }}
+                            className="w-full px-5 py-4 text-left hover:bg-blue-50 rounded-2xl flex items-center gap-5 transition-all group"
+                          >
+                            <div className="w-12 h-12 bg-white border-2 border-gray-50 rounded-2xl flex items-center justify-center font-black text-blue-600 shadow-sm group-hover:border-blue-200">
+                              {r.name.charAt(0)}
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-xs font-black text-gray-800 uppercase tracking-tight group-hover:text-blue-900">{r.name}</p>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Quarto {r.room} • CPF {r.cpf ? r.cpf.slice(0,3) : ''}...</p>
+                            </div>
+                            <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-300 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                              <Plus size={16} />
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="py-12 flex flex-col items-center justify-center text-gray-400 opacity-50">
+                          <Search size={32} className="mb-2" />
+                          <p className="text-[10px] font-black uppercase">Nenhum residente encontrado</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
-            {/* Search Dropdown */}
-            {(searchTerm || isDropdownOpen) && !selectedResidentId && (
-              <div className="absolute top-full left-0 right-0 mt-3 bg-white border border-gray-100 rounded-[32px] shadow-2xl z-50 max-h-80 overflow-y-auto no-scrollbar py-4 px-2">
-                {filteredResidents.length > 0 ? (
-                  filteredResidents.map(r => (
-                    <button
-                      key={r.id}
-                      onClick={() => {
-                        setSelectedResidentId(r.id);
-                        setSearchTerm(r.name);
-                        setIsDropdownOpen(false);
-                      }}
-                      className="w-full px-5 py-4 text-left hover:bg-blue-50 rounded-2xl flex items-center gap-5 transition-all group"
-                    >
-                      <div className="w-12 h-12 bg-white border-2 border-gray-50 rounded-2xl flex items-center justify-center font-black text-blue-600 shadow-sm group-hover:border-blue-200">
-                        {r.name.charAt(0)}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs font-black text-gray-800 uppercase tracking-tight group-hover:text-blue-900">{r.name}</p>
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Quarto {r.room} • CPF {r.cpf.slice(0,3)}...</p>
-                      </div>
-                      <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-300 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                        <Plus size={16} />
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="py-12 flex flex-col items-center justify-center text-gray-400 opacity-50">
-                    <Search size={32} className="mb-2" />
-                    <p className="text-[10px] font-black uppercase">Nenhum residente encontrado</p>
-                  </div>
-                )}
-              </div>
-            )}
+            {!selectedResidentId && renderHistory()}
           </div>
         )}
       </div>
 
-      {competenceMode === 'grupo' ? (
+      {isHistoryModalOpen && selectedHistoryItem && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6 bg-opacity-90">
+           <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+             <div className="bg-[#004c99] p-8 text-white flex justify-between items-start">
+               <div>
+                 <div className="flex items-center gap-3 mb-2">
+                   <span className="px-3 py-1 bg-white/20 rounded-full text-[10px] font-black uppercase">
+                     {selectedHistoryItem.type}
+                   </span>
+                   <span className="text-[10px] font-bold uppercase opacity-80">
+                     {new Date(selectedHistoryItem.timestamp).toLocaleString('pt-BR')}
+                   </span>
+                 </div>
+                 <h2 className="text-2xl font-black uppercase tracking-tighter">{selectedHistoryItem.residentName}</h2>
+               </div>
+               <button 
+                onClick={() => {
+                  setIsHistoryModalOpen(false);
+                  setSelectedHistoryItem(null);
+                }}
+                className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all"
+               >
+                 <X size={24} />
+               </button>
+             </div>
+             <div className="p-10 space-y-8 max-h-[70vh] overflow-y-auto no-scrollbar">
+                <div className="grid grid-cols-2 gap-8 border-b pb-8">
+                   <div>
+                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Profissional / Assinatura</p>
+                     <p className="text-sm font-bold text-gray-800">{selectedHistoryItem.signature || 'N/A'}</p>
+                   </div>
+                   <div>
+                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Tipo / Categoria</p>
+                     <p className="text-sm font-bold text-gray-800">{selectedHistoryItem.interventionType || selectedHistoryItem.attendanceType || 'Registro Multidisciplinar'}</p>
+                   </div>
+                </div>
+
+                <div className="space-y-4">
+                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Detalhamento do Registro</p>
+                   <div className="p-6 bg-gray-50 rounded-3xl text-sm leading-relaxed text-gray-700 font-medium border border-gray-100 italic">
+                      "{selectedHistoryItem.attendanceEvolution || selectedHistoryItem.notes || selectedHistoryItem.moodBehaviorEvolution || selectedHistoryItem.treatmentResponse || 'Sem descrição adicional'}"
+                   </div>
+                </div>
+
+                {selectedHistoryItem.muralNotes && (
+                   <div className="space-y-3">
+                     <p className="text-[10px] font-black text-[#004c99] uppercase tracking-widest flex items-center gap-2">
+                       <Plus size={12} /> Compartilhado no Mural
+                     </p>
+                     <div className="p-5 bg-blue-50/50 rounded-2xl text-xs text-blue-800 font-bold border border-blue-100">
+                        {selectedHistoryItem.muralNotes}
+                     </div>
+                   </div>
+                )}
+             </div>
+             <div className="p-8 bg-gray-50 border-t flex justify-end">
+                <button 
+                  onClick={() => setIsHistoryModalOpen(false)}
+                  className="px-10 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all shadow-lg active:scale-95"
+                >
+                  Fechar Visualização
+                </button>
+             </div>
+           </div>
+        </div>
+      )}
+
+      {competenceMode === 'aniversariantes' && activeCompetence === 'terapeuta_ocupacional' ? (
+        <div className="animate-in slide-in-from-bottom duration-700 bg-white rounded-[40px] border shadow-sm overflow-hidden p-10">
+          <BirthdaySection residents={residents} />
+        </div>
+      ) : competenceMode === 'grupo' ? (
         <div className="animate-in slide-in-from-bottom duration-700 bg-white rounded-[40px] border shadow-sm overflow-hidden p-10">
           <GroupActivityTab
             competence={activeCompetence as 'nutricionista' | 'psicologia' | 'terapeuta_ocupacional' | 'fisioterapeuta'}
@@ -365,13 +626,19 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
             onPostToMural={onPostToMural}
           />
         </div>
+      ) : targetType === 'job_candidate' && activeCompetence === 'psicologia' ? (
+        <div className="animate-in slide-in-from-bottom duration-700 bg-white rounded-[40px] border shadow-sm overflow-hidden p-10">
+          <PsychologyJobCandidatesSection 
+            institutionId={localStorage.getItem('ssvp_session') ? (JSON.parse(localStorage.getItem('ssvp_session')!).institutionId || JSON.parse(localStorage.getItem('ssvp_session')!).cnpj) : ''} 
+          />
+        </div>
       ) : selectedResident ? (
         <div className="animate-in slide-in-from-bottom duration-700 bg-white rounded-[40px] border shadow-sm overflow-hidden">
           {activeCompetence === 'fisioterapeuta' && (
             <PhysiotherapyTab 
               resident={selectedResident}
               onPostToMural={onPostToMural}
-              onChange={(data) => onSaveResident({ ...selectedResident, physiotherapy: data })}
+              onChange={(data) => handleSaveEntity({ ...selectedResident, physiotherapy: data })}
               residents={residents}
               onSaveResident={onSaveResident}
             />
@@ -411,7 +678,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                           initialAssessment: data
                         }
                       };
-                      onSaveResident(updatedResident);
+                      handleSaveEntity(updatedResident);
                     }} 
                   />
                 )}
@@ -426,7 +693,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                           evolutions: evolutions
                         }
                       };
-                      onSaveResident(updatedResident);
+                      handleSaveEntity(updatedResident);
                     }} 
                   />
                 )}
@@ -442,7 +709,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                           attendances: attendances
                         }
                       };
-                      onSaveResident(updatedResident);
+                      handleSaveEntity(updatedResident);
                     }} 
                   />
                 )}
@@ -453,11 +720,13 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
           {activeCompetence === 'psicologia' && (
             <>
               <div className="flex bg-gray-50/50 p-2 border-b overflow-x-auto no-scrollbar">
-                {[
+                {(targetType === 'candidate' ? [
+                  { id: 'atendimentos', label: 'Atendimentos' }
+                ] : [
                   { id: 'anamnese', label: 'Anamnese (Primeira Avaliação)' },
                   { id: 'evolucao', label: 'Evolução Psicológica' },
                   { id: 'atendimentos', label: 'Atendimentos' }
-                ].map(tab => (
+                ]).map(tab => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as any)}
@@ -486,7 +755,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                           initialAssessment: data
                         }
                       };
-                      onSaveResident(updatedResident);
+                      handleSaveEntity(updatedResident);
                     }} 
                   />
                 )}
@@ -501,13 +770,14 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                           evolutions: evolutions
                         }
                       };
-                      onSaveResident(updatedResident);
+                      handleSaveEntity(updatedResident);
                     }} 
                   />
                 )}
                 {activeTab === 'atendimentos' && (
                   <PsychologicalAttendanceSection 
                     resident={selectedResident} 
+                    isCandidate={targetType === 'candidate'}
                     onPostToMural={onPostToMural}
                     onSave={(attendances) => {
                       const updatedResident = {
@@ -517,7 +787,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                           attendances: attendances
                         }
                       };
-                      onSaveResident(updatedResident);
+                      handleSaveEntity(updatedResident);
                     }} 
                   />
                 )}
@@ -535,7 +805,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                     ...selectedResident,
                     occupationalTherapy: otData
                   };
-                  onSaveResident(updatedResident);
+                  handleSaveEntity(updatedResident);
                 }}
                 residents={residents}
                 onSaveResident={onSaveResident}
@@ -626,7 +896,7 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
     doc.text(`Data da Avaliação: ${formData.date}`, 14, 35);
     doc.text(`Quarto: ${resident.room || 'N/A'}`, 14, 40);
 
@@ -1501,7 +1771,7 @@ const NutritionalEvolutionSection: React.FC<NutritionalEvolutionSectionProps> = 
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
     doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
 
     const tableData = evolutions.map(ev => [
@@ -1685,7 +1955,7 @@ const NutritionalEvolutionForm: React.FC<NutritionalEvolutionFormProps> = ({ res
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
     doc.text(`Data: ${formData.date}`, 14, 35);
 
     const tableData = [
@@ -1896,7 +2166,7 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
     doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
 
     const tableData = attendances.map(at => [
@@ -1931,13 +2201,13 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
     
     onSave(newAttendances);
 
-    // Post to mural if requested
-    if (attendance.muralNotes) {
-      onPostToMural({
-        author: attendance.signature || 'Nutricionista',
-        text: `[Nutrição] ${resident.name}: ${attendance.muralNotes}`,
-      });
-    }
+    // Emit notification to mural
+    let muralText = `[Nutrição] Atendimento de ${resident.name} finalizado.`;
+    if (attendance.muralNotes) muralText += ` Notas: ${attendance.muralNotes}`;
+    onPostToMural({
+      author: attendance.signature || 'Nutricionista',
+      text: muralText,
+    });
 
     setEditingAttendance(null);
     setIsCreating(false);
@@ -2265,7 +2535,7 @@ const PsychologicalAssessmentForm: React.FC<PsychologicalAssessmentFormProps> = 
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
     doc.text(`Data da Avaliação: ${formData.date}`, 14, 35);
 
     const tableData = [
@@ -2536,7 +2806,7 @@ const PsychologicalEvolutionSection: React.FC<PsychologicalEvolutionSectionProps
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
     doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
 
     const tableData = evolutions.map(ev => [
@@ -2681,7 +2951,7 @@ const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
     doc.text(`Data: ${formData.date}`, 14, 35);
 
     const tableData = [
@@ -2837,11 +3107,12 @@ const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({
 
 interface PsychologicalAttendanceSectionProps {
   resident: Resident;
+  isCandidate?: boolean;
   onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
   onSave: (attendances: PsychologicalAttendance[]) => void;
 }
 
-const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionProps> = ({ resident, onPostToMural, onSave }) => {
+const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionProps> = ({ resident, isCandidate, onPostToMural, onSave }) => {
   const [editingAttendance, setEditingAttendance] = useState<PsychologicalAttendance | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -2857,7 +3128,7 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Residente: ${resident.name}`, 14, 30);
+    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
     doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
 
     const tableData = attendances.map(at => [
@@ -2892,13 +3163,13 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
     
     onSave(newAttendances);
 
-    // Post to mural if requested
-    if (attendance.muralNotes) {
-      onPostToMural({
-        author: attendance.signature || 'Psicologia',
-        text: `[Psicologia] ${resident.name}: ${attendance.muralNotes}`,
-      });
-    }
+    // Emit notification to mural
+    let muralText = `[Psicologia] Atendimento de ${resident.name} finalizado.`;
+    if (attendance.muralNotes) muralText += ` Notas: ${attendance.muralNotes}`;
+    onPostToMural({
+      author: attendance.signature || 'Psicologia',
+      text: muralText,
+    });
 
     setEditingAttendance(null);
     setIsCreating(false);
@@ -2909,6 +3180,7 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
       <PsychologicalAttendanceForm 
         resident={resident}
         attendance={editingAttendance}
+        isCandidate={isCandidate}
         onSave={handleSave}
         onCancel={() => {
           setEditingAttendance(null);
@@ -2975,10 +3247,21 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
                       <AlertTriangle size={10} /> Repasse
                     </span>
                   )}
+                  {attendance.candidateStatus && (
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase flex items-center gap-1 text-white ${
+                      attendance.candidateStatus === 'apto' ? 'bg-green-500' :
+                      attendance.candidateStatus === 'inapto' ? 'bg-red-500' :
+                      'bg-orange-500'
+                    }`}>
+                      {attendance.candidateStatus.replace('_', ' ')}
+                    </span>
+                  )}
                 </div>
-                <div className="text-xs text-gray-500 font-bold uppercase mt-1">
-                  Intervenção: <span className="text-gray-700">{attendance.interventionType}</span>
-                </div>
+                {!isCandidate && (
+                  <div className="text-xs text-gray-500 font-bold uppercase mt-1">
+                    Intervenção: <span className="text-gray-700">{attendance.interventionType}</span>
+                  </div>
+                )}
                 <div className="text-[10px] text-gray-400 font-bold uppercase mt-1">
                   Profissional: {attendance.signature}
                 </div>
@@ -3000,11 +3283,12 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
 interface PsychologicalAttendanceFormProps {
   resident: Resident;
   attendance: PsychologicalAttendance | null;
+  isCandidate?: boolean;
   onSave: (attendance: PsychologicalAttendance) => void;
   onCancel: () => void;
 }
 
-const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = ({ resident, attendance, onSave, onCancel }) => {
+const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = ({ resident, attendance, isCandidate, onSave, onCancel }) => {
   const [formData, setFormData] = useState<any>(attendance || {
     id: Date.now().toString(),
     dateTime: new Date().toISOString().slice(0, 16), // YYYY-MM-DDThh:mm
@@ -3129,26 +3413,43 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
           />
         </div>
         
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Tipo de Intervenção</label>
-          <select 
-            value={formData.interventionType} 
-            onChange={(e) => setFormData({ ...formData, interventionType: e.target.value })}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
-            required
-          >
-            <option value="">Selecione...</option>
-            <option value="Acolhimento individual">Acolhimento individual</option>
-            <option value="Observação em área comum">Observação em área comum</option>
-            <option value="Intervenção em crise/agitação">Intervenção em crise/agitação</option>
-            <option value="Mediação de conflito com outro idoso">Mediação de conflito com outro idoso</option>
-            <option value="Atendimento/Orientação a familiares">Atendimento/Orientação a familiares</option>
-          </select>
-        </div>
+        {!isCandidate ? (
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Tipo de Intervenção</label>
+            <select 
+              value={formData.interventionType} 
+              onChange={(e) => setFormData({ ...formData, interventionType: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
+              required
+            >
+              <option value="">Selecione...</option>
+              <option value="Acolhimento individual">Acolhimento individual</option>
+              <option value="Observação em área comum">Observação em área comum</option>
+              <option value="Intervenção em crise/agitação">Intervenção em crise/agitação</option>
+              <option value="Mediação de conflito com outro idoso">Mediação de conflito com outro idoso</option>
+              <option value="Atendimento/Orientação a familiares">Atendimento/Orientação a familiares</option>
+            </select>
+          </div>
+        ) : (
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Status da Triagem</label>
+            <select 
+              value={formData.candidateStatus || ''} 
+              onChange={(e) => setFormData({ ...formData, candidateStatus: e.target.value })}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
+              required
+            >
+              <option value="">Selecione...</option>
+              <option value="apto">Apto para Acolhimento</option>
+              <option value="inapto">Inapto para Acolhimento</option>
+              <option value="necessita_atencao">Necessita Atenção / Reavaliação</option>
+            </select>
+          </div>
+        )}
       </div>
 
       <div>
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Anotação do Prontuário</label>
+        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{isCandidate ? "Relatório do Atendimento" : "Anotação do Prontuário"}</label>
         <textarea 
           rows={6}
           value={formData.attendanceEvolution} 
@@ -3158,66 +3459,70 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
         />
       </div>
 
-      <div>
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Compartilhar no Mural <span className="text-[#004c99] lowercase">(opcional)</span></label>
-        <textarea 
-          rows={4}
-          value={formData.muralNotes} 
-          onChange={(e) => setFormData({ ...formData, muralNotes: e.target.value.slice(0, 150) })}
-          maxLength={150}
-          className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
-          placeholder="Anotação que será visível para toda a equipe no mural..."
-        />
-        <div className="flex justify-between items-center mt-1 text-[10px] font-bold uppercase tracking-widest">
-          <span className="text-gray-400">
-            {formData.muralNotes?.length || 0}/150 caracteres
-          </span>
-          <span className="text-[#004c99]">
-            Limite de 150 caracteres para o mural e notificação familiar
-          </span>
-        </div>
-      </div>
-
-      <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-        <div className="flex justify-between items-center mb-2">
-          <label className="block text-[10px] font-black text-gray-600 uppercase tracking-widest">Anotação Particular (Privada)</label>
-          {!isPrivateUnlocked && (
-            <button 
-              type="button"
-              onClick={handleUnlockPrivate}
-              className="text-[10px] font-bold text-[#004c99] uppercase hover:underline"
-            >
-              Desbloquear anotação privada
-            </button>
-          )}
-        </div>
-        
-        {isPrivateUnlocked ? (
-          <textarea 
-            rows={4}
-            value={formData.privateNotes} 
-            onChange={(e) => setFormData({ ...formData, privateNotes: e.target.value })}
-            className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm resize-none bg-white"
-            placeholder="Conteúdo sensível..."
-          />
-        ) : (
-          <div className="w-full p-3 border border-gray-200 rounded-xl bg-gray-100 text-gray-400 text-sm italic flex items-center justify-center h-[104px]">
-            Conteúdo bloqueado. Clique em "Desbloquear" para visualizar ou editar.
+      {!isCandidate && (
+        <>
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Compartilhar no Mural <span className="text-[#004c99] lowercase">(opcional)</span></label>
+            <textarea 
+              rows={4}
+              value={formData.muralNotes} 
+              onChange={(e) => setFormData({ ...formData, muralNotes: e.target.value.slice(0, 150) })}
+              maxLength={150}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
+              placeholder="Anotação que será visível para toda a equipe no mural..."
+            />
+            <div className="flex justify-between items-center mt-1 text-[10px] font-bold uppercase tracking-widest">
+              <span className="text-gray-400">
+                {formData.muralNotes?.length || 0}/150 caracteres
+              </span>
+              <span className="text-[#004c99]">
+                Limite de 150 caracteres para o mural e notificação familiar
+              </span>
+            </div>
           </div>
-        )}
-      </div>
-
-      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input 
-            type="checkbox" 
-            checked={formData.needsTeamReport}
-            onChange={(e) => setFormData({ ...formData, needsTeamReport: e.target.checked })}
-            className="w-5 h-5 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
-          />
-          <span className="text-sm font-bold text-gray-700 uppercase">Precisa de Repasse à Equipe?</span>
-        </label>
-      </div>
+    
+          <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-[10px] font-black text-gray-600 uppercase tracking-widest">Anotação Particular (Privada)</label>
+              {!isPrivateUnlocked && (
+                <button 
+                  type="button"
+                  onClick={handleUnlockPrivate}
+                  className="text-[10px] font-bold text-[#004c99] uppercase hover:underline"
+                >
+                  Desbloquear anotação privada
+                </button>
+              )}
+            </div>
+            
+            {isPrivateUnlocked ? (
+              <textarea 
+                rows={4}
+                value={formData.privateNotes} 
+                onChange={(e) => setFormData({ ...formData, privateNotes: e.target.value })}
+                className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm resize-none bg-white"
+                placeholder="Conteúdo sensível..."
+              />
+            ) : (
+              <div className="w-full p-3 border border-gray-200 rounded-xl bg-gray-100 text-gray-400 text-sm italic flex items-center justify-center h-[104px]">
+                Conteúdo bloqueado. Clique em "Desbloquear" para visualizar ou editar.
+              </div>
+            )}
+          </div>
+    
+          <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={formData.needsTeamReport}
+                onChange={(e) => setFormData({ ...formData, needsTeamReport: e.target.checked })}
+                className="w-5 h-5 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+              />
+              <span className="text-sm font-bold text-gray-700 uppercase">Precisa de Repasse à Equipe?</span>
+            </label>
+          </div>
+        </>
+      )}
 
       <div>
         <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Assinatura do Profissional</label>
@@ -3229,18 +3534,20 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
         />
       </div>
 
-      <div className="flex items-center gap-3 bg-green-50 p-4 rounded-xl border border-green-100 mt-4">
-        <input 
-          type="checkbox"
-          id="notifyFamily"
-          checked={formData.notifyFamily || false}
-          onChange={(e) => setFormData({ ...formData, notifyFamily: e.target.checked })}
-          className="w-5 h-5 text-green-600 rounded focus:ring-green-500"
-        />
-        <label htmlFor="notifyFamily" className="text-sm font-bold text-green-900 cursor-pointer">
-          Notificação Familiar - Incluir este atendimento no resumo mensal de repasse à familia
-        </label>
-      </div>
+      {!isCandidate && (
+        <div className="flex items-center gap-3 bg-green-50 p-4 rounded-xl border border-green-100 mt-4">
+          <input 
+            type="checkbox"
+            id="notifyFamily"
+            checked={formData.notifyFamily || false}
+            onChange={(e) => setFormData({ ...formData, notifyFamily: e.target.checked })}
+            className="w-5 h-5 text-green-600 rounded focus:ring-green-500"
+          />
+          <label htmlFor="notifyFamily" className="text-sm font-bold text-green-900 cursor-pointer">
+            Notificação Familiar - Incluir este atendimento no resumo mensal de repasse à familia
+          </label>
+        </div>
+      )}
 
       <div className="flex justify-end gap-3 pt-6 border-t">
         <button 

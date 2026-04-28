@@ -29,6 +29,8 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({ institutionId, res
   
   // Form state (Residente)
   const [residentId, setResidentId] = useState('');
+  const [residentSearchTerm, setResidentSearchTerm] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [visitorType, setVisitorType] = useState('new'); // 'new' or relative config
   const [visitorName, setVisitorName] = useState('');
   const [kinship, setKinship] = useState('');
@@ -56,6 +58,8 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({ institutionId, res
     setAgencyName('');
     setConferenceName('');
     setResidentId('');
+    setResidentSearchTerm('');
+    setShowSuggestions(false);
     setVisitorType('new');
     setVisitorName('');
     setKinship('');
@@ -218,17 +222,48 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({ institutionId, res
 
               {mode === 'residente' && (
                 <>
-                  <div>
+                  <div className="relative">
                     <label className="block text-xs font-black text-gray-500 uppercase mb-2">Qual residente você vai visitar?</label>
-                    <select className="w-full border p-4 rounded-2xl bg-gray-50" value={residentId} onChange={e => {
-                        setResidentId(e.target.value);
-                        setVisitorType('new');
-                      }}>
-                      <option value="">Selecione...</option>
-                      {residents.map(r => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))}
-                    </select>
+                    <input 
+                      type="text" 
+                      className="w-full border p-4 rounded-2xl bg-gray-50 mb-2 focus:ring-2 focus:ring-[#004c99] outline-none transition-all" 
+                      value={residentSearchTerm} 
+                      onChange={e => {
+                        setResidentSearchTerm(e.target.value);
+                        if (residentId) setResidentId(''); // clear selection if typing
+                        if (e.target.value.length >= 3) {
+                          setShowSuggestions(true);
+                        } else {
+                          setShowSuggestions(false);
+                        }
+                      }}
+                      onFocus={() => {
+                         if (residentSearchTerm.length >= 3 && !residentId) setShowSuggestions(true);
+                      }}
+                      placeholder="Digite o nome do residente (mínimo 3 letras)" 
+                    />
+                    {showSuggestions && residentSearchTerm.length >= 3 && !residentId && (
+                      <div className="absolute top-[88px] left-0 w-full mt-1 bg-white border border-gray-100 rounded-2xl shadow-2xl z-50 max-h-48 overflow-y-auto">
+                         {residents.filter(r => r.name.toLowerCase().includes(residentSearchTerm.toLowerCase())).length > 0 ? (
+                           residents.filter(r => r.name.toLowerCase().includes(residentSearchTerm.toLowerCase())).map(r => (
+                             <button
+                               key={r.id}
+                               onClick={() => {
+                                 setResidentId(r.id);
+                                 setResidentSearchTerm(r.name);
+                                 setShowSuggestions(false);
+                                 setVisitorType('new');
+                               }}
+                               className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 last:border-0 transition-colors"
+                             >
+                               <span className="font-bold text-gray-800 uppercase tracking-tight">{r.name}</span>
+                             </button>
+                           ))
+                         ) : (
+                           <div className="px-4 py-5 text-[10px] font-black uppercase text-gray-400 tracking-widest text-center">Nenhum residente encontrado com este nome</div>
+                         )}
+                      </div>
+                    )}
                   </div>
                   
                   {selectedResident && (

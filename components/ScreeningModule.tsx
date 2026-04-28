@@ -1474,6 +1474,21 @@ function StatusManagementModal({
                   </div>
                 </div>
 
+                ${data.psychology?.attendances && data.psychology.attendances.length > 0 ? `
+                <!-- 7. ATENDIMENTOS PSICOLÓGICOS NA TRIAGEM -->
+                <div class="section">
+                  <div class="section-title">7. Atendimentos Psicológicos da Triagem</div>
+                  <div class="section-content">
+                    ${data.psychology.attendances.map(att => `
+                      <div class="field col-span-3 pb-3 border-b border-gray-100 last:border-0 last:pb-0">
+                        <span class="label">Data: ${new Date(att.dateTime).toLocaleDateString("pt-BR")} | Assinatura: ${att.signature || 'Psicologia'}</span>
+                        <div class="text-block">${att.muralNotes || 'Atendimento realizado. Ver prontuário.'}</div>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+                ` : ``}
+
                 <div class="footer">Este documento é sigiloso. Relatório consolidado gerado automaticamente a partir do Módulo de Triagem SSVP.</div>
                 <script>
                   window.onload = function() { window.focus(); window.print(); }
@@ -1552,7 +1567,33 @@ function StatusManagementModal({
               />
             </div>
 
+            {data.psychology?.attendances && data.psychology.attendances.length > 0 && (
+              <div className="bg-purple-50 p-6 rounded-2xl border border-purple-100 flex flex-col items-center justify-center gap-3 text-center mt-6">
+                 <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm text-purple-600">
+                    <Users size={20} />
+                 </div>
+                 <h4 className="text-sm font-black text-gray-800 uppercase tracking-tight">Atendimento Psicológico Encontrado</h4>
+                 <p className="text-xs text-gray-600 font-medium">Foram realizados {data.psychology.attendances.length} atendimento(s) de triagem com a psicologia.</p>
+                 {data.psychology.attendances.map(att => (
+                   <div key={att.id} className="bg-white p-3 rounded-xl border border-purple-100 text-left w-full mt-2">
+                     <p className="text-[10px] font-black text-purple-600 uppercase mb-1">{new Date(att.dateTime).toLocaleDateString()} - {att.signature || 'Psicologia'}</p>
+                     <p className="text-xs text-gray-700">{att.muralNotes || 'Atendimento realizado sem notas de mural. Acesse o prontuário para ver detalhes.'}</p>
+                   </div>
+                 ))}
+              </div>
+            )}
+
             <div className="flex flex-col gap-3 pt-4">
+              <button
+                onClick={() => {
+                  onSave(data);
+                  handleGenerateFullReport();
+                }}
+                className="w-full py-3.5 bg-gray-900 border-2 border-gray-900 text-white rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+              >
+                <Printer size={16} /> Imprimir Ficha Consolidada
+              </button>
+              
               <button
                 onClick={() => {
                   onSave(data);
