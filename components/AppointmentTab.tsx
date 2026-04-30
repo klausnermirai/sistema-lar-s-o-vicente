@@ -28,7 +28,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
   resident, 
   companions, 
   onUpdateResident,
-  onPostToMural 
+  onPostToMural
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
@@ -98,7 +98,8 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
     // Post to Mural
     onPostToMural({
       author: 'Sistema de Cuidados Clínicos',
-      text: `Pós-${selectedAppointment.type === 'consulta' ? 'Consulta' : 'Exame'} - ${resident.name}: ${notes}`
+      text: `Pós-${selectedAppointment.type === 'consulta' ? 'Consulta' : 'Exame'} - ${resident.name}`,
+      detailedContent: `Local: ${selectedAppointment.location}\nEspecialidade: ${selectedAppointment.specialty || 'N/A'}\n\nConclusões / Anotações:\n${notes}`
     });
 
     setIsNotesModalOpen(false);
@@ -122,12 +123,14 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
             Planejamento de consultas externas e acompanhamentos
           </p>
         </div>
-        <button
-          onClick={handleOpenModal}
-          className="px-6 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-xl flex items-center gap-2"
-        >
-          <Plus size={16} /> Novo Agendamento
-        </button>
+        <div className="flex gap-4">
+          <button
+            onClick={handleOpenModal}
+            className="px-6 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-xl flex items-center gap-2"
+          >
+            <Plus size={16} /> Novo Agendamento
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -163,7 +166,11 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
                     </div>
                     <div className="flex items-center gap-2 text-[10px] font-black text-blue-600 uppercase tracking-widest mt-2 bg-blue-50/50 w-fit px-2 py-1 rounded-lg">
                       <User size={12} />
-                      Acompanhante: {companions.find(c => c.id === app.companionId)?.name || 'Nenhum'}
+                      Acompanhante: {
+                        app.companionId === 'familiar' ? 'Familiar' :
+                        app.companionId === 'familia_responsavel' ? 'Responsabilidade da Família' :
+                        companions.find(c => c.id === app.companionId)?.name || 'Não definido'
+                      }
                     </div>
                   </div>
 
@@ -313,9 +320,13 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
                     className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-black outline-none focus:bg-white transition-all appearance-none"
                   >
                     <option value="">Selecione...</option>
-                    {companions.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.role})</option>
-                    ))}
+                    <option value="familiar">Familiar</option>
+                    <option value="familia_responsavel">Responsabilidade da Família</option>
+                    <optgroup label="Acompanhantes Cadastrados">
+                      {companions.map(c => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.role})</option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
               </div>

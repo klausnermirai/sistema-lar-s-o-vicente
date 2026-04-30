@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AgendaEvent, Resident, InstitutionSettings, MuralMessage, Appointment } from '../types';
 import { loadAgendaEvents, saveAgendaEvent, deleteAgendaEvent } from '../lib/agendaStore';
 import { fetchSettings } from '../lib/api';
-import { Calendar as CalendarIcon, Clock, Plus, ChevronLeft, ChevronRight, BookOpen, User, Search, Trash2, Mail, Share2, Upload } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Plus, ChevronLeft, ChevronRight, BookOpen, User, Search, Trash2, Mail, Share2, Upload, Pencil } from 'lucide-react';
 
 interface AgendaModuleProps {
   session: any;
@@ -15,7 +15,6 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<'day' | 'week'>('day');
-  const [activeTab, setActiveTab] = useState<'geral' | 'salao'>('geral');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<AgendaEvent>>({});
   const [settings, setSettings] = useState<InstitutionSettings | null>(null);
@@ -57,40 +56,32 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
   };
 
   const handleSave = async () => {
-    let finalTitle = formData.title || '';
-    let finalDate = formData.date || '';
-    let finalTime = formData.time || '';
-
-    if (activeTab === 'salao') {
-      finalTitle = formData.salaoGroupName || formData.salaoResponsibleName || formData.title || 'Evento Salão de Festas';
-      finalDate = formData.date || new Date().toISOString().split('T')[0];
-      finalTime = formData.time || '00:00';
-    } else {
-      if (!formData.title || !formData.date || !formData.time) {
-        alert("Preencha título, data e hora.");
-        return;
-      }
+    if (formData.type !== 'salao_festas' && (!formData.title || !formData.date || !formData.time)) {
+      alert("Preencha título, data e hora.");
+      return;
     }
-
+    
+    const isUpdate = !!formData.id;
     const newEvent: AgendaEvent = {
-      id: Date.now().toString(),
+      id: formData.id || Date.now().toString(),
       institutionId: session.institutionId || 'default-inst',
-      title: finalTitle,
-      date: finalDate,
-      time: finalTime,
+      title: formData.title || (formData.type === 'salao_festas' ? 'Reserva Salão' : 'Sem Título'),
+      date: (formData.type === 'salao_festas' && formData.dates?.length ? formData.dates[0] : formData.date) || new Date().toISOString().split('T')[0],
+      time: formData.time || '00:00',
       description: formData.description || '',
       professionalName: session.username || 'Profissional Logado',
       professionalRole: session.accessLevel || 'Profissional',
       residentId: formData.residentId,
-      type: (activeTab === 'salao') ? 'salao' : (formData.type || 'comum'),
+      type: formData.type || 'comum',
       companion: formData.companion || '',
-      salaoEndTime: formData.salaoEndTime,
-      salaoResponsibleName: formData.salaoResponsibleName,
-      salaoPhone: formData.salaoPhone,
-      salaoGroupName: formData.salaoGroupName
+      dates: formData.dates || [],
+      endTime: formData.endTime || '',
+      keyResponsible: formData.keyResponsible || '',
+      responsiblePhone: formData.responsiblePhone || '',
+      group: formData.group || ''
     };
 
-    if (newEvent.type === 'consulta_exame' && newEvent.residentId && onSaveResident) {
+    if (newEvent.type === 'consulta_exame' && newEvent.residentId && onSaveResident && !isUpdate) {
       const resident = residents.find(r => r.id === newEvent.residentId);
       if (resident) {
         const newAppointment: Appointment = {
@@ -115,7 +106,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
       loadAgendaEvents(session.institutionId || 'default-inst').then(setEvents);
     }
     
-    if (onPostToMural) {
+    if (onPostToMural && !isUpdate) {
       const resident = residents.find(r => r.id === newEvent.residentId);
       const isConsulta = newEvent.type === 'consulta_exame';
       onPostToMural({
@@ -128,6 +119,11 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
     setFormData({});
   };
 
+  const handleEdit = (event: AgendaEvent) => {
+    setFormData(event);
+    setIsFormOpen(true);
+  };
+
   const handleDelete = async (id: string) => {
     if (window.confirm("Deseja realmente arquivar este compromisso?")) {
       await deleteAgendaEvent(id);
@@ -135,6 +131,8 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
     }
   };
 
+  const handleUndoImport = async () => {};
+  const handleImportCalendar = async (e: React.ChangeEvent<HTMLInputElement>) => {};
   const handleExportWhatsApp = () => {
     if (!settings?.muralPhone) {
       alert("Nenhum número de WhatsApp cadastrado no Módulo de Configurações.");
@@ -181,12 +179,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
     : `Semana de ${getWeekDays()[0].toLocaleDateString('pt-BR')} até ${getWeekDays()[6].toLocaleDateString('pt-BR')}`;
 
   const getEventsForDate = (dateStr: string) => {
-    let baseEvents = activeTab === 'salao' ? events.filter(e => e.type === 'salao' && e.date === dateStr) : events.filter(e => e.type !== 'salao' && e.date === dateStr);
-    
-    // Se for na aba salão, ignorar aniversários e consultas
-    if (activeTab === 'salao') {
-        return baseEvents.sort((a, b) => a.time.localeCompare(b.time));
-    }
+    const dbEvents = events.filter(e => e.date === dateStr || (e.dates && e.dates.includes(dateStr)));
     
     // Appointments
     const appointmentEvents: AgendaEvent[] = residents.flatMap(r => {
@@ -234,7 +227,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
       companion: ''
     }));
 
-    return [...bdayEvents, ...appointmentEvents, ...baseEvents].sort((a, b) => a.time.localeCompare(b.time));
+    return [...bdayEvents, ...appointmentEvents, ...dbEvents].sort((a, b) => a.time.localeCompare(b.time));
   };
 
   const renderEvents = (dateStr: string) => {
@@ -250,9 +243,22 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
             return (
               <div key={e.id} className={`p-4 rounded-xl border border-gray-100 shadow-sm relative group hover:shadow-md transition-shadow ${bgClass}`}>
                 {!isBirthday && !isAppointment && (
-                  <button onClick={() => handleDelete(e.id)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Trash2 size={16} />
-                  </button>
+                  <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={() => handleEdit(e)} 
+                      className="p-2 text-gray-400 hover:text-[#004c99] bg-gray-50 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-gray-100 flex items-center justify-center"
+                      title="Editar compromisso"
+                    >
+                        <Pencil size={14} />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(e.id)} 
+                      className="p-2 text-gray-400 hover:text-red-500 bg-gray-50 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-gray-100"
+                      title="Excluir compromisso"
+                    >
+                        <Trash2 size={14} />
+                    </button>
+                  </div>
                 )}
                 <div className="flex items-center gap-2 mb-2">
                     {!isBirthday && <span className={`text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest ${isAppointment ? 'bg-white text-blue-800' : 'bg-blue-100 text-[#004c99]'}`}>{e.time}</span>}
@@ -262,34 +268,27 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                 
                 {!isBirthday && (
                   <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-gray-50">
-                      <div className="flex items-center gap-1 text-xs text-gray-500">
-                          <User size={12} />
-                          <span className="font-medium">{e.professionalName} {e.professionalRole ? `(${e.professionalRole})` : ''}</span>
-                      </div>
-                      {e.type === 'salao' && (
-                          <>
-                             {e.salaoResponsibleName && (
-                                <div className="flex items-center gap-1 text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                                    <span className="font-bold">Resp:</span> {e.salaoResponsibleName}
-                                </div>
-                             )}
-                             {e.salaoPhone && (
-                                <div className="flex items-center gap-1 text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                                    <span className="font-bold">Tel:</span> {e.salaoPhone}
-                                </div>
-                             )}
-                             {e.salaoEndTime && (
-                                <div className="flex items-center gap-1 text-xs text-blue-500 bg-blue-50 px-2 py-1 rounded">
-                                    <span className="font-bold">Hora de Término:</span> {e.salaoEndTime}
-                                </div>
-                             )}
-                          </>
-                      )}
-                      {resident && (
-                          <div className="flex items-center gap-1 text-xs text-[#004c99] bg-blue-50 px-2 py-1 rounded">
-                              <BookOpen size={12} />
-                              <span className="font-bold">{resident.name}</span>
+                      {e.type === 'salao_festas' ? (
+                          <div className="flex flex-col gap-1 w-full text-xs text-gray-600">
+                             {e.endTime && <div><strong>Término Previsto:</strong> {e.endTime}</div>}
+                             {e.keyResponsible && <div><strong>Resp. Chave:</strong> {e.keyResponsible}</div>}
+                             {e.responsiblePhone && <div><strong>Telefone:</strong> {e.responsiblePhone}</div>}
+                             {e.group && <div><strong>Grupo:</strong> {e.group}</div>}
+                             {e.dates && e.dates.length > 1 && <div><strong>Dias do evento:</strong> {e.dates.map(d => new Date(d).toLocaleDateString('pt-BR')).join(', ')}</div>}
                           </div>
+                      ) : (
+                          <>
+                              <div className="flex items-center gap-1 text-xs text-gray-500">
+                                  <User size={12} />
+                                  <span className="font-medium">{e.professionalName} {e.professionalRole ? `(${e.professionalRole})` : ''}</span>
+                              </div>
+                              {resident && (
+                                  <div className="flex items-center gap-1 text-xs text-[#004c99] bg-blue-50 px-2 py-1 rounded">
+                                      <BookOpen size={12} />
+                                      <span className="font-bold">{resident.name}</span>
+                                  </div>
+                              )}
+                          </>
                       )}
                   </div>
                 )}
@@ -311,9 +310,9 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
         <div>
           <h2 className="text-2xl font-black text-gray-800 tracking-tight flex items-center gap-3">
              <CalendarIcon className="text-[#004c99]" size={28} />
-             AGENDA <span className="opacity-50">/ {activeTab === 'geral' ? 'COMPROMISSOS' : 'SALÃO DE FESTAS'}</span>
+             AGENDA <span className="opacity-50">/ COMPROMISSOS</span>
           </h2>
-          <p className="text-sm text-gray-500 mt-1 font-medium">{activeTab === 'geral' ? 'Controle de atendimentos e tarefas multiprofissionais' : 'Controle de aluguéis e eventos do salão'}</p>
+          <p className="text-sm text-gray-500 mt-1 font-medium">Controle de atendimentos e tarefas multiprofissionais</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center bg-gray-100 rounded-lg p-1">
@@ -330,20 +329,6 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                  SEMANAL
              </button>
           </div>
-          <label
-            title="Importar agenda (.ics ou .csv)"
-            className="flex items-center gap-2 bg-orange-100 hover:bg-orange-200 text-orange-700 px-4 py-3 rounded-xl font-black text-xs transition-all uppercase tracking-widest shadow-sm cursor-pointer"
-          >
-            <Upload size={16} /> <span className="hidden sm:inline">Importar</span>
-            <input type="file" multiple accept=".ics,.csv" className="hidden" onChange={handleImportCalendar} />
-          </label>
-          <button
-            onClick={handleUndoImport}
-            title="Desfazer a última importação"
-            className="flex items-center gap-2 bg-red-100 hover:bg-red-200 text-red-700 px-4 py-3 rounded-xl font-black text-xs transition-all uppercase tracking-widest shadow-sm"
-          >
-            <Trash2 size={16} /> <span className="hidden sm:inline">Desfazer Importação</span>
-          </button>
           <button
             onClick={handleExportWhatsApp}
             title="Exportar agenda dos próximos 7 dias para o WhatsApp do Mural"
@@ -352,13 +337,10 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
             <Share2 size={16} /> <span className="hidden sm:inline">Exportar 7 Dias</span>
           </button>
           <button 
-            onClick={() => {
-              setFormData(activeTab === 'salao' ? { type: 'salao' } : { type: 'comum' });
-              setIsFormOpen(true);
-            }}
+            onClick={() => setIsFormOpen(true)}
             className="flex items-center gap-2 bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl font-black text-xs transition-all uppercase tracking-widest shadow-lg shadow-blue-900/20"
           >
-             <Plus size={16} /> {activeTab === 'salao' ? 'Novo Evento' : 'Novo Compromisso'}
+             <Plus size={16} /> Novo Compromisso
           </button>
         </div>
       </div>
@@ -398,9 +380,28 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                                       const bgClass = isBirthday ? 'bg-pink-100 border-pink-200 hover:border-pink-300' : isAppointment ? 'bg-blue-100 border-blue-200 hover:border-blue-300' : 'bg-white hover:border-blue-300';
 
                                       return (
-                                        <div key={e.id} className={`mb-2 p-2 rounded-lg border shadow-sm text-xs cursor-pointer ${bgClass}`} onClick={() => { setCurrentDate(d); setView('day'); }}>
-                                            {!isBirthday && <div className={`font-bold ${isAppointment ? 'text-blue-900' : 'text-[#004c99]'}`}>{e.time}</div>}
-                                            <div className={`line-clamp-2 ${isBirthday ? 'font-bold text-pink-700' : isAppointment ? 'font-bold text-blue-900' : 'mt-1'}`}>{e.title}</div>
+                                        <div key={e.id} className={`mb-2 p-2 rounded-lg border shadow-sm text-xs cursor-pointer relative group ${bgClass}`}>
+                                            <div onClick={() => { setCurrentDate(d); setView('day'); }}>
+                                              {!isBirthday && <div className={`font-bold ${isAppointment ? 'text-blue-900' : 'text-[#004c99]'}`}>{e.time}</div>}
+                                              <div className={`line-clamp-2 ${isBirthday ? 'font-bold text-pink-700' : isAppointment ? 'font-bold text-blue-900' : 'mt-1'}`}>{e.title}</div>
+                                            </div>
+                                            
+                                            {!isBirthday && !isAppointment && (
+                                              <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button 
+                                                  onClick={(e_evt) => { e_evt.stopPropagation(); handleEdit(e); }}
+                                                  className="p-1 bg-white border border-gray-100 rounded shadow-sm text-gray-400 hover:text-blue-600"
+                                                >
+                                                  <Pencil size={10} />
+                                                </button>
+                                                <button 
+                                                  onClick={(e_evt) => { e_evt.stopPropagation(); handleDelete(e.id); }}
+                                                  className="p-1 bg-white border border-gray-100 rounded shadow-sm text-gray-400 hover:text-red-500"
+                                                >
+                                                  <Trash2 size={10} />
+                                                </button>
+                                              </div>
+                                            )}
                                         </div>
                                       );
                                   })}
@@ -418,46 +419,99 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
 
       {isFormOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-           <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in duration-300">
-               <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                   <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Agendar Compromisso</h3>
+           <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in duration-300 flex flex-col max-h-[90vh]">
+               <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
+                   <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">
+                     {formData.id ? 'Editar Compromisso' : 'Agendar Compromisso'}
+                   </h3>
                    <button onClick={() => setIsFormOpen(false)} className="p-2 text-gray-400 hover:text-gray-800 bg-gray-200 hover:bg-gray-300 rounded-full transition-colors">
                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                    </button>
                </div>
-               <div className="p-6 space-y-6">
-                 {activeTab !== 'salao' ? (
+               <div className="p-6 space-y-6 overflow-y-auto w-full flex-grow relative custom-scrollbar">
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Tipo de Evento</label>
+                    <div className="flex gap-2 p-1 bg-gray-100 rounded-xl overflow-x-auto">
+                        {['comum', 'consulta_exame', 'atividade_grupo', 'triagem', 'salao_festas'].map(t => (
+                            <button
+                                key={t}
+                                onClick={() => setFormData({...formData, type: t as any})}
+                                className={`px-4 py-2 text-xs font-bold rounded-lg capitalize whitespace-nowrap transition-all ${
+                                    (formData.type || 'comum') === t 
+                                    ? 'bg-white shadow-sm text-[#004c99]' 
+                                    : 'text-gray-500 hover:bg-gray-200'
+                                }`}
+                            >
+                                {t.replace('_', ' ')}
+                            </button>
+                        ))}
+                    </div>
+                 </div>
+                 
+                 {formData.type !== 'salao_festas' && (
+                   <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Título do Compromisso *</label>
+                      <input 
+                        type="text" 
+                        value={formData.title || ''}
+                        onChange={e => setFormData({...formData, title: e.target.value})}
+                        className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all"
+                        placeholder="Ex: Reunião Familiar, Avaliação Fono..."
+                      />
+                   </div>
+                 )}
+                 
+                 {formData.type === 'salao_festas' ? (
+                   <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                     <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Datas Selecionadas (Permite múltiplos dias)</label>
+                         <div className="flex items-center gap-2">
+                           <input 
+                             type="date"
+                             onChange={e => {
+                               if (e.target.value && !(formData.dates || []).includes(e.target.value)) {
+                                 setFormData({...formData, dates: [...(formData.dates || []), e.target.value]});
+                               }
+                             }}
+                             className="p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] outline-none"
+                           />
+                         </div>
+                         <div className="flex flex-wrap gap-2 mt-2">
+                           {(formData.dates || []).map(d => (
+                             <span key={d} className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                               {new Date(d).toLocaleDateString('pt-BR')}
+                               <button onClick={() => setFormData({...formData, dates: formData.dates?.filter(x => x !== d)})} className="text-blue-500 hover:text-blue-700 ml-1">x</button>
+                             </span>
+                           ))}
+                         </div>
+                     </div>
+                     <div className="grid grid-cols-2 gap-4">
+                         <div className="space-y-1">
+                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Hora Início</label>
+                             <input type="time" value={formData.time || ''} onChange={e => setFormData({...formData, time: e.target.value})} className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] outline-none" />
+                         </div>
+                         <div className="space-y-1">
+                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Hora Término (Previsto)</label>
+                             <input type="time" value={formData.endTime || ''} onChange={e => setFormData({...formData, endTime: e.target.value})} className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] outline-none" />
+                         </div>
+                     </div>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div className="space-y-1">
+                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Responsável pela Chave</label>
+                             <input type="text" value={formData.keyResponsible || ''} onChange={e => setFormData({...formData, keyResponsible: e.target.value})} className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] outline-none" placeholder="Nome..." />
+                         </div>
+                         <div className="space-y-1">
+                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Telefone Responsável</label>
+                             <input type="text" value={formData.responsiblePhone || ''} onChange={e => setFormData({...formData, responsiblePhone: e.target.value})} className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] outline-none" placeholder="(00) 00000-0000" />
+                         </div>
+                     </div>
+                     <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Grupo que faz parte</label>
+                         <input type="text" value={formData.group || ''} onChange={e => setFormData({...formData, group: e.target.value})} className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] outline-none" placeholder="Ex: Grupo de Jovens, Encontro de Casais..." />
+                     </div>
+                   </div>
+                 ) : (
                    <>
-                     <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Tipo de Evento</label>
-                        <div className="flex gap-2 p-1 bg-gray-100 rounded-xl overflow-x-auto">
-                            {['comum', 'consulta_exame', 'atividade_grupo', 'triagem'].map(t => (
-                                <button
-                                    key={t}
-                                    onClick={() => setFormData({...formData, type: t as any})}
-                                    className={`px-4 py-2 text-xs font-bold rounded-lg capitalize whitespace-nowrap transition-all ${
-                                        (formData.type || 'comum') === t 
-                                        ? 'bg-white shadow-sm text-[#004c99]' 
-                                        : 'text-gray-500 hover:bg-gray-200'
-                                    }`}
-                                >
-                                    {t.replace('_', ' ')}
-                                </button>
-                            ))}
-                        </div>
-                     </div>
-                     
-                     <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Título do Compromisso *</label>
-                        <input 
-                          type="text" 
-                          value={formData.title || ''}
-                          onChange={e => setFormData({...formData, title: e.target.value})}
-                          className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all"
-                          placeholder="Ex: Reunião Familiar, Avaliação Fono..."
-                        />
-                     </div>
-                     
                      <div className="grid grid-cols-2 gap-4">
                          <div className="space-y-1">
                              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Data *</label>
@@ -478,7 +532,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                              />
                          </div>
                      </div>
-
+    
                      <div className="space-y-1">
                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Residente Relacionado (Opcional)</label>
                         <select 
@@ -492,108 +546,34 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                             ))}
                         </select>
                      </div>
-
-                     {formData.type === 'consulta_exame' && (
-                         <div className="space-y-1 animate-in fade-in slide-in-from-top-2">
-                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Acompanhante (Opcional)</label>
-                            <input 
-                              type="text" 
-                              value={formData.companion || ''}
-                              onChange={e => setFormData({...formData, companion: e.target.value})}
-                              className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all"
-                              placeholder="Ex: João da Silva (Filho)"
-                            />
-                         </div>
-                     )}
-
-                     <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Descrição detalhada</label>
-                        <textarea 
-                          value={formData.description || ''}
-                          onChange={e => setFormData({...formData, description: e.target.value})}
-                          className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all min-h-[100px]"
-                          placeholder="Observações importantes..."
-                        />
-                     </div>
-                   </>
-                 ) : (
-                   <>
-                     <div className="grid grid-cols-1 gap-4">
-                         <div className="space-y-1">
-                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nome do Grupo</label>
-                             <input 
-                               type="text"
-                               value={formData.salaoGroupName || ''}
-                               onChange={e => setFormData({...formData, salaoGroupName: e.target.value})}
-                               className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all"
-                             />
-                         </div>
-                         <div className="grid grid-cols-2 gap-4">
-                             <div className="space-y-1">
-                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nome do Responsável</label>
-                                 <input 
-                                   type="text"
-                                   value={formData.salaoResponsibleName || ''}
-                                   onChange={e => setFormData({...formData, salaoResponsibleName: e.target.value})}
-                                   className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all"
-                                 />
-                             </div>
-                             <div className="space-y-1">
-                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Telefone</label>
-                                 <input 
-                                   type="text"
-                                   value={formData.salaoPhone || ''}
-                                   onChange={e => setFormData({...formData, salaoPhone: e.target.value})}
-                                   className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all"
-                                 />
-                             </div>
-                         </div>
-                     </div>
-
-                     <div className="grid grid-cols-3 gap-4">
-                         <div className="space-y-1">
-                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Data do Evento</label>
-                             <input 
-                               type="date"
-                               value={formData.date || ''}
-                               onChange={e => setFormData({...formData, date: e.target.value})}
-                               className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all"
-                             />
-                         </div>
-                         <div className="space-y-1">
-                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Hora de Início</label>
-                             <input 
-                               type="time" 
-                               value={formData.time || ''}
-                               onChange={e => setFormData({...formData, time: e.target.value})}
-                               className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all"
-                             />
-                         </div>
-                         <div className="space-y-1">
-                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Hora de Término</label>
-                             <input 
-                               type="time" 
-                               value={formData.salaoEndTime || ''}
-                               onChange={e => setFormData({...formData, salaoEndTime: e.target.value})}
-                               className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all"
-                             />
-                         </div>
-                     </div>
-
-                     <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Descrição do Evento</label>
-                        <textarea 
-                          value={formData.description || ''}
-                          onChange={e => setFormData({...formData, description: e.target.value})}
-                          className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all min-h-[100px]"
-                          placeholder="Observações importantes..."
-                        />
-                     </div>
                    </>
                  )}
+
+                 {formData.type === 'consulta_exame' && (
+                     <div className="space-y-1 animate-in fade-in slide-in-from-top-2">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Acompanhante (Opcional)</label>
+                        <input 
+                          type="text" 
+                          value={formData.companion || ''}
+                          onChange={e => setFormData({...formData, companion: e.target.value})}
+                          className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm font-bold bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all"
+                          placeholder="Ex: João da Silva (Filho)"
+                        />
+                     </div>
+                 )}
+
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Descrição detalhada</label>
+                    <textarea 
+                      value={formData.description || ''}
+                      onChange={e => setFormData({...formData, description: e.target.value})}
+                      className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm bg-gray-50 focus:bg-white focus:border-[#004c99] focus:ring-4 focus:ring-blue-50 outline-none transition-all min-h-[100px]"
+                      placeholder="Observações importantes..."
+                    />
+                 </div>
                </div>
 
-               <div className="p-6 border-t border-gray-100 bg-white flex justify-end gap-3 rounded-b-[32px]">
+               <div className="p-6 border-t border-gray-100 bg-white flex justify-end gap-3 rounded-b-[32px] shrink-0">
                    <button onClick={() => setIsFormOpen(false)} className="px-6 py-4 text-xs font-black uppercase text-gray-500 hover:bg-gray-100 rounded-xl transition-all">Cancelar</button>
                    <button onClick={handleSave} className="px-8 py-4 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-xl flex items-center gap-2 hover:bg-blue-800 transition-all">Salvar</button>
                </div>

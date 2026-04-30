@@ -11,12 +11,14 @@ export interface AgendaEvent {
   professionalName: string;
   professionalRole: string;
   residentId?: string; // Optional related resident
-  type?: 'comum' | 'consulta_exame' | 'atividade_grupo' | 'triagem' | 'salao' | string;
+  type?: 'comum' | 'consulta_exame' | 'atividade_grupo' | 'triagem' | 'salao_festas' | string;
   companion?: string;
-  salaoEndTime?: string;
-  salaoResponsibleName?: string;
-  salaoPhone?: string;
-  salaoGroupName?: string;
+  // Novos campos para salão de festas
+  dates?: string[];
+  endTime?: string;
+  keyResponsible?: string;
+  responsiblePhone?: string;
+  group?: string;
 }
 
 export interface Institution {
@@ -64,8 +66,17 @@ export interface InstitutionSettings {
   logoUrl?: string;
   roles?: string[];
   muralPhone?: string;
-  telegramBotToken?: string;
-  telegramChatId?: string;
+
+  reportConfig?: {
+    institutionName: string;
+    logoUrl?: string;
+    cnpj?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    cityState?: string;
+    additionalText?: string;
+  };
 }
 
 export interface AssistedFamily {
@@ -868,8 +879,9 @@ export interface DailyRoutineLog {
 
 export interface Companion {
   id: string;
+  institutionId: string;
   name: string;
-  role: 'tecnico' | 'cuidador' | 'acompanhante';
+  role: 'tecnico' | 'cuidador' | 'acompanhante' | 'homecare tecnico' | 'homecare cuidador';
   phone: string;
 }
 
@@ -892,6 +904,7 @@ export interface MuralMessage {
   author: string;
   text: string;
   detailedContent?: string;
+  isPublic?: boolean; // If true, anyone can see detailed content. If false/undefined, only admin can.
   timestamp: number;
   likes?: string[]; // Array of usernames who liked this message
 }

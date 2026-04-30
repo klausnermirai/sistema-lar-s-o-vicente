@@ -317,7 +317,9 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, onChange,
       if (newAttendance.muralNotes) muralText += ` Notas: ${newAttendance.muralNotes}`;
       onPostToMural({
         author: newAttendance.signature || 'Fisioterapeuta',
-        text: muralText
+        text: muralText,
+        detailedContent: `Tipo: ${attendanceToSave.attendanceType}\n\nEvolução:\n${attendanceToSave.attendanceEvolution}\n\nNotas do Prontuário:\n${attendanceToSave.prontuarioNotes || 'Nenhuma'}`,
+        isPublic: !!newAttendance.muralNotes?.trim()
       });
     }
     

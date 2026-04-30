@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MuralMessage, Resident } from '../types';
 import { setLastReadTimestamp, getLastReadTimestamp } from '../lib/muralStore';
-import { fetchResidents, getAuthHeaders } from '../lib/api';
+import { fetchResidents } from '../lib/api';
 import { Send, Search, Calendar as CalendarIcon, Download, Copy, MessageCircle, Edit2, Trash2, X, Check, ThumbsUp, Users, ChevronRight, Eye } from 'lucide-react';
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -138,6 +138,7 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
         author: username,
         text: newMessage.trim(),
         timestamp: serverTimestamp(),
+        isPublic: true,
       };
       
       if (showDetailsInput && newDetailedContent.trim() && accessLevel?.toLowerCase().includes('admin')) {
@@ -145,22 +146,6 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
       }
 
       await addDoc(collection(db, 'muralMessages'), msgData);
-      
-      try {
-        const tgRes = await fetch('/api/mural/telegram', {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          body: JSON.stringify(msgData)
-        });
-        
-        console.log('Status da rota /api/mural/telegram:', tgRes.status);
-        const tgJson = await tgRes.json();
-        console.log('Resposta completa da rota:', tgJson);
-
-      } catch (err) {
-        console.error('Erro ao chamar notificação (Telegram):', err);
-      }
-
       setNewMessage('');
       setNewDetailedContent('');
       setShowDetailsInput(false);
@@ -421,14 +406,14 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
                             <MessageCircle size={12} />
                           </button>
                         )}
-                        {accessLevel?.toLowerCase().includes('admin') && msg.detailedContent && (
+                        {(accessLevel?.toLowerCase().includes('admin') || msg.isPublic) && msg.detailedContent && (
                           <button 
                             onClick={() => {
                               console.log('Visualizando detalhes:', msg.detailedContent);
                               setViewingDetailsMsg(msg);
                             }}
-                            className="p-2 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 border-2 border-white animate-pulse"
-                            title="Ver Conteúdo Detalhado"
+                            className={`p-2 rounded-full shadow-lg border-2 border-white animate-pulse transition-all ${msg.isPublic ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                            title={msg.isPublic ? "Ver Conteúdo (Público)" : "Ver Conteúdo Detalhado (Admin)"}
                           >
                             <Eye size={14} />
                           </button>

@@ -253,6 +253,8 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         onPostToMural({
           author: attendance.signature || 'Terapeuta Ocupacional',
           text: muralText,
+          detailedContent: `Tipo: ${attendance.attendanceType}\n\nEvolução:\n${attendance.attendanceEvolution}\n\nNotas do Prontuário:\n${attendance.prontuarioNotes || 'Nenhuma'}`,
+          isPublic: !!attendance.muralNotes?.trim()
         });
       }
 

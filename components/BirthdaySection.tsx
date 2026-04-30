@@ -16,6 +16,9 @@ const BirthdaySection: React.FC<BirthdaySectionProps> = ({ residents }) => {
 
   const getBirthdays = () => {
     return residents.filter(r => {
+      // Filtrar idosos desacolhidos ou arquivados
+      if (r.isArchived || r.archived) return false;
+      if (r.status && r.status !== 'ativo') return false;
       if (!r.birthDate) return false;
       const birthDate = new Date(r.birthDate + 'T12:00:00');
       if (isNaN(birthDate.getTime())) return false;

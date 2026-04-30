@@ -13,26 +13,31 @@ import {
   Stethoscope,
   RotateCcw,
   Tablet,
-  Monitor
+  Monitor,
+  Users
 } from 'lucide-react';
 import DailyRoutineTab from './DailyRoutineTab';
 import VitalSignsTab from './VitalSignsTab';
 import AppointmentTab from './AppointmentTab';
 import HandoverTab from './HandoverTab';
-import { INITIAL_COMPANIONS } from '../constants';
+import CompanionsTab from './CompanionsTab';
+import { fetchCompanions, saveCompanion, deleteCompanion } from '../lib/api';
+import { Companion, InstitutionSettings } from '../types';
 
 interface HealthCareModuleProps {
   residents: Resident[];
   onSaveResident: (resident: Resident) => void;
   onBulkSaveResidents?: (residents: Resident[]) => void;
   onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
+  settings?: InstitutionSettings | null;
 }
 
-const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveResident, onBulkSaveResidents, onPostToMural }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'sinais_vitais' | 'rotinas' | 'consultas' | 'plantao'>('rotinas');
+const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveResident, onBulkSaveResidents, onPostToMural, settings }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'sinais_vitais' | 'rotinas' | 'consultas' | 'plantao' | 'acompanhantes'>('rotinas');
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isTabletMode, setIsTabletMode] = useState(false);
+  const [companions, setCompanions] = useState<Companion[]>([]);
   const [handovers, setHandovers] = useState<ShiftHandover[]>(() => {
     try {
       const saved = localStorage.getItem('ssvp_handovers');
@@ -41,6 +46,81 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
       return [];
     }
   });
+
+  React.useEffect(() => {
+    const fetchHandovers = async () => {
+      try {
+        const saved = localStorage.getItem('ssvp_session');
+        const session = saved ? JSON.parse(saved) : null;
+        const currentInstId = session?.institutionId || session?.cnpj;
+        if (!currentInstId) return;
+
+        const response = await fetch(`/api/handovers?institutionId=${currentInstId}`, {
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.id}` }
+        });
+        if (response.ok) {
+          const apiData = await response.json();
+          setHandovers(prev => {
+            const all = [...apiData, ...prev];
+            const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
+            return unique.sort((a,b) => b.timestamp - a.timestamp);
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load handovers", err);
+      }
+    };
+    fetchHandovers();
+  }, []);
+
+  useEffect(() => {
+    const loadCompanions = async () => {
+      try {
+        const saved = localStorage.getItem('ssvp_session');
+        const session = saved ? JSON.parse(saved) : null;
+        const currentInstId = session?.institutionId || session?.cnpj;
+        if (!currentInstId) return;
+
+        const data = await fetchCompanions(currentInstId);
+        setCompanions(data);
+      } catch (err) {
+        console.error("Failed to load companions", err);
+      }
+    };
+    loadCompanions();
+  }, []);
+
+  const handleSaveCompanion = async (companion: Omit<Companion, 'id' | 'institutionId'> & { id?: string }) => {
+    try {
+      const savedItem = localStorage.getItem('ssvp_session');
+      const session = savedItem ? JSON.parse(savedItem) : null;
+      const currentInstId = session?.institutionId || session?.cnpj;
+      if (!currentInstId) return;
+
+      const toSave = { ...companion, institutionId: currentInstId };
+      const saved = await saveCompanion(toSave);
+      
+      setCompanions(prev => {
+        const exists = prev.find(c => c.id === saved.id);
+        if (exists) return prev.map(c => c.id === saved.id ? saved : c);
+        return [...prev, saved];
+      });
+    } catch (err) {
+      console.error("Failed to save companion", err);
+      alert("Erro ao salvar acompanhante");
+    }
+  };
+
+  const handleDeleteCompanion = async (id: string) => {
+    try {
+      if (!window.confirm("Deseja realmente remover este acompanhante?")) return;
+      await deleteCompanion(id);
+      setCompanions(prev => prev.filter(c => c.id !== id));
+    } catch (err) {
+      console.error("Failed to delete companion", err);
+      alert("Erro ao excluir acompanhante");
+    }
+  };
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
@@ -104,6 +184,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
         <HandoverTab 
           handovers={handovers}
           residents={residents}
+          settings={settings}
           onSaveIncident={(incident) => {
             // Save incident to each involved resident
             incident.residentIds.forEach(rid => {
@@ -116,12 +197,47 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
               }
             });
           }}
-          onSaveHandover={(handover) => {
-            const updatedHandovers = [handover, ...handovers];
-            setHandovers(updatedHandovers);
-            localStorage.setItem('ssvp_handovers', JSON.stringify(updatedHandovers));
+          onSaveHandover={async (handover) => {
+            try {
+              const savedItem = localStorage.getItem('ssvp_session');
+              const session = savedItem ? JSON.parse(savedItem) : null;
+              const currentInstId = session?.institutionId || session?.cnpj;
+              if (!currentInstId) {
+                console.warn("No session for handover");
+                return;
+              }
+              const handoverData = { ...handover, institutionId: currentInstId };
+              
+              const res = await fetch('/api/handovers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.id}` },
+                body: JSON.stringify(handoverData)
+              });
+              if (res.ok) {
+                const saved = await res.json();
+                const updatedHandovers = [saved, ...handovers].sort((a,b) => b.timestamp - a.timestamp);
+                setHandovers(updatedHandovers);
+                localStorage.setItem('ssvp_handovers', JSON.stringify(updatedHandovers));
+              }
+            } catch (err) {
+              console.error("Failed to save handover", err);
+              // Fallback
+              const updatedHandovers = [handover, ...handovers];
+              setHandovers(updatedHandovers);
+              localStorage.setItem('ssvp_handovers', JSON.stringify(updatedHandovers));
+            }
           }}
           onPostToMural={onPostToMural}
+        />
+      );
+    }
+
+    if (activeSubTab === 'acompanhantes') {
+      return (
+        <CompanionsTab 
+          companions={companions}
+          onSaveCompanion={handleSaveCompanion}
+          onDeleteCompanion={handleDeleteCompanion}
         />
       );
     }
@@ -144,7 +260,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
       return (
         <AppointmentTab 
           resident={selectedResident}
-          companions={INITIAL_COMPANIONS}
+          companions={companions}
           onUpdateResident={onSaveResident}
           onPostToMural={onPostToMural}
         />
@@ -179,7 +295,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
   return (
     <div className={`flex flex-col gap-6 animate-in fade-in duration-500 p-2 ${isTabletMode ? 'fixed inset-0 z-50 bg-gray-50 h-screen overflow-hidden' : 'h-[calc(100vh-140px)]'}`}>
       {/* Top Search Bar - Hidden in Collective Modes */}
-      {activeSubTab !== 'rotinas' && activeSubTab !== 'plantao' && (
+      {activeSubTab !== 'rotinas' && activeSubTab !== 'plantao' && activeSubTab !== 'acompanhantes' && (
         <div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-4">
              <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-[#004c99]">
@@ -297,6 +413,17 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
             <Stethoscope size={16} />
             Consultas e Exames
           </button>
+          <button
+            onClick={() => setActiveSubTab('acompanhantes')}
+            className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
+              activeSubTab === 'acompanhantes' 
+                ? 'border-[#004c99] text-[#004c99]' 
+                : 'border-transparent text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            <Users size={16} />
+            Acompanhantes
+          </button>
           </div>
           <button
             onClick={() => setIsTabletMode(!isTabletMode)}
@@ -308,7 +435,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
         </div>
 
         {/* Dynamic Content */}
-        <div className={`flex-1 ${activeSubTab === 'rotinas' || activeSubTab === 'plantao' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'} custom-scrollbar bg-gray-50/10`}>
+        <div className={`flex-1 ${activeSubTab === 'rotinas' || activeSubTab === 'plantao' || activeSubTab === 'acompanhantes' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'} custom-scrollbar bg-gray-50/10`}>
           {renderContent()}
         </div>
       </div>

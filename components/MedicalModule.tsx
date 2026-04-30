@@ -206,7 +206,8 @@ const MedicalModule: React.FC<MedicalModuleProps> = ({ residents, onSaveResident
     if (onPostToMural) {
       onPostToMural({
         author: session?.username || 'Médico',
-        text: `[Médico] Evolução clínica salva para o residente ${resident.name}.`
+        text: `[Médico] Evolução clínica salva para o residente ${resident.name}.`,
+        detailedContent: `Evolução:\n${newNote}\n\nAgendamento: ${nextAppointmentDate || 'Nenhum'} às ${nextAppointmentTime || 'Sem horário'} para ${resident.name}`
       });
     }
     alert('Evolução médica salva com sucesso!');

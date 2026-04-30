@@ -41,6 +41,7 @@ import {
 } from "../types";
 import { INITIAL_CANDIDATE, INITIAL_NURSING_SCREENING } from "../constants";
 import { saveAgendaEvent } from "../lib/agendaStore";
+import { getHtmlPrintHeader, getHtmlPrintStyles, getHtmlPrintFooter } from '../lib/pdfHelpers';
 
 interface ScreeningModuleProps {
   candidates: Candidate[];
@@ -418,6 +419,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
       <CandidateForm
         candidate={editingCandidate}
         autoPrint={shouldAutoPrint}
+        settings={settings}
         onSave={(data: any) => {
           onSave(data);
           setEditingCandidate(null);
@@ -1055,6 +1057,18 @@ function StatusManagementModal({
     onClose();
   };
 
+  const regressStage = (prevStage: CandidateStage) => {
+    const updated = { ...data, stage: prevStage };
+    onSave(updated);
+    if (onPostToMural) {
+      onPostToMural({
+        author: 'Sistema de Triagem',
+        text: `O processo do candidato(a) ${data.name} retornou para a etapa: ${prevStage.replace(/_/g, ' ').toUpperCase()}`
+      });
+    }
+    onClose();
+  };
+
   const renderStageControls = () => {
     switch (data.stage) {
       case "agendamentos":
@@ -1159,12 +1173,20 @@ function StatusManagementModal({
                 <option value="padrao">3) PRIORIDADE PADRÃO</option>
               </select>
             </div>
-            <button
-              onClick={() => advanceStage("decisao_diretoria")}
-              className="w-full py-4 bg-purple-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-purple-700 transition-all flex items-center justify-center gap-2"
-            >
-              Enviar para Parecer da Diretoria <ArrowRight size={16} />
-            </button>
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                onClick={() => regressStage("agendamentos")}
+                className="w-full py-4 bg-orange-50 border border-orange-200 text-orange-700 rounded-2xl text-[11px] font-black uppercase hover:bg-orange-100 transition-all flex items-center justify-center gap-2"
+              >
+                <ArrowLeft size={16} /> Devolver para Agendamentos
+              </button>
+              <button
+                onClick={() => advanceStage("decisao_diretoria")}
+                className="w-full py-4 bg-purple-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-purple-700 transition-all flex items-center justify-center gap-2"
+              >
+                Enviar para Parecer da Diretoria <ArrowRight size={16} />
+              </button>
+            </div>
           </div>
         );
       case "decisao_diretoria":
@@ -1194,6 +1216,13 @@ function StatusManagementModal({
               />
             </div>
             <div className="grid grid-cols-1 gap-3">
+              <button
+                onClick={() => regressStage("aguardando_vaga")}
+                className="w-full py-3.5 bg-orange-50 border border-orange-200 text-orange-700 rounded-2xl text-[11px] font-black uppercase hover:bg-orange-100 transition-all flex items-center justify-center gap-2"
+              >
+                <ArrowLeft size={16} /> Devolver para Fila de Espera
+              </button>
+
               <button
                 onClick={() => {
                   onSave(data);
@@ -1294,6 +1323,13 @@ function StatusManagementModal({
             </div>
 
             <div className="grid grid-cols-1 gap-3 pt-2">
+              <button
+                onClick={() => regressStage("decisao_diretoria")}
+                className="w-full py-3.5 bg-orange-50 border border-orange-200 text-orange-700 rounded-2xl text-[11px] font-black uppercase hover:bg-orange-100 transition-all flex items-center justify-center gap-2"
+              >
+                <ArrowLeft size={16} /> Devolver para Parecer da Diretoria
+              </button>
+
               <button
                 onClick={() => {
                   onSave(data);
@@ -1413,6 +1449,13 @@ function StatusManagementModal({
             )}
 
             <div className="flex flex-col gap-3 pt-4">
+              <button
+                onClick={() => regressStage("avaliacao_medica")}
+                className="w-full py-4 bg-orange-50 border border-orange-200 text-orange-700 rounded-2xl text-[11px] font-black uppercase hover:bg-orange-100 transition-all flex items-center justify-center gap-2 shadow-sm"
+              >
+                <ArrowLeft size={16} /> Devolver para Avaliação Médica
+              </button>
+
               <button
                 onClick={() => {
                   onSave(data);
@@ -1695,18 +1738,189 @@ const FormMultiChoice = ({ label, value, current, onClick }: any) => {
 
 
 
-function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint }: any) {
+function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settings }: any) {
   const [data, setData] = React.useState<Candidate>(candidate);
   const [isPrinting, setIsPrinting] = React.useState(false);
+
+  const handlePrintCandidate = React.useCallback(async () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const printDate = new Date().toLocaleDateString('pt-BR');
+    
+    const renderMulti = (val: any) => {
+      if (Array.isArray(val)) return val.join(', ');
+      return val || '';
+    };
+
+    const headerHtml = await getHtmlPrintHeader(settings, "Ficha de Entrevista Social");
+
+    const html = `
+      <html>
+        <head>
+          <title>Ficha de Triagem - ${data.name}</title>
+          <style>
+            ${getHtmlPrintStyles()}
+          </style>
+        </head>
+        <body>
+          ${headerHtml}
+
+          <div class="header-box">
+            <p>Módulo de Triagem e Acolhimento ILPI</p>
+          </div>
+
+          <h2 class="section-title">1. Identificação do Idoso</h2>
+          <div class="flex-row">
+            <div class="flex-col-full field"><span class="label">Nome Completo:</span><span class="value">${data.name || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Data de Nasc.:</span><span class="value">${data.birthDate ? new Date(data.birthDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''}</span></div>
+            <div class="flex-col field"><span class="label">Idade:</span><span class="value">${data.age || ''}</span></div>
+            <div class="flex-col field"><span class="label">Sexo:</span><span class="value">${data.gender || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Estado Civil:</span><span class="value">${data.maritalStatus || ''}</span></div>
+            <div class="flex-col field"><span class="label">RG:</span><span class="value">${data.rg || ''}</span></div>
+            <div class="flex-col field"><span class="label">CPF:</span><span class="value">${data.cpf || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col-full field"><span class="label">Endereço Atual:</span><span class="value">${data.address || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Telefone:</span><span class="value">${data.phone || ''}</span></div>
+          </div>
+
+          <h2 class="section-title">2. Responsável Legal / Familiar</h2>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Nome:</span><span class="value">${data.repName || ''}</span></div>
+            <div class="flex-col field"><span class="label">Parentesco:</span><span class="value">${data.repKinship || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Telefone:</span><span class="value">${data.repPhone || ''}</span></div>
+            <div class="flex-col field"><span class="label">Endereço:</span><span class="value">${data.repAddress || ''}</span></div>
+          </div>
+
+          <h2 class="section-title">3. Composição Familiar e Rede de Apoio</h2>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Reside com:</span><span class="value">${data.interview?.residesWith || ''}</span></div>
+            <div class="flex-col field"><span class="label">Possui filhos?</span><span class="value">${data.interview?.hasChildren || ''}</span></div>
+            <div class="flex-col field"><span class="label">Quantos?</span><span class="value">${data.interview?.childrenCount || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Existe cuidador?</span><span class="value">${data.interview?.hasCaregiver || ''}</span></div>
+            <div class="flex-col field"><span class="label">Rede de apoio?</span><span class="value">${data.interview?.hasSupportNetwork || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col-full field"><span class="label">Quais (Rede de apoio)?</span><span class="value">${data.interview?.supportNetworkDetails || ''}</span></div>
+          </div>
+
+          <h2 class="section-title">4. Composição Familiar (Membros)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>Parentesco</th>
+                <th>Idade</th>
+                <th>Trabalho</th>
+                <th>Renda Mensal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(data.interview?.familyTable || []).length > 0 ? data.interview.familyTable.map((m: any) => `
+                <tr>
+                  <td>${m.name || ''}</td>
+                  <td>${m.kinship || ''}</td>
+                  <td>${m.age || ''}</td>
+                  <td>${m.job || ''}</td>
+                  <td>${m.income || ''}</td>
+                </tr>
+              `).join('') : '<tr><td colspan="5" style="text-align: center; color: #666;">Nenhum membro da família detalhado.</td></tr>'}
+            </tbody>
+          </table>
+
+          <h2 class="section-title">5. Condições de Moradia</h2>
+          <div class="flex-row">
+             <div class="flex-col field"><span class="label">Tipo de Moradia:</span><span class="value">${data.interview?.housingType || ''}</span></div>
+             <div class="flex-col field"><span class="label">Valor Aluguel:</span><span class="value">${data.interview?.rentValue || ''}</span></div>
+          </div>
+
+          <h2 class="section-title">6. Situação Socioeconômica</h2>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Fonte de renda do idoso:</span><span class="value">${renderMulti(data.interview?.incomeSource)}</span></div>
+            <div class="flex-col field"><span class="label">Valor R$:</span><span class="value">${data.interview?.incomeValue || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Possui empréstimo?</span><span class="value">${data.interview?.hasLoan || ''}</span></div>
+            <div class="flex-col field"><span class="label">Valor Empréstimo R$:</span><span class="value">${data.interview?.loanValue || ''}</span></div>
+            <div class="flex-col field"><span class="label">Pode custear cuidados?</span><span class="value">${data.interview?.canAffordCare || ''}</span></div>
+          </div>
+
+          <h2 class="section-title">7. Condições de Saúde</h2>
+          <div class="flex-row">
+            <div class="flex-col-full field"><span class="label">Diagnósticos:</span><span class="value">${data.interview?.medicalDiagnoses || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Medicação contínua?</span><span class="value">${data.interview?.continuousMedication || ''}</span></div>
+            <div class="flex-col field"><span class="label">Quais?</span><span class="value">${data.interview?.medicationDetails || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Acompanhamento médico?</span><span class="value">${data.interview?.regularMedicalFollowup || ''}</span></div>
+            <div class="flex-col field"><span class="label">Comprometimento cognitivo?</span><span class="value">${data.interview?.cognitiveImpairment || ''}</span></div>
+          </div>
+          <div class="flex-row">
+             <div class="flex-col-full field"><span class="label">Detalhes Cognitivo:</span><span class="value">${data.interview?.cognitiveDetails || ''}</span></div>
+          </div>
+
+          <h2 class="section-title">8. Grau de Dependência Física</h2>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Higiene:</span><span class="value">${data.interview?.depHygiene || ''}</span></div>
+            <div class="flex-col field"><span class="label">Alimentação:</span><span class="value">${data.interview?.depFeeding || ''}</span></div>
+            <div class="flex-col field"><span class="label">Mobilidade:</span><span class="value">${data.interview?.depMobility || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Uso de Banheiro:</span><span class="value">${data.interview?.depBathroom || ''}</span></div>
+            <div class="flex-col field"><span class="label">Medicação:</span><span class="value">${data.interview?.depMedication || ''}</span></div>
+          </div>
+
+          <h2 class="section-title">9. Aspectos Psicossociais</h2>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Conflitos familiares?</span><span class="value">${data.interview?.familyConflicts || ''}</span></div>
+            <div class="flex-col-full field"><span class="label">Detalhes Conflitos:</span><span class="value">${data.interview?.conflictDetails || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Idoso concorda com acolhimento?</span><span class="value">${data.interview?.elderlyAgrees || ''}</span></div>
+            <div class="flex-col field"><span class="label">Família concorda?</span><span class="value">${data.interview?.familyAgrees || ''}</span></div>
+          </div>
+
+          <h2 class="section-title">10. Motivo do Pedido</h2>
+          <div class="paragraph">${data.interview?.requestReason || ''}</div>
+
+          <h2 class="section-title">11. Parecer Social</h2>
+          <div class="paragraph">${data.interview?.socialAnalysis || ''}</div>
+
+          ${getHtmlPrintFooter()}
+        </body>
+      </html>
+    `;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  }, [data]);
 
   React.useEffect(() => {
     if (autoPrint) {
       const timer = setTimeout(() => {
-        window.print();
+        handlePrintCandidate();
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [autoPrint]);
+  }, [autoPrint, handlePrintCandidate]);
 
   const updateField = (field: keyof Candidate, value: any) => {
     setData((prev) => ({ ...prev, [field]: value }));
@@ -1734,7 +1948,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint }: any)
   };
 
   const updateFamilyMember = (id: string, field: string, value: string) => {
-    const updatedTable = data.interview.familyTable.map((m) =>
+    const updatedTable = data.interview.familyTable.map((m: any) =>
       m.id === id ? { ...m, [field]: value } : m,
     );
     updateInterview("familyTable", updatedTable);
@@ -1743,9 +1957,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint }: any)
   const removeFamilyMember = (id: string) => {
     updateInterview(
       "familyTable",
-      data.interview.familyTable.filter((m) => m.id !== id),
+      data.interview.familyTable.filter((m: any) => m.id !== id),
     );
   };
+
 
   const interview = data.interview;
   const ns = data.nursingScreening;
@@ -1760,10 +1975,10 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint }: any)
           : "NÃO DEFINIDA";
 
   return (
-    <div id="printable-area" className="bg-gray-50 print:bg-white min-h-screen">
-      <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-in fade-in duration-500 print:max-w-full">
+    <div id="printable-area" className="bg-gray-50 min-h-screen">
+      <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-in fade-in duration-500">
       {/* Top Sticky Bar */}
-      <div className="flex items-center justify-between bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-gray-200 shadow-xl print:hidden sticky top-4 z-40">
+      <div className="flex items-center justify-between bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-gray-200 shadow-xl sticky top-4 z-40">
         <div className="flex items-center gap-4">
           <button
             onClick={onCancel}
@@ -1782,7 +1997,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint }: any)
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => window.print()}
+            onClick={handlePrintCandidate}
             className="px-6 py-3 bg-white border border-gray-200 rounded-2xl text-xs font-black uppercase flex items-center gap-2 hover:shadow-md transition-all"
           >
             <Printer size={18} /> Gerar PDF

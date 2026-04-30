@@ -2207,6 +2207,8 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
     onPostToMural({
       author: attendance.signature || 'Nutricionista',
       text: muralText,
+      detailedContent: `Motivo:\n${attendance.reason}\n\nNotas/Evolução:\n${attendance.notes}`,
+      isPublic: !!attendance.muralNotes.trim()
     });
 
     setEditingAttendance(null);
@@ -2604,7 +2606,7 @@ const PsychologicalAssessmentForm: React.FC<PsychologicalAssessmentFormProps> = 
                 <label key={item} className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
                   <input 
                     type="checkbox" 
-                    checked={formData.initialEmotionalReaction.includes(item)}
+                    checked={(formData.initialEmotionalReaction || []).includes(item)}
                     onChange={() => handleCheckboxChange('initialEmotionalReaction', item)}
                     className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
                   />
@@ -3156,6 +3158,8 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
     onPostToMural({
       author: attendance.signature || 'Psicologia',
       text: muralText,
+      detailedContent: `Tipo de Intervenção: ${attendance.interventionType}\n\nEvolução:\n${attendance.attendanceEvolution}\n\nNotas Privadas (não postadas no mural normal):\n${attendance.privateNotes || 'Nenhuma'}`,
+      isPublic: !!attendance.muralNotes.trim()
     });
 
     setEditingAttendance(null);

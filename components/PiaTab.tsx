@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { Resident, PiaData, PiaGoalStatus, PiaRevision } from '../types';
+import { Resident, PiaData, PiaGoalStatus, PiaRevision, InstitutionSettings } from '../types';
 import { Plus, Save, Edit2, CheckCircle, Clock, Printer, User, FileText, HeartPulse, Activity } from 'lucide-react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 
 interface PiaTabProps {
   resident: Resident;
   onChange: (pia: PiaData) => void;
+  settings?: InstitutionSettings | null;
 }
 
-const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
+const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange, settings }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [isAddingRevision, setIsAddingRevision] = useState(false);
   const [newRevision, setNewRevision] = useState<Partial<PiaRevision>>({});
@@ -94,15 +96,15 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
   const medStatus = resident.medicalStatus || resident.medicalOpinion || 'Sem registro médico';
   const interview = resident.interview;
 
-  const handleGeneratePDF = () => {
+  const handleGeneratePDF = async () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    let yPos = 20;
+    let yPos = 45;
 
     const checkPageBreak = (neededHeight: number) => {
-      if (yPos + neededHeight > 280) {
+      if (yPos + neededHeight > 270) {
         doc.addPage();
-        yPos = 20;
+        yPos = 45;
       }
     };
 
@@ -307,13 +309,7 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange }) => {
     }
 
     // Add page numbers
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(150, 150, 150);
-      doc.text(`Página ${i} de ${pageCount}`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
-    }
+    await addPdfHeaderAndFooter(doc, settings, 'Plano Individual de Atendimento (PIA)');
 
     doc.save(`Ficha_Completa_PIA_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };

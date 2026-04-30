@@ -281,3 +281,30 @@ export const saveGlobalVisit = async (visit: any) => {
   if (!response.ok) throw new Error('Erro ao salvar visita');
   return response.json();
 };
+
+export const fetchCompanions = async (institutionId: string) => {
+  const response = await fetch(`/api/companions?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar acompanhantes');
+  return response.json();
+};
+
+export const saveCompanion = async (companion: any) => {
+  const response = await fetch('/api/companions', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(companion)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar acompanhante');
+  return response.json();
+};
+
+export const deleteCompanion = async (id: string) => {
+  const response = await fetch(`/api/companions/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao excluir acompanhante');
+  return response.json();
+};

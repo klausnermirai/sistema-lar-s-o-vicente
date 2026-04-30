@@ -9,9 +9,9 @@ export const COLORS = {
 };
 
 export const INITIAL_COMPANIONS: Companion[] = [
-  { id: 'c1', name: 'Ana Oliveira', role: 'tecnico', phone: '(11) 98888-7777' },
-  { id: 'c2', name: 'Roberto Santos', role: 'cuidador', phone: '(11) 97777-6666' },
-  { id: 'c3', name: 'Maria Silva', role: 'acompanhante', phone: '(11) 96666-5555' },
+  { id: 'c1', institutionId: 'dummy', name: 'Ana Oliveira', role: 'tecnico', phone: '(11) 98888-7777' },
+  { id: 'c2', institutionId: 'dummy', name: 'Roberto Santos', role: 'cuidador', phone: '(11) 97777-6666' },
+  { id: 'c3', institutionId: 'dummy', name: 'Maria Silva', role: 'acompanhante', phone: '(11) 96666-5555' },
 ];
 
 export const INITIAL_NURSING_SCREENING: NursingScreening = {

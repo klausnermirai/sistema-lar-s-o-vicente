@@ -164,7 +164,7 @@ const PsychologyJobCandidatesSection: React.FC<PsychologyJobCandidatesSectionPro
                   candidate.processStatus === 'cadastro_reserva' ? 'bg-purple-100 text-purple-700' :
                   'bg-red-100 text-red-700'
                 }`}>
-                  {candidate.processStatus.replace('_', ' ')}
+                  {(candidate.processStatus || 'pendente').replace('_', ' ')}
                 </div>
               </div>
 
@@ -240,9 +240,9 @@ const JobCandidateForm: React.FC<JobCandidateFormProps> = ({ candidate, institut
     <div className="mb-4">
       <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">{label}</label>
       <div className="flex flex-wrap gap-2">
-        {['adequado', 'a_desenvolver', 'inadequado'].map((val) => (
+              {['adequado', 'a_desenvolver', 'inadequado'].map((val) => (
           <label key={val} className={`flex-1 flex justify-center items-center gap-2 p-3 rounded-xl border text-xs font-bold uppercase transition-all cursor-pointer ${
-            formData[field] === val ? 
+            (formData[field] || '') === val ? 
               (val === 'adequado' ? 'border-green-500 bg-green-50 text-green-700' : 
                val === 'a_desenvolver' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-red-500 bg-red-50 text-red-700')
               : 'border-gray-200 text-gray-500 hover:bg-gray-50'
@@ -251,7 +251,7 @@ const JobCandidateForm: React.FC<JobCandidateFormProps> = ({ candidate, institut
                type="radio"
                name={field}
                value={val}
-               checked={formData[field] === val}
+               checked={(formData[field] || '') === val}
                onChange={(e) => setFormData({...formData, [field]: e.target.value as any})}
                className="sr-only"
                required

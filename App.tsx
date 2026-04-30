@@ -408,7 +408,7 @@ const App: React.FC = () => {
       {activeRoute === AppRoute.RESIDENTS && (
         <div className="space-y-6">
           {/* Sub-navigation Tabs */}
-          <div className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <div className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-1 overflow-x-auto custom-scrollbar">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -526,6 +526,7 @@ const App: React.FC = () => {
           onSaveResident={handleSaveResident} 
           onBulkSaveResidents={handleBulkSaveResidents}
           onPostToMural={handlePostToMural}
+          settings={settings}
         />
       )}
 
@@ -537,6 +538,7 @@ const App: React.FC = () => {
           onSaveCandidate={handleSaveCandidate}
           accessLevel={session?.accessLevel}
           onPostToMural={handlePostToMural}
+          settings={settings}
         />
       )}
 
@@ -548,6 +550,7 @@ const App: React.FC = () => {
           onSaveCandidate={handleSaveCandidate}
           session={session}
           onPostToMural={handlePostToMural}
+          settings={settings}
         />
       )}
 
@@ -565,6 +568,7 @@ const App: React.FC = () => {
           residents={residents} 
           session={session}
           onSaveResident={handleSaveResident}
+          settings={settings}
         />
       )}
 

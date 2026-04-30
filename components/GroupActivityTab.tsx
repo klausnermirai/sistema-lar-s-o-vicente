@@ -172,7 +172,9 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
     if (newActivity.sharedToMural && onPostToMural && !editingId) {
       onPostToMural({
         author: newActivity.responsibleProfessional,
-        text: `Atividade em Grupo (${newActivity.type}): ${newActivity.description}.${newActivity.result ? ` Resultado: ${newActivity.result}.` : ''}`,
+        text: `Atividade em Grupo (${newActivity.type}): ${newActivity.description}`,
+        detailedContent: `Data e Hora: ${newActivity.date} às ${newActivity.time}\nCompetência: ${newActivity.competence}\nParticipantes selecionados: ${newActivity.selectedResidents?.length || 0}\n\nDescrição:\n${newActivity.description}\n\nResultado/Evolução:\n${newActivity.result || 'Sem resultado registrado.'}`,
+        isPublic: true
       });
     }
 

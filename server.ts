@@ -64,7 +64,7 @@ async function safeQuery(fn: () => Promise<any>, fallback: any = null) {
   try {
     return await fn();
   } catch (error: any) {
-    console.error(`Safe query error on ${isUsingFallback ? '(default)' : (firebaseConfig.firestoreDatabaseId || '(default)')}:`, error.message);
+    console.error(`Safe query error on ${isUsingFallback ? '(default)' : (firebaseConfig.firestoreDatabaseId || '(default)')}: CODE ${error.code} | MSG ${error.message}`);
     
     // If it's a "Not Found" error and we haven't fallen back yet, try falling back now
     if (!isUsingFallback && (error.code === 5 || error.message.includes("NOT_FOUND"))) {
@@ -131,10 +131,20 @@ async function getRealInstitutionId(idOrCnpj: string): Promise<string> {
     }
 
     // Try finding by CNPJ field
-    const snapshot = await db
-      .collection("institutions")
-      .where("cnpj", "==", idOrCnpj)
-      .get();
+    let cleanCnpj = idOrCnpj.replace(/\D/g, '');
+    let formattedCnpj = cleanCnpj;
+    if (cleanCnpj.length === 14) {
+      formattedCnpj = cleanCnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+    }
+    
+    let snapshot = await db.collection("institutions").where("cnpj", "==", formattedCnpj).get();
+    if (snapshot.empty && cleanCnpj) {
+      snapshot = await db.collection("institutions").where("cnpj", "==", cleanCnpj).get();
+    }
+    if (snapshot.empty) {
+      snapshot = await db.collection("institutions").where("cnpj", "==", idOrCnpj).get();
+    }
+    
     if (!snapshot.empty) return snapshot.docs[0].id;
     
     return idOrCnpj;
@@ -168,6 +178,26 @@ async function startServer() {
       isUsingFallback,
       environment: process.env.NODE_ENV || "development",
     });
+  });
+
+  app.get('/api/proxy-image', async (req, res) => {
+    const imageUrl = req.query.url as string;
+    if (!imageUrl) return res.status(400).send('URL missing');
+    try {
+      const fetchResponse = await fetch(imageUrl);
+      if (!fetchResponse.ok) {
+        return res.status(fetchResponse.status).send('Failed to fetch image');
+      }
+      const arrayBuffer = await fetchResponse.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const contentType = fetchResponse.headers.get('content-type') || 'image/png';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.send(buffer);
+    } catch (e: any) {
+      console.error('Image proxy error:', e);
+      res.status(500).send(e.message);
+    }
   });
 
   // --- API Routes ---
@@ -226,7 +256,7 @@ async function startServer() {
 
   app.use('/api', (req: any, res, next) => {
     // Skip auth for public endpoints
-    const publicRoutes = ['/health', '/login', '/setup'];
+    const publicRoutes = ['/health', '/login', '/setup', '/test-db', '/proxy-image'];
     if (publicRoutes.includes(req.path)) {
        return next();
     }
@@ -250,17 +280,14 @@ async function startServer() {
       };
       const formattedCnpj = formatCnpj(cleanCnpj);
 
-      const institutionsRef = db.collection('institutions');
-      let instSnapshot = await institutionsRef.where('cnpj', '==', formattedCnpj).get();
-      
-      if (instSnapshot.empty && cleanCnpj) {
-        instSnapshot = await institutionsRef.where('cnpj', '==', cleanCnpj).get();
-      }
-      if (instSnapshot.empty && cnpj) {
-        instSnapshot = await institutionsRef.where('cnpj', '==', cnpj).get();
-      }
+      const instSnapshot = await safeQuery(async () => {
+        let snap = await db.collection('institutions').where('cnpj', '==', formattedCnpj).get();
+        if (snap.empty && cleanCnpj) snap = await db.collection('institutions').where('cnpj', '==', cleanCnpj).get();
+        if (snap.empty && cnpj) snap = await db.collection('institutions').where('cnpj', '==', cnpj).get();
+        return snap;
+      });
 
-      if (instSnapshot.empty) {
+      if (!instSnapshot || instSnapshot.empty) {
         // Special case for initial setup/admin if no institutions exist yet
         if (username === 'admin' && password === 'admin123' && cnpj === '') {
            return res.json({
@@ -276,30 +303,23 @@ async function startServer() {
       const institutionData = institutionDoc.data();
       const institutionId = institutionDoc.id;
 
-      // Find user in this institution
-      const usersRef = db.collection('users');
-      
-      // TODO (Segurança): Atualmente as senhas são comparadas em texto puro. 
-      // Futuramente, as senhas devem ser hasheadas no momento do cadastro (ex: usando bcrypt ou crypto.createHash('sha256'))
-      // e aqui a comparação deve ser feita verificando o hash gerado. Ou migrar para o Firebase Authentication.
-      
-      // Tentar buscar por Firestore ID
-      let userSnapshot = await usersRef
-        .where('institutionId', '==', institutionId)
-        .where('username', '==', username)
-        .where('password', '==', password)
-        .get();
-
-      // Se não encontrar, tentar buscar por CNPJ (caso o usuário tenha sido criado com o CNPJ no institutionId)
-      if (userSnapshot.empty && cnpj) {
-        userSnapshot = await usersRef
-          .where('institutionId', '==', cnpj)
+      let userSnapshot = await safeQuery(async () => {
+        let snap = await db.collection('users')
+          .where('institutionId', '==', institutionId)
           .where('username', '==', username)
           .where('password', '==', password)
           .get();
-      }
+        if (snap.empty && cnpj) {
+          snap = await db.collection('users')
+            .where('institutionId', '==', cnpj)
+            .where('username', '==', username)
+            .where('password', '==', password)
+            .get();
+        }
+        return snap;
+      });
 
-      if (userSnapshot.empty) {
+      if (!userSnapshot || userSnapshot.empty) {
         return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
       }
 
@@ -324,9 +344,9 @@ async function startServer() {
           conferenciaId: institutionData.conferenciaId
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
-      res.status(500).json({ error: 'Erro interno no servidor.' });
+      res.status(500).json({ error: 'Erro interno no servidor: ' + error.message });
     }
   });
 
@@ -698,6 +718,21 @@ async function startServer() {
   });
 
   // Settings
+  app.get('/api/test-db', async (req, res) => {
+    try {
+      const insts = await safeQuery(async () => await db.collection('institutions').limit(1).get());
+      const users = await safeQuery(async () => await db.collection('users').limit(1).get());
+      res.json({
+        institutions: insts ? insts.docs.map((d: any) => ({ id: d.id, cnpj: d.data().cnpj, name: d.data().name })) : null,
+        users: users ? users.docs.map((d: any) => ({ id: d.id, username: d.data().username, instId: d.data().institutionId })) : null,
+        isUsingFallback,
+        firestoreDbId: firebaseConfig.firestoreDatabaseId
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get('/api/settings', async (req, res) => {
     const { institutionId } = req.query;
     if (!institutionId) return res.status(400).json({ error: 'ID da instituição não informado' });
@@ -718,9 +753,22 @@ async function startServer() {
         doc = await db.collection("institutions").doc(institutionId as string).get();
       }
 
-      // Tentar buscar por CNPJ
+      // Tentar buscar por CNPJ (formatado e não formatado)
       if (!doc || !doc.exists) {
-        const snapshot = await db.collection("institutions").where("cnpj", "==", institutionId).get();
+        let cleanCnpj = (institutionId as string).replace(/\D/g, '');
+        let formattedCnpj = cleanCnpj;
+        if (cleanCnpj.length === 14) {
+          formattedCnpj = cleanCnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+        }
+        
+        let snapshot = await db.collection("institutions").where("cnpj", "==", formattedCnpj).get();
+        if (snapshot.empty && cleanCnpj) {
+          snapshot = await db.collection("institutions").where("cnpj", "==", cleanCnpj).get();
+        }
+        if (snapshot.empty) {
+          snapshot = await db.collection("institutions").where("cnpj", "==", institutionId).get();
+        }
+        
         if (!snapshot.empty) doc = snapshot.docs[0];
       }
 
@@ -811,43 +859,6 @@ async function startServer() {
     }
   });
 
-  app.post('/api/mural/telegram', async (req, res) => {
-    const data = req.body;
-    try {
-      if (data.institutionId) {
-        const realId = await getRealInstitutionId(data.institutionId);
-        const settingsDoc = await db.collection('settings').doc(realId).get();
-        if (settingsDoc.exists) {
-          const settings = settingsDoc.data();
-          if (settings?.telegramBotToken && settings?.telegramChatId) {
-            const token = settings.telegramBotToken.replace(/^bot/i, '').trim();
-            const chatId = settings.telegramChatId.trim();
-            
-            const safeName = (data.author || 'Usuário').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            const safeContent = (data.text || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            
-            console.log('Enviando Telegram (Webhook) para', chatId);
-            const tgResponse = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: chatId,
-                text: `<b>Novo Recado no Mural</b>\nDe: ${safeName}\n\n${safeContent}`,
-                parse_mode: 'HTML'
-              })
-            });
-            const tgData = await tgResponse.json();
-            console.log('Resposta do Telegram (Webhook):', tgData);
-          }
-        }
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Erro no webhook do Telegram:', error);
-      res.status(500).json({ error: 'Erro ao enviar notificação' });
-    }
-  });
-
   app.post('/api/mural', async (req, res) => {
     const data = req.body;
     try {
@@ -864,9 +875,22 @@ async function startServer() {
     const { institutionId } = req.query;
     try {
       const realId = await getRealInstitutionId(institutionId as string);
-      const snapshot = await db.collection('users').where('institutionId', '==', realId).get();
-      const dbUsers = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived).filter((u: any) => !u.archived);
       
+      const snapshot = await safeQuery(async () => {
+        let snap = await db.collection('users').where('institutionId', '==', realId).get();
+        if (snap.empty) {
+          // Fallback: Check if they are saved under the CNPJ string
+          const instDoc = await db.collection('institutions').doc(realId).get();
+          if (instDoc.exists && instDoc.data().cnpj) {
+            snap = await db.collection('users').where('institutionId', '==', instDoc.data().cnpj).get();
+          } else if (institutionId && institutionId !== realId) {
+            snap = await db.collection('users').where('institutionId', '==', institutionId).get();
+          }
+        }
+        return snap;
+      });
+      
+      const dbUsers = snapshot ? snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived) : [];
       let finalUsers = dbUsers;
       if (institutionId === 'demo-institution-id') {
         const demoUsers = [
@@ -1285,6 +1309,44 @@ async function startServer() {
     }
   });
 
+  // Handovers API
+  app.get('/api/handovers', async (req, res) => {
+    const { institutionId } = req.query;
+    try {
+      if (!institutionId) {
+        return res.json([]);
+      }
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('handovers')
+        .where('institutionId', '==', realId)
+        .orderBy('timestamp', 'desc')
+        .get();
+      const handovers = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id }));
+      res.json(handovers);
+    } catch (error) {
+       console.error("Handover search error:", error);
+       res.status(500).json({ error: 'Erro ao buscar histórico de plantão' });
+    }
+  });
+
+  app.post('/api/handovers', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico', 'administrador']), async (req, res) => {
+    const { institutionId, ...data } = req.body;
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      
+      if (data.id && data.id.length > 20) {
+        await db.collection('handovers').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
+        res.json({ ...data, id: data.id, institutionId: realId });
+      } else {
+        const docRef = await db.collection('handovers').add({ ...data, institutionId: realId });
+        res.json({ ...data, id: docRef.id, institutionId: realId });
+      }
+    } catch (error) {
+       console.error("Handover save error:", error);
+       res.status(500).json({ error: 'Erro ao salvar plantão' });
+    }
+  });
+
   app.delete('/api/groupActivities/:id', requireRole(['assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'gerencial']), async (req, res) => {
     try {
       await db.collection('group_activities').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
@@ -1332,6 +1394,50 @@ async function startServer() {
       res.json(newItems);
     } catch (error) {
       res.status(500).json({ error: 'Erro ao salvar estoque em massa.' });
+    }
+  });
+
+  // --- Companions API ---
+  app.get('/api/companions', async (req: any, res) => {
+    const { institutionId } = req.query;
+    try {
+      if (!institutionId) return res.json([]);
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('companions')
+        .where('institutionId', '==', realId)
+        .get();
+      const companions = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
+      res.json(companions);
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao buscar acompanhantes.' });
+    }
+  });
+
+  app.post('/api/companions', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico', 'administrador']), async (req: any, res) => {
+    const { institutionId, ...data } = req.body;
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      if (data.id && data.id.length > 20) {
+        await db.collection('companions').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
+        await logAudit('update', 'companions', data.id, req, realId, `Atualização do acompanhante: ${data.name}`);
+        res.json({ ...data, id: data.id, institutionId: realId });
+      } else {
+        const docRef = await db.collection('companions').add({ ...data, institutionId: realId });
+        await logAudit('create', 'companions', docRef.id, req, realId, `Novo acompanhante cadastrado: ${data.name}`);
+        res.json({ ...data, id: docRef.id, institutionId: realId });
+      }
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao salvar acompanhante.' });
+    }
+  });
+
+  app.delete('/api/companions/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico', 'administrador']), async (req: any, res) => {
+    try {
+      await db.collection('companions').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      res.json({ success: true, message: 'Arquivado com sucesso.' });
+    } catch (error: any) {
+      if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
+      res.status(500).json({ error: 'Erro ao arquivar acompanhante.' });
     }
   });
   

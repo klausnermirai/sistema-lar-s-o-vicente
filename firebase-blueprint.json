@@ -113,6 +113,18 @@
         "situation": { "type": "string" }
       },
       "required": ["institutionId", "representativeName", "cpf"]
+    },
+    "Companion": {
+      "title": "Companion",
+      "description": "Companion for external appointments.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["tecnico", "cuidador", "acompanhante", "homecare tecnico", "homecare cuidador"] },
+        "phone": { "type": "string" }
+      },
+      "required": ["institutionId", "name", "role", "phone"]
     }
   },
   "firestore": {
@@ -143,6 +155,10 @@
     "assistedFamilies/{familyId}": {
       "schema": "AssistedFamily",
       "description": "Families assisted by conferences."
+    },
+    "companions/{companionId}": {
+      "schema": "Companion",
+      "description": "Companions for residents."
     }
   }
 }

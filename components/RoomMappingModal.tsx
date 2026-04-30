@@ -3,6 +3,7 @@ import { X, User, Home, Users, FileDown, Printer } from 'lucide-react';
 import { Resident, InstitutionSettings } from '../types';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 
 interface RoomMappingModalProps {
   isOpen: boolean;
@@ -52,18 +53,12 @@ const RoomMappingModal: React.FC<RoomMappingModalProps> = ({
 
   const allRoomIds = getRoomIdentifiers(totalRoomsCount, residents);
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     const doc = new jsPDF();
     const instName = settings?.name || 'SSVP';
     const date = new Date().toLocaleDateString('pt-BR');
 
-    doc.setFontSize(18);
-    doc.text('Mapeamento Geral de Leitos - ' + instName, 14, 20);
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Gerado em: ${date}`, 14, 28);
-
-    let yOffset = 40;
+    let yOffset = 45; // Start below the header
 
     const normalize = (s: string) => {
       const match = s.match(/\d+/);
@@ -87,8 +82,12 @@ const RoomMappingModal: React.FC<RoomMappingModalProps> = ({
       body: rows,
       theme: 'striped',
       headStyles: { fillColor: [71, 85, 105] }, // Slate 600
-      styles: { fontSize: 9 }
+      styles: { fontSize: 9 },
+      margin: { top: 45, bottom: 20 }
     });
+    
+    // Add header to all pages
+    await addPdfHeaderAndFooter(doc, settings, 'Mapeamento Geral de Leitos');
 
     doc.save(`mapeamento_geral_leitos_${instName.toLowerCase().replace(/\s+/g, '_')}.pdf`);
   };

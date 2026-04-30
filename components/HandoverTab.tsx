@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Resident, IncidentReport, ShiftHandover, MuralMessage } from '../types';
+import { Resident, IncidentReport, ShiftHandover, MuralMessage, InstitutionSettings } from '../types';
 import { 
   AlertTriangle, 
   RotateCcw, 
@@ -20,6 +20,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 
 interface HandoverTabProps {
   handovers: ShiftHandover[];
@@ -27,6 +28,7 @@ interface HandoverTabProps {
   onSaveIncident: (incident: IncidentReport) => void;
   onSaveHandover: (handover: ShiftHandover) => void;
   onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
+  settings?: InstitutionSettings | null;
 }
 
 const HandoverTab: React.FC<HandoverTabProps> = ({ 
@@ -34,10 +36,14 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
   residents, 
   onSaveIncident, 
   onSaveHandover, 
-  onPostToMural 
+  onPostToMural,
+  settings
 }) => {
   const [viewMode, setViewMode] = useState<'registrar' | 'historico'>('registrar');
-  const [selectedHistoryDate, setSelectedHistoryDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedHistoryDate, setSelectedHistoryDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
 
   const [shift, setShift] = useState<ShiftHandover['shift']>('manha');
   const [summary, setSummary] = useState('');
@@ -51,18 +57,11 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
   
   const [shareOnMural, setShareOnMural] = useState(true);
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     const doc = new jsPDF();
     const dateStr = new Date().toLocaleDateString('pt-BR');
     
-    doc.setFontSize(16);
-    doc.text(`Relatório Unificado de Plantão e Intercorrências`, 14, 20);
-    
-    doc.setFontSize(12);
-    doc.text(`Data: ${dateStr}`, 14, 28);
-    doc.text(`Turno: ${shift.toUpperCase()}`, 14, 34);
-
-    let currentY = 44;
+    let currentY = 45;
 
     // Plantão Details
     doc.setFontSize(14);
@@ -77,7 +76,8 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
         [summary || 'Nenhum relato', pendingTasks || 'Nenhuma pendência']
       ],
       headStyles: { fillColor: [0, 76, 153] },
-      styles: { cellPadding: 4, minCellHeight: 20 }
+      styles: { cellPadding: 4, minCellHeight: 20 },
+      margin: { top: 45, bottom: 20 }
     });
 
     currentY = (doc as any).lastAutoTable.finalY + 15;
@@ -106,9 +106,12 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
           ]
         ],
         headStyles: { fillColor: [220, 38, 38] },
-        styles: { cellPadding: 4, minCellHeight: 20 }
+        styles: { cellPadding: 4, minCellHeight: 20 },
+        margin: { top: 45, bottom: 20 }
       });
     }
+
+    await addPdfHeaderAndFooter(doc, settings, `Relatório Unificado de Plantão e Intercorrências - ${shift.toUpperCase()}`);
 
     doc.save(`plantao_${shift}_${dateStr.replace(/\//g, '-')}.pdf`);
   };
@@ -166,7 +169,8 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
       onPostToMural({
         author: `Relatório de Plantão - ${shift.toUpperCase()}`,
         text: `🔄 Resumo do Turno Adicionado`,
-        detailedContent: `RESUMO DO TURNO:\n${summary}\n\nPENDÊNCIAS:\n${pendingTasks || 'Nenhuma'}`
+        detailedContent: `RESUMO DO TURNO:\n${summary}\n\nPENDÊNCIAS:\n${pendingTasks || 'Nenhuma'}`,
+        isPublic: true
       });
 
       // Post Incident separately for better visibility if it exists
@@ -180,6 +184,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
           author: `🚨 INTERCORRÊNCIA [${incidentType.toUpperCase()}]`,
           text: `🚩 Nova intercorrência registrada para: ${residentNames}`,
           detailedContent: `Descrição:\n${description}\n\nConduta:\n${conduct}`,
+          isPublic: true
         });
       }
     }
@@ -197,11 +202,19 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
 
   const getIncidentsForDate = (dateStr: string) => {
     return residents.flatMap(r => (r.incidents || []).map(inc => ({ ...inc, residentName: r.name })))
-      .filter(inc => new Date(inc.timestamp).toISOString().split('T')[0] === dateStr);
+      .filter(inc => {
+        const d = new Date(inc.timestamp);
+        const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return localDate === dateStr;
+      });
   };
 
   const getHandoversForDate = (dateStr: string) => {
-    return handovers.filter(h => new Date(h.timestamp).toISOString().split('T')[0] === dateStr);
+    return handovers.filter(h => {
+      const d = new Date(h.timestamp);
+      const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return localDate === dateStr;
+    });
   };
 
   return (

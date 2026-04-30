@@ -6,11 +6,14 @@ import { Pill, Package, Clock, Users, CheckCircle2, AlertCircle, Plus, Search, C
 import { Resident, MedicationProduct, MedicationSeparationLog, MedicationAdministrationLog, Medication } from '../types';
 import MedicationTab from './MedicationTab';
 import { fetchInventory, bulkSaveInventory } from '../lib/api';
+import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
+import { InstitutionSettings } from '../types';
 
 interface MedicationModuleProps {
   residents: Resident[];
   session: any;
   onSaveResident?: (resident: Resident) => void;
+  settings?: InstitutionSettings | null;
 }
 
 const MODULES = [
@@ -20,7 +23,7 @@ const MODULES = [
   { id: 'ministracao', label: 'Ministração', icon: CheckCircle2 }
 ] as const;
 
-export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, session, onSaveResident }) => {
+export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, session, onSaveResident, settings }) => {
   const [activeTab, setActiveTab] = useState<typeof MODULES[number]['id']>('prescricao');
   const [inventory, setInventory] = useState<MedicationProduct[]>([]);
   
@@ -84,20 +87,20 @@ export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, s
           <PrescriptionListTab residents={residents} onSaveResident={onSaveResident!} />
         )}
         {activeTab === 'estoque' && (
-          <InventoryTab inventory={inventory} setInventory={handleUpdateInventory} residents={residents} />
+          <InventoryTab inventory={inventory} setInventory={handleUpdateInventory} residents={residents} settings={settings} />
         )}
         {activeTab === 'separacao' && (
-          <SeparationTab residents={residents} session={session} logs={separatedLogs} setLogs={setSeparatedLogs} inventory={inventory} setInventory={handleUpdateInventory} />
+          <SeparationTab residents={residents} session={session} logs={separatedLogs} setLogs={setSeparatedLogs} inventory={inventory} setInventory={handleUpdateInventory} settings={settings} />
         )}
         {activeTab === 'ministracao' && (
-          <AdministrationTab residents={residents} session={session} separatedLogs={separatedLogs} administeredLogs={administeredLogs} setAdministeredLogs={setAdministeredLogs} />
+          <AdministrationTab residents={residents} session={session} separatedLogs={separatedLogs} administeredLogs={administeredLogs} setAdministeredLogs={setAdministeredLogs} settings={settings} />
         )}
       </div>
     </div>
   );
 };
 
-const InventoryTab: React.FC<{ inventory: MedicationProduct[], setInventory: (inv: MedicationProduct[]) => void, residents: Resident[] }> = ({ inventory, setInventory, residents }) => {
+const InventoryTab: React.FC<{ inventory: MedicationProduct[], setInventory: (inv: MedicationProduct[]) => void, residents: Resident[], settings?: InstitutionSettings | null }> = ({ inventory, setInventory, residents, settings }) => {
   const [view, setView] = useState<'geral' | 'por_idoso' | 'sugestoes'>('geral');
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [isExitOpen, setIsExitOpen] = useState(false);
@@ -193,7 +196,7 @@ const InventoryTab: React.FC<{ inventory: MedicationProduct[], setInventory: (in
     setEntryMedConcentration('');
   };
 
-  const exportInventoryPDF = () => {
+  const exportInventoryPDF = async () => {
     const doc = new jsPDF('p', 'pt', 'a4');
     
     // Add title
@@ -252,8 +255,10 @@ const InventoryTab: React.FC<{ inventory: MedicationProduct[], setInventory: (in
       theme: 'grid',
       styles: { fontSize: 9, cellPadding: 5 },
       headStyles: { fillColor: [0, 76, 153], textColor: [255, 255, 255] },
+      margin: { top: 45, bottom: 20 }
     });
 
+    await addPdfHeaderAndFooter(doc, settings, `Relatório de Estoque - ${view === 'todos' ? 'Todos' : view === 'baixo' ? 'Baixo Estoque' : 'Vencidos/Próximos'}`);
     doc.save(`estoque_${view}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
@@ -494,8 +499,9 @@ const SeparationTab: React.FC<{
   logs: Record<string, MedicationSeparationLog>, 
   setLogs: React.Dispatch<React.SetStateAction<Record<string, MedicationSeparationLog>>>,
   inventory: MedicationProduct[],
-  setInventory: (inv: MedicationProduct[]) => void
-}> = ({ residents, session, logs, setLogs, inventory, setInventory }) => {
+  setInventory: (inv: MedicationProduct[]) => void,
+  settings?: InstitutionSettings | null
+}> = ({ residents, session, logs, setLogs, inventory, setInventory, settings }) => {
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   
   const allTimes = Array.from(new Set(residents.flatMap(r => r.medications?.flatMap(m => m.times) || []))).sort();
@@ -567,39 +573,39 @@ const SeparationTab: React.FC<{
     setCheckedMeds(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleExportPDF = () => {
-    const doc = new jsPDF('p', 'pt', 'a4');
-    doc.setFontSize(16);
-    doc.text(`Ficha de Separação - ${shift} - ${date.split('-').reverse().join('/')}`, 40, 40);
+  const handleExportPDF = async () => {
+    const doc = new jsPDF();
+    let y = 50;
     
-    let y = 80;
     residents.forEach(r => {
        const shiftMeds = getShiftMeds(r);
        if (shiftMeds.length === 0) return;
        
-       if (y > 750) {
+       if (y > 270) {
          doc.addPage();
-         y = 40;
+         y = 50;
        }
 
-       doc.setFontSize(14);
+       doc.setFontSize(12);
        doc.setFont('helvetica', 'bold');
-       doc.text(r.name, 40, y);
-       y += 20;
+       doc.text(r.name, 14, y);
+       y += 8;
        
-       doc.setFontSize(10);
+       doc.setFontSize(9);
        doc.setFont('helvetica', 'normal');
        shiftMeds.forEach(m => {
-           if (y > 780) {
+           if (y > 280) {
              doc.addPage();
-             y = 40;
+             y = 50;
            }
-           doc.rect(40, y - 9, 10, 10);
-           doc.text(`${m.name} - ${m.concentration} (${m.dose})`, 60, y);
-           y += 20;
+           doc.rect(14, y - 3, 4, 4);
+           doc.text(`${m.name} - ${m.concentration} (${m.dose})`, 22, y);
+           y += 6;
        });
-       y += 10;
+       y += 6;
     });
+
+    await addPdfHeaderAndFooter(doc, settings, `Ficha de Separação - ${shift} - ${date.split('-').reverse().join('/')}`);
     
     doc.save(`separacao_${shift}_${date}.pdf`);
   };
@@ -714,8 +720,9 @@ const AdministrationTab: React.FC<{
   session: any, 
   separatedLogs: Record<string, MedicationSeparationLog>,
   administeredLogs: Record<string, MedicationAdministrationLog[]>,
-  setAdministeredLogs: React.Dispatch<React.SetStateAction<Record<string, MedicationAdministrationLog[]>>> 
-}> = ({ residents, session, separatedLogs, administeredLogs, setAdministeredLogs }) => {
+  setAdministeredLogs: React.Dispatch<React.SetStateAction<Record<string, MedicationAdministrationLog[]>>>,
+  settings?: InstitutionSettings | null
+}> = ({ residents, session, separatedLogs, administeredLogs, setAdministeredLogs, settings }) => {
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   
   const allTimes = Array.from(new Set(residents.flatMap(r => r.medications?.flatMap(m => m.times) || []))).sort();
@@ -756,41 +763,41 @@ const AdministrationTab: React.FC<{
     });
   };
 
-  const handleExportPDF = () => {
-    const doc = new jsPDF('p', 'pt', 'a4');
-    doc.setFontSize(16);
-    doc.text(`Ficha de Ministração - ${shift} - ${date.split('-').reverse().join('/')}`, 40, 40);
+  const handleExportPDF = async () => {
+    const doc = new jsPDF();
     
-    let y = 80;
+    let y = 50;
     residents.forEach(r => {
        const logId = `${r.id}-${date}-${shift}`;
        const separation = separatedLogs[logId];
        if (!separation || separation.medications.length === 0) return;
        
-       if (y > 750) {
+       if (y > 270) {
          doc.addPage();
-         y = 40;
+         y = 50;
        }
 
-       doc.setFontSize(14);
+       doc.setFontSize(12);
        doc.setFont('helvetica', 'bold');
-       doc.text(r.name, 40, y);
-       y += 20;
+       doc.text(r.name, 14, y);
+       y += 8;
        
-       doc.setFontSize(10);
+       doc.setFontSize(9);
        doc.setFont('helvetica', 'normal');
        separation.medications.forEach(m => {
-           if (y > 780) {
+           if (y > 280) {
              doc.addPage();
-             y = 40;
+             y = 50;
            }
-           doc.rect(40, y - 9, 10, 10);
-           doc.text(`${m.medicationName} - Dose: ${m.dose}`, 60, y);
-           y += 20;
+           doc.rect(14, y - 3, 4, 4);
+           doc.text(`${m.medicationName} - Dose: ${m.dose}`, 22, y);
+           y += 6;
        });
-       y += 10;
+       y += 6;
     });
     
+    await addPdfHeaderAndFooter(doc, settings, `Ficha de Ministração - ${shift} - ${date.split('-').reverse().join('/')}`);
+
     doc.save(`ministracao_${shift}_${date}.pdf`);
   };
 

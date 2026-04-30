@@ -1,5 +1,6 @@
 
 import React, { useRef } from 'react';
+import { motion } from 'motion/react';
 import { 
   Save, 
   ArrowLeft, 
@@ -18,14 +19,18 @@ import {
   TrendingUp, 
   TrendingDown,
   Clock,
+  Printer,
+  ChevronRight,
+  ChevronDown,
+  X,
+  PlusCircle,
+  FileText,
+  ClipboardList,
   Briefcase,
   LogIn,
   LogOut,
   MapPin,
-  CreditCard,
-  FileText,
-  Printer,
-  ClipboardList
+  CreditCard
 } from 'lucide-react';
 import { 
   Resident, 
@@ -104,6 +109,11 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
   const [formData, setFormData] = React.useState<Resident>(initialData);
   const [activeTab, setActiveTab] = React.useState<SubTab>(initialTab);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [croppingImage, setCroppingImage] = React.useState<string | null>(null);
+  const [zoom, setZoom] = React.useState(1);
+  const [offset, setOffset] = React.useState({ x: 0, y: 0 });
+  const [isDrag, setIsDrag] = React.useState(false);
+  const [startPos, setStartPos] = React.useState({ x: 0, y: 0 });
 
   React.useEffect(() => {
     setActiveTab(initialTab);
@@ -112,12 +122,69 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("A imagem é muito grande. Por favor, escolha uma imagem menor que 5MB.");
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, photo: reader.result as string }));
+        setCroppingImage(reader.result as string);
+        setZoom(1);
+        setOffset({ x: 0, y: 0 });
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleCropSave = () => {
+    if (!croppingImage) return;
+
+    const img = new Image();
+    img.src = croppingImage;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 300; // Final size 300x300
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // The preview container is 256px (w-64 h-64)
+      const previewSize = 256;
+      const scale = size / previewSize;
+
+      const aspect = img.width / img.height;
+      let drawW, drawH;
+      
+      // Calculate how the image was fit in the 256px preview
+      // Line 960: objectFit: 'contain' actually makes it fit inside.
+      // But lines 954-955 set maxWidth: 'none' and height: '100%'.
+      
+      if (aspect > 1) {
+        drawH = size * zoom;
+        drawW = drawH * aspect;
+      } else {
+        drawW = size * zoom;
+        drawH = drawW / aspect;
+      }
+
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, size, size);
+      
+      // Scale offset to canvas size
+      const scaledOffsetX = offset.x * scale;
+      const scaledOffsetY = offset.y * scale;
+      
+      // Draw image centered with offset
+      const posX = (size - drawW) / 2 + scaledOffsetX;
+      const posY = (size - drawH) / 2 + scaledOffsetY;
+      
+      ctx.drawImage(img, posX, posY, drawW, drawH);
+      
+      const croppedBase64 = canvas.toDataURL('image/jpeg', 0.9);
+      setFormData(prev => ({ ...prev, photo: croppedBase64 }));
+      setCroppingImage(null);
+    };
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -428,7 +495,7 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
         </div>
       </div>
 
-      <div className="flex border-b border-gray-200 bg-white rounded-t-xl px-4 overflow-x-auto no-scrollbar no-print">
+      <div className="flex border-b border-gray-200 bg-white rounded-t-xl px-4 overflow-x-auto custom-scrollbar no-print">
         {tabs.map(tab => (
           <button 
             key={tab.id}
@@ -813,32 +880,140 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
         )}
 
         {activeTab === 'prontuario' && (
-          <ProntuarioTab resident={formData} />
+          <ProntuarioTab resident={formData} settings={settings} />
         )}
 
         {activeTab === 'prontuario-medico' && (
           <PerTab 
             resident={formData} 
             onUpdatePer={(newPer) => setFormData({ ...formData, per: newPer })} 
+            settings={settings}
           />
         )}
 
         {activeTab === 'intercorrencias' && (
-          <IntercurrenceHistoryTab resident={formData} />
+          <IntercurrenceHistoryTab resident={formData} settings={settings} />
         )}
 
         {activeTab === 'medicamentos' && (
           <MedicationTab 
             resident={formData}
             onUpdateMedications={(newMeds) => setFormData({ ...formData, medications: newMeds })}
+            settings={settings}
           />
         )}
 
         {activeTab === 'pia' && (
-          <PiaTab resident={formData} onChange={(newPia) => setFormData({ ...formData, pia: newPia })} />
+          <PiaTab 
+            resident={formData} 
+            onChange={(newPia) => setFormData({ ...formData, pia: newPia })} 
+            settings={settings}
+          />
         )}
 
       </form>
+
+      {croppingImage && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl"
+          >
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="text-sm font-black uppercase text-gray-700">Ajustar Foto</h3>
+              <button onClick={() => setCroppingImage(null)} className="p-2 hover:bg-gray-200 rounded-full">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-8 space-y-6">
+              <div 
+                className="aspect-square w-64 h-64 mx-auto bg-gray-200 rounded-xl relative overflow-hidden cursor-move border-4 border-white shadow-inner"
+                onMouseDown={(e) => {
+                  setIsDrag(true);
+                  setStartPos({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+                }}
+                onMouseMove={(e) => {
+                  if (isDrag) {
+                    setOffset({
+                      x: e.clientX - startPos.x,
+                      y: e.clientY - startPos.y
+                    });
+                  }
+                }}
+                onMouseUp={() => setIsDrag(false)}
+                onMouseLeave={() => setIsDrag(false)}
+                onTouchStart={(e) => {
+                  setIsDrag(true);
+                  const touch = e.touches[0];
+                  setStartPos({ x: touch.clientX - offset.x, y: touch.clientY - offset.y });
+                }}
+                onTouchMove={(e) => {
+                  if (isDrag) {
+                    const touch = e.touches[0];
+                    setOffset({
+                      x: touch.clientX - startPos.x,
+                      y: touch.clientY - startPos.y
+                    });
+                  }
+                }}
+                onTouchEnd={() => setIsDrag(false)}
+              >
+                <img 
+                  src={croppingImage} 
+                  alt="Ajuste" 
+                  className="absolute pointer-events-none"
+                  style={{
+                    transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+                    maxWidth: 'none',
+                    height: '100%',
+                    left: '50%',
+                    top: '50%',
+                    marginLeft: '-50%',
+                    marginTop: '-50%',
+                    objectFit: 'contain'
+                  }}
+                />
+                {/* Circular indicator to show center */}
+                <div className="absolute inset-0 border-4 border-[#004c99]/20 rounded-xl pointer-events-none"></div>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] font-black uppercase text-gray-500">
+                  <span>Zoom</span>
+                  <span>{Math.round(zoom * 100)}%</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="0.5" 
+                  max="3" 
+                  step="0.01" 
+                  value={zoom} 
+                  onChange={(e) => setZoom(parseFloat(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#004c99]"
+                />
+                <p className="text-[10px] text-gray-400 text-center uppercase mt-2 italic">Dica: Clique e arraste a foto para posicionar</p>
+              </div>
+            </div>
+            
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-3">
+              <button 
+                onClick={() => setCroppingImage(null)}
+                className="flex-1 py-3 text-[10px] font-black uppercase text-gray-500 hover:bg-gray-200 rounded-xl transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleCropSave}
+                className="flex-1 py-3 text-[10px] font-black uppercase bg-[#004c99] text-white rounded-xl shadow-lg hover:bg-[#003366] transition-all"
+              >
+                Confirmar
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };

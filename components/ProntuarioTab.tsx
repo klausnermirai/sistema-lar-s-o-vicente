@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { Resident } from '../types';
-import { Calendar, Clock, User, FileText, AlertCircle, Volume2, ChevronDown, ChevronUp, Printer } from 'lucide-react';
+import { Resident, InstitutionSettings } from '../types';
+import { Calendar, Clock, User, FileText, AlertCircle, Volume2, ChevronDown, ChevronUp, Printer, Stethoscope, Activity } from 'lucide-react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 
 interface ProntuarioTabProps {
   resident: Resident;
+  settings?: InstitutionSettings | null;
 }
 
 type TimelineEvent = {
@@ -22,7 +24,7 @@ type TimelineEvent = {
   timestamp: number;
 };
 
-const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident }) => {
+const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => {
   const [filterCompetence, setFilterCompetence] = useState<string>('');
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
@@ -351,6 +353,73 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident }) => {
       });
     }
 
+    // --- Intercorrências ---
+    resident.incidents?.forEach(inc => {
+      allEvents.push({
+        id: `incident-${inc.id}`,
+        date: inc.date,
+        competence: 'Cuidados / Enfermagem',
+        type: `Intercorrência - ${inc.type}`,
+        professional: inc.author,
+        summary: inc.description.substring(0, 100) + '...',
+        fullContent: (
+          <div className="space-y-2 text-sm">
+            <p><strong>Tipo:</strong> <span className="uppercase">{inc.type}</span></p>
+            <p><strong>Descrição:</strong> {inc.description}</p>
+            <p><strong>Conduta Toma:</strong> {inc.actionTaken}</p>
+            {inc.sharedInMural && <p className="text-amber-600 font-bold">Compartilhado no Mural</p>}
+          </div>
+        ),
+        isShared: inc.sharedInMural,
+        timestamp: new Date(`${inc.date}T${inc.time || '00:00'}`).getTime()
+      });
+    });
+
+    // --- Consultas e Exames ---
+    resident.appointments?.forEach(app => {
+      allEvents.push({
+        id: `app-${app.id}`,
+        date: app.date,
+        time: app.time,
+        competence: 'Médico / Saúde',
+        type: `Atendimento Externo - ${app.type}`,
+        professional: app.professional || 'Não informado',
+        summary: `${app.specialty || app.type} - ${app.status}`,
+        fullContent: (
+          <div className="space-y-2 text-sm">
+            <p><strong>Especialidade/Título:</strong> {app.specialty}</p>
+            <p><strong>Local:</strong> {app.location}</p>
+            <p><strong>Status:</strong> <span className="uppercase font-bold">{app.status}</span></p>
+            {app.notes && <p><strong>Observações:</strong> {app.notes}</p>}
+            {app.companionId && <p><strong>Acompanhante:</strong> {app.companionId}</p>}
+          </div>
+        ),
+        timestamp: new Date(`${app.date}T${app.time || '00:00'}`).getTime()
+      });
+    });
+
+    // --- Solicitações de Exames ---
+    resident.exams?.forEach(ex => {
+      allEvents.push({
+        id: `exam-${ex.id}`,
+        date: ex.date,
+        competence: 'Médico',
+        type: 'Solicitação de Exame',
+        professional: ex.doctorName,
+        summary: `${ex.exams.join(', ')} - ${ex.status}`,
+        fullContent: (
+          <div className="space-y-2 text-sm">
+            <p><strong>Exames:</strong> {ex.exams.join(', ')}</p>
+            {ex.otherExams && <p><strong>Outros:</strong> {ex.otherExams}</p>}
+            <p><strong>Status:</strong> <span className="uppercase font-bold">{ex.status}</span></p>
+            {ex.results && <p><strong>Resultados:</strong> {ex.results}</p>}
+            {ex.resultsDate && <p><strong>Data Resultados:</strong> {ex.resultsDate}</p>}
+          </div>
+        ),
+        timestamp: new Date(ex.date).getTime()
+      });
+    });
+
     // Sort by timestamp descending (newest first)
     return allEvents.sort((a, b) => b.timestamp - a.timestamp);
   }, [resident]);
@@ -368,29 +437,17 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident }) => {
   const accessLevel = session?.accessLevel?.toLowerCase() || '';
   const currentUser = { role: accessLevel === 'administrador' ? 'admin' : accessLevel };
 
-  const handleGeneratePDF = () => {
+  const handleGeneratePDF = async () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     
-    // Header
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text('Prontuário Multidisciplinar', pageWidth / 2, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Residente: ${resident.name}`, 14, 30);
-    doc.text(`Data de Nascimento: ${resident.birthDate || 'N/A'}`, 14, 35);
-    doc.text(`Data de Admissão: ${resident.admissionDate || 'N/A'}`, 14, 40);
-    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 45);
-
-    let yPos = 55;
+    let yPos = 45;
 
     filteredEvents.forEach((ev, index) => {
       // Check page break
       if (yPos > 270) {
         doc.addPage();
-        yPos = 20;
+        yPos = 45;
       }
 
       doc.setFont('helvetica', 'bold');
@@ -512,14 +569,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident }) => {
       yPos += 6;
     });
 
-    // Add page numbers
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(150, 150, 150);
-      doc.text(`Página ${i} de ${pageCount}`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
-    }
+    await addPdfHeaderAndFooter(doc, settings, 'Prontuário Multidisciplinar');
 
     doc.save(`Prontuario_Multidisciplinar_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };

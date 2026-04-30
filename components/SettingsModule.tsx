@@ -17,7 +17,8 @@ import {
   Settings,
   Image as ImageIcon,
   Camera,
-  CalendarCheck
+  CalendarCheck,
+  FileText
 } from 'lucide-react';
 import { User } from '../types';
 import { fetchUsers, saveUser, deleteUser, fetchSettings, saveSettings } from '../lib/api';
@@ -33,7 +34,7 @@ interface SettingsModuleProps {
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout, onSettingsChange, accessLevel, currentUserId }) => {
   const isAdmin = accessLevel === 'administrador' || accessLevel === 'gerencial';
-  const [activeTab, setActiveTab] = React.useState<'instituicao' | 'acesso' | 'perfil'>(
+  const [activeTab, setActiveTab] = React.useState<'instituicao' | 'acesso' | 'perfil' | 'relatorios'>(
     isAdmin ? 'instituicao' : 'perfil'
   );
   const [institution, setInstitution] = React.useState<any>(null);
@@ -264,6 +265,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
             >
               <ShieldCheck size={16} /> Controle de Acesso
             </button>
+            <button
+              onClick={() => setActiveTab('relatorios')}
+              className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
+                activeTab === 'relatorios' ? 'bg-[#004c99] text-white shadow-lg' : 'bg-white text-gray-400 hover:bg-gray-50 border'
+              }`}
+            >
+              <FileText size={16} /> Configuração de Relatórios
+            </button>
           </>
         )}
         <button
@@ -463,29 +472,6 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                   <p className="text-[9px] text-gray-400 mt-1 uppercase font-bold text-blue-600">Este número será usado para enviar as notificações e exportações do mural.</p>
                 </div>
 
-                <div className="space-y-1 mt-4">
-                  <label className="text-[10px] font-black text-gray-400 uppercase">Token do Bot (Telegram)</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: 123456789:AA..."
-                    value={institution.telegramBotToken || ''}
-                    onChange={e => setInstitution({ ...institution, telegramBotToken: e.target.value })}
-                    className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
-
-                <div className="space-y-1 mt-4">
-                  <label className="text-[10px] font-black text-gray-400 uppercase">Chat ID do Grupo/Canal (Telegram)</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: -10012345678"
-                    value={institution.telegramChatId || ''}
-                    onChange={e => setInstitution({ ...institution, telegramChatId: e.target.value })}
-                    className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
-                  />
-                  <p className="text-[9px] text-gray-400 mt-1 uppercase font-bold text-blue-600">As mensagens do mural serão encaminhadas automaticamente.</p>
-                </div>
-
                 <div className="md:col-span-2 space-y-4 pt-4 border-t border-dashed">
                   <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Linhagem Hierárquica SSVP (IDs)</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -633,6 +619,168 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
               <div className="pt-4">
                 <button type="submit" className="px-10 py-4 bg-[#004c99] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 flex items-center gap-2 transition-all">
                   <Save size={18} /> Salvar Configurações
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {activeTab === 'relatorios' && isAdmin && institution && (
+          <form onSubmit={handleSaveInstitution} className="bg-white rounded-3xl border shadow-sm animate-in slide-in-from-right duration-300 overflow-hidden">
+            <div className="p-8 border-b bg-gray-50 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-gray-900 uppercase tracking-tighter">Cabeçalho de Relatórios</h2>
+                <p className="text-[10px] font-bold text-gray-500 uppercase mt-1">Configure os dados que aparecerão no topo dos PDFs gerados pelo sistema.</p>
+              </div>
+            </div>
+
+            <div className="p-8 space-y-10">
+              {/* Logo do Cabeçalho */}
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-4">Logotipo para Relatórios</label>
+                <div className="flex items-center gap-6">
+                  <div className="w-32 h-32 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center relative overflow-hidden group">
+                    {institution.reportConfig?.logoUrl || institution.logoUrl ? (
+                      <>
+                        <img src={institution.reportConfig?.logoUrl || institution.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
+                          <ImageIcon className="text-white" size={24} />
+                        </div>
+                      </>
+                    ) : (
+                      <ImageIcon className="text-gray-300" size={32} />
+                    )}
+                    <input 
+                      type="file" 
+                      accept="image/*"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={(e) => {
+                         const file = e.target.files?.[0];
+                         if (file) {
+                           const reader = new FileReader();
+                           reader.onloadend = () => {
+                             setInstitution((prev: any) => ({
+                               ...prev,
+                               reportConfig: {
+                                 ...prev.reportConfig,
+                                 logoUrl: reader.result as string
+                               }
+                             }));
+                           };
+                           reader.readAsDataURL(file);
+                         }
+                      }}
+                    />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <p className="text-xs font-bold text-gray-500">Faça upload da logo da sua instituição para os documentos impressos.</p>
+                    <p className="text-[10px] text-gray-400">Recomendado: Imagem retangular ou quadrada, fundo transparente (PNG).</p>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setInstitution((prev: any) => ({
+                          ...prev,
+                          reportConfig: {
+                            ...prev.reportConfig,
+                            logoUrl: '' // limpa
+                          }
+                        }));
+                      }}
+                      className="text-[10px] font-black text-red-500 uppercase underline"
+                    >
+                      Remover logo do relatório
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Informações do Cabeçalho */}
+              <div className="space-y-6">
+                <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest border-b pb-2">Informações da Instituição</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Nome para o Relatório</label>
+                    <input 
+                      type="text" 
+                      value={institution.reportConfig?.institutionName || ''}
+                      onChange={e => setInstitution({...institution, reportConfig: {...institution.reportConfig, institutionName: e.target.value}})}
+                      placeholder="Ex: Obra Unida Lar São Vicente de Paulo"
+                      className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                    />
+                    <p className="text-[9px] text-gray-400 mt-1">Se vazio, usará o nome global da instituição.</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">CNPJ</label>
+                    <input 
+                      type="text" 
+                      value={institution.reportConfig?.cnpj || ''}
+                      onChange={e => setInstitution({...institution, reportConfig: {...institution.reportConfig, cnpj: e.target.value}})}
+                      className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Endereço Completo</label>
+                    <input 
+                      type="text" 
+                      value={institution.reportConfig?.address || ''}
+                      onChange={e => setInstitution({...institution, reportConfig: {...institution.reportConfig, address: e.target.value}})}
+                      placeholder="Ex: Rua São Vicente, 100 - Centro"
+                      className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Cidade / UF</label>
+                    <input 
+                      type="text" 
+                      value={institution.reportConfig?.cityState || ''}
+                      onChange={e => setInstitution({...institution, reportConfig: {...institution.reportConfig, cityState: e.target.value}})}
+                      placeholder="Ex: São Paulo - SP"
+                      className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Telefone</label>
+                    <input 
+                      type="text" 
+                      value={institution.reportConfig?.phone || ''}
+                      onChange={e => setInstitution({...institution, reportConfig: {...institution.reportConfig, phone: e.target.value}})}
+                      className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">E-mail</label>
+                    <input 
+                      type="email" 
+                      value={institution.reportConfig?.email || ''}
+                      onChange={e => setInstitution({...institution, reportConfig: {...institution.reportConfig, email: e.target.value}})}
+                      className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Texto Complementar</label>
+                  <input 
+                    type="text" 
+                    value={institution.reportConfig?.additionalText || ''}
+                    onChange={e => setInstitution({...institution, reportConfig: {...institution.reportConfig, additionalText: e.target.value}})}
+                    placeholder="Ex: Reconhecida de Utilidade Pública pelo Decreto No. 1234"
+                    className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                  />
+                  <p className="text-[9px] text-gray-400 mt-1">Este texto aparecerá abaixo dos dados principais no cabeçalho do PDF.</p>
+                </div>
+              </div>
+
+              <div className="pt-8 border-t flex justify-end">
+                <button type="submit" className="px-10 py-4 bg-[#004c99] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 flex items-center gap-2 transition-all">
+                  <Save size={18} /> Salvar Cabeçalho
                 </button>
               </div>
             </div>
