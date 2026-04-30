@@ -147,13 +147,18 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
       await addDoc(collection(db, 'muralMessages'), msgData);
       
       try {
-        await fetch('/api/mural/telegram', {
+        const tgRes = await fetch('/api/mural/telegram', {
           method: 'POST',
           headers: getAuthHeaders(),
           body: JSON.stringify(msgData)
         });
+        
+        console.log('Status da rota /api/mural/telegram:', tgRes.status);
+        const tgJson = await tgRes.json();
+        console.log('Resposta completa da rota:', tgJson);
+
       } catch (err) {
-        console.error('Erro ao chamar notificação:', err);
+        console.error('Erro ao chamar notificação (Telegram):', err);
       }
 
       setNewMessage('');
