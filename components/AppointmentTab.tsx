@@ -20,14 +20,14 @@ import { motion, AnimatePresence } from 'motion/react';
 interface AppointmentTabProps {
   resident: Resident;
   companions: Companion[];
-  onUpdateAppointments: (appointments: Appointment[]) => void;
+  onUpdateResident: (resident: Resident) => void;
   onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
 }
 
 const AppointmentTab: React.FC<AppointmentTabProps> = ({ 
   resident, 
   companions, 
-  onUpdateAppointments,
+  onUpdateResident,
   onPostToMural 
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -39,8 +39,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
     time: '09:00',
     location: '',
     type: 'consulta',
-    companionId: companions[0]?.id || '',
-    notifyFamily: true
+    companionId: companions[0]?.id || ''
   };
 
   const [formData, setFormData] = useState(initialFormState);
@@ -59,7 +58,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
     };
     
     const updatedAppointments = [...(resident.appointments || []), newAppointment];
-    onUpdateAppointments(updatedAppointments);
+    onUpdateResident({ ...resident, appointments: updatedAppointments });
     setIsModalOpen(false);
   };
 
@@ -72,11 +71,33 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
         : app
     );
 
-    onUpdateAppointments(updatedAppointments);
+    const newProgress = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      professionalName: `Retorno de ${selectedAppointment.type === 'consulta' ? 'Consulta Externa' : 'Exame Externo'}`,
+      note: `Local: ${selectedAppointment.location}\nRelatório: ${notes}`
+    };
+
+    const currentPer = resident.per || {
+      lastUpdated: new Date().toISOString(),
+      vitalSignsHistory: [],
+      diagnoses: [],
+      allergies: '',
+      clinicalHistory: '',
+      functionalStatus: { mobility: '', continence: '', consciousness: '', dependencyLevel: '' }
+    };
+
+    const updatedPer = {
+      ...currentPer,
+      lastUpdated: new Date().toISOString(),
+      clinicalProgress: [newProgress, ...(currentPer.clinicalProgress || [])]
+    };
+
+    onUpdateResident({ ...resident, appointments: updatedAppointments, per: updatedPer });
 
     // Post to Mural
     onPostToMural({
-      author: 'Sistema de Agendamento',
+      author: 'Sistema de Cuidados Clínicos',
       text: `Pós-${selectedAppointment.type === 'consulta' ? 'Consulta' : 'Exame'} - ${resident.name}: ${notes}`
     });
 
@@ -138,7 +159,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
                     </div>
                     <div className="flex items-center gap-2 text-xs font-bold text-gray-500 mt-1">
                       <MapPin size={14} className="text-gray-400" />
-                      {app.location}
+                      {app.location} {app.specialty ? `- ${app.specialty}` : ''} {app.professional ? `(${app.professional})` : ''}
                     </div>
                     <div className="flex items-center gap-2 text-[10px] font-black text-blue-600 uppercase tracking-widest mt-2 bg-blue-50/50 w-fit px-2 py-1 rounded-lg">
                       <User size={12} />
@@ -159,12 +180,6 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
                     </button>
                   </div>
                 </div>
-                
-                {app.notifyFamily && (
-                  <div className="mt-4 flex items-center gap-2 text-[8px] font-black text-orange-500 uppercase tracking-widest border-t pt-2">
-                    <Bell size={10} /> Notificação familiar ativa
-                  </div>
-                )}
               </div>
             ))
           )}
@@ -184,7 +199,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{app.type} realizado</span>
-                    <h5 className="text-xs font-black text-gray-800 uppercase mt-1">{new Date(app.date).toLocaleDateString('pt-BR')} - {app.location}</h5>
+                    <h5 className="text-xs font-black text-gray-800 uppercase mt-1">{new Date(app.date).toLocaleDateString('pt-BR')} - {app.location} {app.specialty ? `- ${app.specialty}` : ''}</h5>
                   </div>
                   <CheckCircle2 size={16} className="text-green-500" />
                 </div>
@@ -256,6 +271,29 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
 
               <div className="grid grid-cols-2 gap-6">
                 <div>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Especialidade / Exame</label>
+                  <input 
+                    type="text" 
+                    placeholder="Ex: Cardiologia"
+                    value={formData.specialty || ''}
+                    onChange={e => setFormData({...formData, specialty: e.target.value})}
+                    className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-black outline-none focus:bg-white transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Médico / Profissional</label>
+                  <input 
+                    type="text" 
+                    placeholder="Ex: Dr. João"
+                    value={formData.professional || ''}
+                    onChange={e => setFormData({...formData, professional: e.target.value})}
+                    className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-black outline-none focus:bg-white transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div>
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Tipo</label>
                   <select 
                     value={formData.type}
@@ -281,19 +319,6 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
                   </select>
                 </div>
               </div>
-
-              <button 
-                onClick={() => setFormData({...formData, notifyFamily: !formData.notifyFamily})}
-                className={`w-full p-4 rounded-2xl border-2 flex items-center justify-between transition-all ${formData.notifyFamily ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-gray-50 border-gray-100 text-gray-400'}`}
-              >
-                <div className="flex items-center gap-3">
-                  <Bell size={20} />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Notificar família automaticamente</span>
-                </div>
-                <div className={`w-10 h-6 rounded-full relative transition-colors ${formData.notifyFamily ? 'bg-orange-500' : 'bg-gray-200'}`}>
-                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${formData.notifyFamily ? 'left-5' : 'left-1'}`}></div>
-                </div>
-              </button>
             </div>
 
             <div className="p-8 border-t bg-gray-50 flex gap-4">

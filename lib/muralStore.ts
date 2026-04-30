@@ -19,6 +19,27 @@ export const saveMuralMessage = (message: MuralMessage) => {
   window.dispatchEvent(new Event('mural_updated'));
 };
 
+export const toggleMuralLike = (messageId: string, username: string) => {
+  const saved = localStorage.getItem(MURAL_KEY);
+  if (!saved) return;
+  const allMessages: MuralMessage[] = JSON.parse(saved);
+  
+  const updatedMessages = allMessages.map(msg => {
+    if (msg.id === messageId) {
+      const likes = msg.likes || [];
+      if (likes.includes(username)) {
+        return { ...msg, likes: likes.filter(u => u !== username) };
+      } else {
+        return { ...msg, likes: [...likes, username] };
+      }
+    }
+    return msg;
+  });
+  
+  localStorage.setItem(MURAL_KEY, JSON.stringify(updatedMessages));
+  window.dispatchEvent(new Event('mural_updated'));
+};
+
 export const getLastReadTimestamp = (institutionId: string, username: string): number => {
   const key = `ssvp_mural_read_${institutionId}_${username}`;
   const saved = localStorage.getItem(key);

@@ -14,26 +14,14 @@
         font-family: 'Inter', sans-serif;
       }
       @media print {
-        body * {
-          visibility: hidden;
-        }
-        #printable-area, #printable-area * {
-          visibility: visible;
-        }
-        #printable-area {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 100%;
-          background: white !important;
-          color: black !important;
-        }
-        .no-print {
-          display: none !important;
-        }
         @page {
-          size: auto;
-          margin: 10mm;
+          size: portrait;
+          margin: 15mm;
+        }
+        body {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          background: white !important;
         }
       }
       /* Custom scrollbar for better UX */
@@ -72,6 +60,20 @@
       }
       .custom-scrollbar-gray::-webkit-scrollbar-thumb:hover {
         background: rgba(0, 0, 0, 0.4);
+      }
+      .sidebar-scrollbar::-webkit-scrollbar {
+        width: 6px;
+      }
+      .sidebar-scrollbar::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+      }
+      .sidebar-scrollbar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
+      }
+      .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.4);
       }
     </style>
   <script type="importmap">

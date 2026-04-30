@@ -50,6 +50,7 @@ interface ScreeningModuleProps {
   residents: Resident[];
   onAdmit: (candidate: Candidate) => void;
   settings?: InstitutionSettings | null;
+  onPostToMural?: any;
 }
 
 const STAGE_THEMES: Record<
@@ -122,6 +123,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
   residents,
   onAdmit,
   settings,
+  onPostToMural,
 }) => {
   const [editingCandidateState, setEditingCandidateState] = React.useState<Candidate | null>(null);
 
@@ -409,18 +411,26 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
     setSelectedStage("agendamentos");
   };
 
+  const [shouldAutoPrint, setShouldAutoPrint] = React.useState(false);
+
   if (editingCandidate) {
     return (
       <CandidateForm
         candidate={editingCandidate}
-        onSave={(data) => {
+        autoPrint={shouldAutoPrint}
+        onSave={(data: any) => {
           onSave(data);
           setEditingCandidate(null);
+          setShouldAutoPrint(false);
         }}
-        onCancel={() => setEditingCandidate(null)}
+        onCancel={() => {
+          setEditingCandidate(null);
+          setShouldAutoPrint(false);
+        }}
         onAdmit={() => {
           onAdmit(editingCandidate);
           setEditingCandidate(null);
+          setShouldAutoPrint(false);
         }}
       />
     );
@@ -448,7 +458,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       {/* Header Superior */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl border border-gray-100 shadow-sm no-print gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl border border-gray-100 shadow-sm print:hidden gap-4">
         <div>
           <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">
             Fluxo de Triagem
@@ -503,7 +513,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
       </div>
 
       {/* Cards de Resumo de Ocupação */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 no-print">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden">
         {/* Card 1: Homens */}
         <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4 group hover:shadow-md transition-all">
           <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:scale-110 transition-transform">
@@ -554,7 +564,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
       </div>
 
       {/* Tabs de Status */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 no-print overflow-x-auto pb-2 no-scrollbar">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 print:hidden overflow-x-auto pb-2 no-scrollbar">
         {stages.map((stage) => {
           const count = allCandidates.filter((c) => 
             stage.id === "agendamentos" ? (c.stage === "agendamentos" || c.stage === "entrevista") : c.stage === stage.id
@@ -708,7 +718,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
       </div>
 
       {/* Histórico e Acolhidos */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 no-print">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 print:hidden">
         <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="p-6 border-b flex items-center justify-between bg-red-50/10">
             <div className="flex items-center gap-3">
@@ -810,9 +820,10 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
             onSave(data);
             setManagingCandidate(null);
           }}
-          onEdit={() => {
+          onEdit={(autoPrint?: boolean) => {
             setEditingCandidate(managingCandidate);
             setManagingCandidate(null);
+            if (autoPrint) setShouldAutoPrint(true);
           }}
           onOpenFullForm={(cand: Candidate) => {
             setEditingCandidate(cand);
@@ -826,6 +837,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
             onDelete(id);
             setManagingCandidate(null);
           }}
+          onPostToMural={onPostToMural}
         />
       )}
     </div>
@@ -1021,6 +1033,7 @@ function StatusManagementModal({
   onAdmit,
   onDelete,
   onOpenFullForm,
+  onPostToMural,
 }: any) {
   const [data, setData] = React.useState<Candidate>(candidate);
   const [view, setView] = React.useState<"update" | "archive">("update");
@@ -1033,6 +1046,12 @@ function StatusManagementModal({
   const advanceStage = (nextStage: CandidateStage) => {
     const updated = { ...data, stage: nextStage };
     onSave(updated);
+    if (onPostToMural) {
+      onPostToMural({
+        author: 'Sistema de Triagem',
+        text: `O candidato(a) ${data.name} avançou para a etapa de triagem: ${nextStage.replace(/_/g, ' ').toUpperCase()}`
+      });
+    }
     onClose();
   };
 
@@ -1178,6 +1197,23 @@ function StatusManagementModal({
               <button
                 onClick={() => {
                   onSave(data);
+                  onEdit(true);
+                }}
+                className="w-full py-3.5 bg-gray-900 border-2 border-gray-900 text-white rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+              >
+                <Printer size={16} /> Acessar Ficha p/ Gerar PDF
+              </button>
+
+              <button
+                onClick={() => {
+                  onSave(data);
+                  if (onPostToMural && data.boardOpinion) {
+                    onPostToMural({
+                      author: 'Sistema de Triagem',
+                      text: `Foi registrado um parecer da diretoria para o candidato(a) ${data.name}.`,
+                      detailedContent: `Parecer da Diretoria:\n${data.boardOpinion}`
+                    });
+                  }
                   onClose();
                 }}
                 className="w-full py-3.5 bg-white border-2 border-purple-600 text-purple-600 rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-purple-50 transition-all flex items-center justify-center gap-2"
@@ -1261,6 +1297,23 @@ function StatusManagementModal({
               <button
                 onClick={() => {
                   onSave(data);
+                  onEdit(true);
+                }}
+                className="w-full py-3.5 bg-gray-900 border-2 border-gray-900 text-white rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+              >
+                <Printer size={16} /> Acessar Ficha p/ Gerar PDF
+              </button>
+              
+              <button
+                onClick={() => {
+                  onSave(data);
+                  if (onPostToMural && (data.medicalOpinion || data.medicalStatus)) {
+                    onPostToMural({
+                      author: 'Sistema de Triagem',
+                      text: `Foi registrado um parecer médico para o candidato(a) ${data.name}.`,
+                      detailedContent: `Status: ${data.medicalStatus}\n\nParecer: ${data.medicalOpinion || 'Nenhum'}`
+                    });
+                  }
                   onClose();
                 }}
                 className="w-full py-3.5 bg-white border-2 border-teal-600 text-teal-600 rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-teal-50 transition-all flex items-center justify-center gap-2"
@@ -1281,231 +1334,7 @@ function StatusManagementModal({
         );
       case "integracao":
         const handleGenerateFullReport = () => {
-          const printWindow = window.open("", "_blank");
-          if (!printWindow) return;
-
-          const priorityLabel =
-            data.priority === "social_urgente"
-              ? "SOCIAL (URGENTE)"
-              : data.priority === "dependencia_duvidosa"
-                ? "DEP. DUVIDOSA"
-                : data.priority === "padrao"
-                  ? "PRIORIDADE PADRÃO"
-                  : "NÃO DEFINIDA";
-
-          const interview = data.interview;
-          const ns = data.nursingScreening;
-
-          let html = `
-            <html>
-              <head>
-                <title>Relatório Consolidado de Triagem - ${data.name}</title>
-                <style>
-                  body { font-family: 'Inter', system-ui, sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; max-width: 1000px; margin: auto; }
-                  .header { text-align: center; border-bottom: 4px solid #004c99; margin-bottom: 30px; padding-bottom: 20px; }
-                  .header h1 { margin: 0; font-size: 24px; text-transform: uppercase; color: #004c99; font-weight: 900; }
-                  .header p { margin: 5px 0 0; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
-                  .section { margin-bottom: 25px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; page-break-inside: avoid; }
-                  .section-title { background: #f8fafc; padding: 10px 15px; font-size: 13px; font-weight: 900; text-transform: uppercase; color: #004c99; border-bottom: 1px solid #e2e8f0; }
-                  .section-content { padding: 15px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
-                  .col-span-2 { grid-column: span 2; }
-                  .col-span-3 { grid-column: span 3; }
-                  .field { margin-bottom: 5px; }
-                  .label { font-size: 10px; font-weight: 900; text-transform: uppercase; color: #64748b; display: block; margin-bottom: 2px; }
-                  .value { font-size: 12px; font-weight: 600; color: #1e293b; }
-                  .text-block { background: #f1f5f9; padding: 12px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; margin-top: 5px; }
-                  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
-                  th { background: #f1f5f9; border: 1px solid #e2e8f0; padding: 8px; text-align: left; font-weight: 900; text-transform: uppercase; color: #475569; }
-                  td { border: 1px solid #e2e8f0; padding: 8px; }
-                  .footer { margin-top: 40px; font-size: 10px; text-align: center; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 20px; }
-                  @media print { .no-print { display: none; } body { padding: 0; } }
-                </style>
-              </head>
-              <body>
-                <div class="header">
-                  <h1>Relatório Consolidado de Triagem e Admissão</h1>
-                  <p>Candidato: ${data.name} | Gerado em: ${new Date().toLocaleString("pt-BR")}</p>
-                </div>
-
-                <!-- 1. IDENTIFICAÇÃO E AGENDAMENTO -->
-                <div class="section">
-                  <div class="section-title">1. Dados de Identificação e Agendamento</div>
-                  <div class="section-content">
-                    <div class="field"><span class="label">Nome Completo</span><span class="value">${data.name || "-"}</span></div>
-                    <div class="field"><span class="label">Data de Nascimento / Idade</span><span class="value">${data.birthDate || "-"} / ${data.age || "-"} anos</span></div>
-                    <div class="field"><span class="label">Gênero</span><span class="value">${data.gender || "-"}</span></div>
-                    
-                    <div class="field"><span class="label">CPF</span><span class="value">${data.cpf || "-"}</span></div>
-                    <div class="field"><span class="label">Telefone</span><span class="value">${data.phone || "-"}</span></div>
-                    <div class="field"><span class="label">Estado Civil</span><span class="value">${data.maritalStatus || "-"}</span></div>
-
-                    <div class="field col-span-2"><span class="label">Endereço</span><span class="value">${data.address || "-"}</span></div>
-                    <div class="field"><span class="label">Fila de Espera / Prioridade</span><span class="value">${priorityLabel}</span></div>
-
-                    <div class="field"><span class="label">Origem do Pedido</span><span class="value">${data.requestOrigin || "-"}</span></div>
-                    <div class="field col-span-2"><span class="label">Anotações do Agendamento / Histórico</span><span class="value">${data.requestDescription || "-"}</span></div>
-                  </div>
-                </div>
-
-                <!-- 2. INFORMAÇÕES SOCIOFAMILIARES (Entrevista Social) -->
-                ${interview ? `
-                <div class="section">
-                  <div class="section-title">2. Relatório de Entrevista Social e Dinâmica Familiar</div>
-                  <div class="section-content">
-                    <div class="field"><span class="label">Responsável Legal</span><span class="value">${data.repName || "-"}</span></div>
-                    <div class="field"><span class="label">Parentesco</span><span class="value">${data.repKinship || "-"}</span></div>
-                    <div class="field"><span class="label">Telefone Resp.</span><span class="value">${data.repPhone || "-"}</span></div>
-
-                    <div class="field"><span class="label">Moradia</span><span class="value">${interview.housingType === "propria" ? "Própria" : interview.housingType === "alugada" ? "Alugada (R$ " + (interview.rentValue || "0") + ")" : interview.housingType === "cedida" ? "Cedida" : "Outro"}</span></div>
-                    <div class="field"><span class="label">Fonte de Renda</span><span class="value">${interview.incomeSource === 'aposentadoria' ? 'Aposentadoria' : interview.incomeSource === 'bpc' ? 'BPC / LOAS' : interview.incomeSource === 'sem_renda' ? 'Sem Renda' : interview.incomeSource || '-'}</span></div>
-                    <div class="field"><span class="label">Valor Renda / Empréstimos</span><span class="value">R$ ${interview.incomeValue || "0"} ${interview.hasLoan === "sim" && interview.loanValue ? "(Empréstimos: R$ " + interview.loanValue + ")" : ""}</span></div>
-
-                    <div class="field col-span-3">
-                      <span class="label">Composição Familiar</span>
-                      ${interview.familyTable?.length > 0 ? `
-                        <table>
-                          <tr><th>Nome</th><th>Idade</th><th>Parentesco</th><th>Ocupação / Renda</th><th>Condição de Saúde</th></tr>
-                          ${interview.familyTable.map(member => `
-                            <tr>
-                              <td>${member.name || "-"}</td>
-                              <td>${member.age || "-"}</td>
-                              <td>${member.kinship || "-"}</td>
-                              <td>${member.occupation || "-"} ${member.income ? "(R$ " + member.income + ")" : ""}</td>
-                              <td>${member.healthCondition || "-"}</td>
-                            </tr>
-                          `).join('')}
-                        </table>
-                      ` : "<div class='text-block'>Nenhum familiar registrado.</div>"}
-                    </div>
-
-                    <div class="field"><span class="label">Reside com</span><span class="value">${interview.residesWith || "-"}</span></div>
-                    <div class="field"><span class="label">Dinâmica Familiar e Conflitos</span><span class="value">${interview.familyConflicts === "sim" ? "Sim. Detalhes: " + (interview.conflictDetails || "-") : "Não relata"}</span></div>
-                    <div class="field"><span class="label">Rede de Apoio</span><span class="value">${interview.hasSupportNetwork === "sim" ? "Sim. " + (interview.supportNetworkDetails || "-") : "Não possui"}</span></div>
-
-                    <div class="field col-span-3">
-                      <span class="label">Motivo Inicial do Pedido de Vaga</span>
-                      <div class="text-block">${interview.requestReason || "Não registrado"}</div>
-                    </div>
-
-                    <div class="field col-span-3">
-                      <span class="label">Parecer e Diagnóstico da Assistente Social</span>
-                      <div class="text-block">${interview.socialAnalysis || "Não registrado"}</div>
-                    </div>
-                  </div>
-                </div>
-                ` : ""}
-
-                <!-- 3. PARECER DA DIRETORIA -->
-                <div class="section">
-                  <div class="section-title">3. Validação e Parecer da Diretoria</div>
-                  <div class="section-content">
-                    <div class="field col-span-3">
-                      <span class="label">Decisão Colegiada Administrativa</span>
-                      <div class="text-block">${data.boardOpinion || "Não avaliado pela diretoria."}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 4. TRIAGEM DE ENFERMAGEM -->
-                ${ns ? `
-                <div class="section">
-                  <div class="section-title">4. Avaliação e Triagem de Enfermagem Pré-Admissional</div>
-                  <div class="section-content">
-                    <div class="field"><span class="label">Profissional / Data</span><span class="value">${ns.professionalName || "-"} - ${ns.date ? new Date(ns.date).toLocaleDateString("pt-BR") : "-"}</span></div>
-                    <div class="field"><span class="label">Pressão Arterial / FC</span><span class="value">${ns.vitalSigns?.paSystolic || "-"}/${ns.vitalSigns?.paDiastolic || "-"} mmHg | FC: ${ns.vitalSigns?.fc || "-"} bpm</span></div>
-                    <div class="field"><span class="label">Sat O2 / HGT</span><span class="value">${ns.vitalSigns?.spo2 || "-"}% | HGT: ${ns.vitalSigns?.hgtValue || "-"} mg/dL (${ns.vitalSigns?.hgtType || "-"})</span></div>
-
-                    <div class="field"><span class="label">Peso e Estatura</span><span class="value">Peso: ${ns.vitalSigns?.weight || "-"} | Altura: ${ns.vitalSigns?.height || "-"}</span></div>
-                    <div class="field col-span-2"><span class="label">Comorbidades Referidas</span><span class="value">${ns.clinicalHistory?.comorbidities?.join(", ") || "-"} ${ns.clinicalHistory?.otherComorbidities ? `(${ns.clinicalHistory?.otherComorbidities})` : ""}</span></div>
-
-                    <div class="field col-span-3"><span class="label">Prescrição e Medicações em Uso Contínuo</span><div class="text-block">${ns.clinicalHistory?.medications || "Não informado"}</div></div>
-
-                    <div class="field"><span class="label">Mobilidade</span><span class="value uppercase">${ns.functionalAssessment?.mobility || "-"}</span></div>
-                    <div class="field"><span class="label">Continência</span><span class="value uppercase">${ns.functionalAssessment?.continence || "-"}</span></div>
-                    <div class="field"><span class="label">Nível de Consciência</span><span class="value uppercase">${ns.functionalAssessment?.consciousness || "-"}</span></div>
-
-                    <div class="field col-span-3"><span class="label">Aspectos de Integridade Cutânea</span><div class="text-block">${ns.skinIntegrity?.lesionsPresent ? "Lesões presentes: " + (ns.skinIntegrity?.lesionsDetails || "-") : "Pele íntegra. Turgor/Hidratação: " + (ns.skinIntegrity?.turgor || "-") + " | " + (ns.skinIntegrity?.hydration || "-")}</div></div>
-
-                    <div class="field col-span-3"><span class="label">Cartão SUS e Saúde Pública</span><span class="value">SUS: ${ns.healthSupport?.susCard || "Não informado"} | UBS Ref: ${ns.healthSupport?.referenceUBS || "Não informada"}</span></div>
-                  </div>
-                </div>
-                ` : `
-                <div class="section">
-                  <div class="section-title">4. Avaliação e Triagem de Enfermagem Pré-Admissional</div>
-                  <div class="section-content">
-                    <div class="field col-span-3"><span class="value italic text-gray-500">Triagem de Enfermagem não realizada para este candidato.</span></div>
-                  </div>
-                </div>
-                `}
-
-                <!-- 5. PARECER CLÍNICO MÉDICO -->
-                <div class="section">
-                  <div class="section-title">5. Avaliação e Parecer Médico de Admissibilidade</div>
-                  <div class="section-content">
-                    <div class="field col-span-3">
-                      <span class="label">Status de Aptidão Clínica Institucional</span>
-                      <span class="value" style="font-size: 16px; color: ${data.medicalStatus === "favoravel" ? "#16a34a" : data.medicalStatus === "desfavoravel" ? "#dc2626" : "#64748b"};">
-                        ${data.medicalStatus === "favoravel" ? "APTO PARA ADMISSÃO" : data.medicalStatus === "desfavoravel" ? "INAPTO CLINICAMENTE" : "ANÁLISE PENDENTE"}
-                      </span>
-                    </div>
-                    <div class="field col-span-3">
-                      <span class="label">Justificativa, Conduta e Observações Médicas</span>
-                      <div class="text-block">${data.medicalOpinion || "Nenhum laudo ou parecer registrado."}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 6. INTEGRAÇÃO E ACOLHIMENTO -->
-                <div class="section" ${!data.integrationDate ? `style="opacity: 0.6"` : ""}>
-                  <div class="section-title">6. Integração, Contrato e Vínculo Institucional</div>
-                  <div class="section-content">
-                    <div class="field"><span class="label">Previsão / Data Integração</span><span class="value">${data.integrationDate ? new Date(data.integrationDate).toLocaleDateString("pt-BR") : "Pendente"}</span></div>
-                    <div class="field"><span class="label">Status Contratual</span><span class="value uppercase">${data.contractStatus === "assinado" ? "Assinado" : "Pendente"}</span></div>
-                    
-                    ${data.admissionDate ? `
-                      <div class="field"><span class="label">Data Efetiva de Acolhimento</span><span class="value" style="color: #16a34a;">${new Date(data.admissionDate).toLocaleDateString("pt-BR")}</span></div>
-                    ` : ""}
-
-                    <div class="field col-span-3">
-                      <span class="label">Relatório Administrativo da Integração</span>
-                      <div class="text-block">${data.integrationReport || "Pendente"}</div>
-                    </div>
-                    
-                  </div>
-                </div>
-
-                ${data.psychology?.attendances && data.psychology.attendances.length > 0 ? `
-                <!-- 7. ATENDIMENTOS PSICOLÓGICOS NA TRIAGEM -->
-                <div class="section">
-                  <div class="section-title">7. Atendimentos Psicológicos da Triagem</div>
-                  <div class="section-content">
-                    ${data.psychology.attendances.map(att => `
-                      <div class="field col-span-3 pb-3 border-b border-gray-100 last:border-0 last:pb-0">
-                        <span class="label">Data: ${new Date(att.dateTime).toLocaleDateString("pt-BR")} | Assinatura: ${att.signature || 'Psicologia'}</span>
-                        <div class="text-block">${att.muralNotes || 'Atendimento realizado. Ver prontuário.'}</div>
-                      </div>
-                    `).join('')}
-                  </div>
-                </div>
-                ` : ``}
-
-                <div class="footer">Este documento é sigiloso. Relatório consolidado gerado automaticamente a partir do Módulo de Triagem SSVP.</div>
-                <script>
-                  window.onload = function() { window.focus(); window.print(); }
-                </script>
-              </body>
-            </html>
-          `;
-          printWindow.document.write(html);
-          printWindow.document.close();
-
-          // Fallback para navegadores onde onload pode não disparar para document.write
-          setTimeout(() => {
-            if (printWindow) {
-              printWindow.focus();
-              printWindow.print();
-            }
-          }, 1000);
+          onEdit(true);
         };
 
         return (
@@ -1591,7 +1420,7 @@ function StatusManagementModal({
                 }}
                 className="w-full py-3.5 bg-gray-900 border-2 border-gray-900 text-white rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
               >
-                <Printer size={16} /> Imprimir Ficha Consolidada
+                <Printer size={16} /> Acessar Ficha p/ Gerar PDF
               </button>
               
               <button
@@ -1637,7 +1466,7 @@ function StatusManagementModal({
                 onClick={handleGenerateFullReport}
                 className="w-full py-4 bg-white border-2 border-gray-200 text-gray-500 rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
               >
-                <FileText size={16} /> Ver Relatório Completo de Triagem
+                <FileText size={16} /> Ver Ficha Completa
               </button>
             </div>
           </div>
@@ -1686,7 +1515,7 @@ function StatusManagementModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-6 animate-in fade-in duration-300 print:hidden">
       <div className="bg-white w-full max-w-xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         <div className="p-6 md:p-8 border-b flex items-center justify-between bg-gray-50/50">
           <div className="flex items-center gap-4">
@@ -1809,7 +1638,7 @@ function StatusManagementModal({
 
 // Subcomponents for CandidateForm to avoid re-rendering loss of focus
 const FormSection = ({ num, title, children }: any) => (
-  <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-8">
+  <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-8 print:break-inside-avoid print:shadow-none print:border-gray-300">
     <div className="bg-gray-50/50 p-6 border-b flex items-center gap-4">
       <div className="w-10 h-10 bg-[#004c99] text-white rounded-2xl flex items-center justify-center font-black">
         {num}
@@ -1848,8 +1677,36 @@ const FormChoice = ({ label, value, current, onClick }: any) => (
   </button>
 );
 
-function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
+const FormMultiChoice = ({ label, value, current, onClick }: any) => {
+  const isSelected = Array.isArray(current) ? current.includes(value) : current === value;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border-2 transition-all flex items-center gap-2 ${isSelected ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-100 text-gray-400 hover:border-gray-200"}`}
+    >
+      <div
+        className={`w-3 h-3 rounded-sm border-2 ${isSelected ? "bg-white border-white" : "bg-transparent border-gray-200"}`}
+      ></div>
+      {label}
+    </button>
+  );
+};
+
+
+
+function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint }: any) {
   const [data, setData] = React.useState<Candidate>(candidate);
+  const [isPrinting, setIsPrinting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (autoPrint) {
+      const timer = setTimeout(() => {
+        window.print();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [autoPrint]);
 
   const updateField = (field: keyof Candidate, value: any) => {
     setData((prev) => ({ ...prev, [field]: value }));
@@ -1861,6 +1718,8 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
       interview: { ...prev.interview, [field]: value },
     }));
   };
+
+  // ... rest of the helpers ...
 
   const addFamilyMember = () => {
     const newMember: FamilyMemberRecord = {
@@ -1888,10 +1747,23 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
     );
   };
 
+  const interview = data.interview;
+  const ns = data.nursingScreening;
+
+  const priorityLabel =
+    data.priority === "social_urgente"
+      ? "SOCIAL (URGENTE)"
+      : data.priority === "dependencia_duvidosa"
+        ? "DEP. DUVIDOSA"
+        : data.priority === "padrao"
+          ? "PRIORIDADE PADRÃO"
+          : "NÃO DEFINIDA";
+
   return (
-    <div id="printable-area" className="space-y-6 max-w-6xl mx-auto pb-20 animate-in fade-in duration-500">
+    <div id="printable-area" className="bg-gray-50 print:bg-white min-h-screen">
+      <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-in fade-in duration-500 print:max-w-full">
       {/* Top Sticky Bar */}
-      <div className="flex items-center justify-between bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-gray-200 shadow-xl no-print sticky top-4 z-40">
+      <div className="flex items-center justify-between bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-gray-200 shadow-xl print:hidden sticky top-4 z-40">
         <div className="flex items-center gap-4">
           <button
             onClick={onCancel}
@@ -1913,7 +1785,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             onClick={() => window.print()}
             className="px-6 py-3 bg-white border border-gray-200 rounded-2xl text-xs font-black uppercase flex items-center gap-2 hover:shadow-md transition-all"
           >
-            <Printer size={18} /> Imprimir Ficha
+            <Printer size={18} /> Gerar PDF
           </button>
           <button
             onClick={() => onSave(data)}
@@ -2138,7 +2010,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
                 <th className="px-6 py-4">Idade</th>
                 <th className="px-6 py-4">Trabalho</th>
                 <th className="px-6 py-4">Renda Mensal</th>
-                <th className="px-6 py-4"></th>
+                <th className="px-6 py-4 print:hidden"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -2184,7 +2056,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
                       }
                     />
                   </td>
-                  <td className="px-6 py-3 text-right">
+                  <td className="px-6 py-3 text-right print:hidden">
                     <button
                       onClick={() => removeFamilyMember(m.id)}
                       className="p-2 text-red-300 hover:text-red-500 transition-colors"
@@ -2194,7 +2066,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
                   </td>
                 </tr>
               ))}
-              <tr>
+              <tr className="print:hidden">
                 <td colSpan={6} className="p-4 bg-gray-50/30 text-center">
                   <button
                     onClick={addFamilyMember}
@@ -2245,12 +2117,23 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
             <FormLabel>Fonte de renda do idoso</FormLabel>
             <div className="flex flex-wrap gap-2">
               {["Aposentadoria", "Pensão", "BPC/LOAS", "Outros"].map((v) => (
-                <FormChoice
+                <FormMultiChoice
                   key={v}
                   label={v}
                   value={v}
                   current={data.interview.incomeSource}
-                  onClick={() => updateInterview("incomeSource", v)}
+                  onClick={() => {
+                    const curr = Array.isArray(data.interview.incomeSource)
+                      ? data.interview.incomeSource
+                      : data.interview.incomeSource
+                        ? [data.interview.incomeSource]
+                        : [];
+                    if (curr.includes(v)) {
+                      updateInterview("incomeSource", curr.filter((item: string) => item !== v));
+                    } else {
+                      updateInterview("incomeSource", [...curr, v]);
+                    }
+                  }}
                 />
               ))}
             </div>
@@ -2519,6 +2402,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit }: any) {
           className="w-full p-8 border-l-8 border-l-[#004c99] border-y border-r border-gray-100 rounded-2xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all h-60 outline-none leading-relaxed"
         />
       </FormSection>
+    </div>
     </div>
   );
 }

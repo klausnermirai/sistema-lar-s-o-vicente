@@ -26,6 +26,7 @@ import { fetchResidents, fetchCandidates, saveResident as apiSaveResident, saveC
 const DEV_BYPASS_AUTH = false;
 
 import BirthdaySection from './components/BirthdaySection';
+import UpcomingAgendaSection from './components/UpcomingAgendaSection';
 
 const App: React.FC = () => {
   const [session, setSession] = React.useState<Session | null>(() => {
@@ -385,16 +386,21 @@ const App: React.FC = () => {
       
       {activeRoute === AppRoute.HOME && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full min-h-[500px]">
-          <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col pt-4">
+          <div className="lg:col-span-2 bg-white rounded-3xl overflow-hidden flex flex-col shadow-sm border border-gray-100">
             <MuralModule 
               institutionId={session?.institutionId || session?.cnpj || ''} 
               cnpj={session?.cnpj} 
               username={session?.username || ''}
               muralPhone={settings?.muralPhone}
+              accessLevel={session?.accessLevel}
             />
           </div>
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 flex flex-col gap-8">
             <BirthdaySection residents={residents} />
+            <UpcomingAgendaSection 
+              institutionId={session?.institutionId || session?.cnpj || ''}
+              onNavigateToAgenda={() => setActiveRoute(AppRoute.AGENDA)}
+            />
           </div>
         </div>
       )}
@@ -449,6 +455,7 @@ const App: React.FC = () => {
           onDelete={handleDeleteCandidate}
           residents={residents}
           settings={settings}
+          onPostToMural={handlePostToMural}
           onAdmit={async (candidate) => {
             const admissionDate = new Date().toISOString().split('T')[0];
             const newResId = Date.now().toString();
@@ -548,6 +555,7 @@ const App: React.FC = () => {
         <AgendaModule 
           residents={residents} 
           session={session}
+          onSaveResident={handleSaveResident}
           onPostToMural={handlePostToMural}
         />
       )}

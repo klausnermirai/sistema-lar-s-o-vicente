@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { 
   Save, 
   ArrowLeft, 
@@ -42,6 +42,7 @@ import ProntuarioTab from './ProntuarioTab';
 import PiaTab from './PiaTab';
 import PerTab from './PerTab';
 import MedicationTab from './MedicationTab';
+import IntercurrenceHistoryTab from './IntercurrenceHistoryTab';
 
 interface ElderlyFormProps {
   initialData: Resident;
@@ -102,10 +103,22 @@ const FormField: React.FC<{
 const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'geral', settings, onSave, onCancel }) => {
   const [formData, setFormData] = React.useState<Resident>(initialData);
   const [activeTab, setActiveTab] = React.useState<SubTab>(initialTab);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, photo: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -207,6 +220,7 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     { id: 'itens', label: 'Itens Pessoais', icon: Package },
     { id: 'prontuario', label: 'Prontuário Multidisciplinar', icon: FileText },
     { id: 'prontuario-medico', label: 'Prontuário Clínico', icon: Stethoscope },
+    { id: 'intercorrencias', label: 'Histórico de Intercorrências', icon: AlertCircle },
     { id: 'medicamentos', label: 'Medicamentos', icon: Pill },
     { id: 'pia', label: 'PIA', icon: ClipboardList },
   ];
@@ -434,7 +448,17 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
           <div className="p-8 space-y-2 animate-in fade-in duration-300">
             <div className="flex flex-col md:flex-row gap-10 mb-8">
               <div className="w-full md:w-56 shrink-0 space-y-4">
-                <div className="aspect-square bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400 gap-2 relative group cursor-pointer hover:bg-gray-100 transition-colors overflow-hidden">
+                <div 
+                  className="aspect-square bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400 gap-2 relative group cursor-pointer hover:bg-gray-100 transition-colors overflow-hidden"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handlePhotoUpload} 
+                    accept="image/*" 
+                    className="hidden" 
+                  />
                   {formData.photo ? (
                     <img src={formData.photo} alt="Preview" className="w-full h-full object-cover" />
                   ) : (
@@ -501,7 +525,7 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
             </div>
 
             <SectionHeader title="Cartões e Previdência (INSS)" icon={CreditCard} />
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4 mb-4">
               <FormField label="Cartão SAMS" name="samsCard" value={formData.samsCard} onChange={handleChange} />
               <FormField label="Cartão SUS" name="susCard" value={formData.susCard} onChange={handleChange} />
               <FormField label="Cadastro Único" name="cadUnico" value={formData.cadUnico} onChange={handleChange} />
@@ -509,6 +533,38 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
               
               <FormField label="Tipo Ben. INSS" name="inssType" value={formData.inssType} onChange={handleChange} />
               <FormField label="Sit. Ben. INSS" name="inssStatus" value={formData.inssStatus} onChange={handleChange} />
+            </div>
+
+            <div className="mb-8">
+              <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block">Fonte de Renda do Idoso</label>
+              <div className="flex flex-wrap gap-4">
+                {["Aposentadoria", "Pensão", "BPC/LOAS", "Outros"].map(source => {
+                  const curr = Array.isArray(formData.incomeSource)
+                    ? formData.incomeSource
+                    : formData.incomeSource
+                      ? [formData.incomeSource]
+                      : [];
+                  const isSelected = curr.includes(source);
+                  return (
+                    <div key={source} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id={`incomeSource_${source}`}
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setFormData({ ...formData, incomeSource: [...curr, source] });
+                          } else {
+                            setFormData({ ...formData, incomeSource: curr.filter((s: string) => s !== source) });
+                          }
+                        }}
+                        className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                      />
+                      <label htmlFor={`incomeSource_${source}`} className="text-xs font-bold text-gray-700 cursor-pointer">{source}</label>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             <SectionHeader title="Endereço" icon={MapPin} />
@@ -765,6 +821,10 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
             resident={formData} 
             onUpdatePer={(newPer) => setFormData({ ...formData, per: newPer })} 
           />
+        )}
+
+        {activeTab === 'intercorrencias' && (
+          <IntercurrenceHistoryTab resident={formData} />
         )}
 
         {activeTab === 'medicamentos' && (

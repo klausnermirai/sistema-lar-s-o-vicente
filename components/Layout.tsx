@@ -207,11 +207,11 @@ const Layout: React.FC<LayoutProps> = ({
   const menuItems = activeCategory === 'atendimento' ? atendimentoItems : gestaoItems;
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen bg-gray-50 overflow-hidden print:h-auto print:overflow-visible print:block">
       {/* Sidebar */}
       {!isVisitante && (
         <aside 
-          className={`${
+          className={`print:hidden ${
             isSidebarOpen ? 'w-64' : 'w-20'
           } bg-[#004c99] text-white flex flex-col transition-all duration-300 ease-in-out shadow-2xl z-20`}
         >
@@ -281,7 +281,7 @@ const Layout: React.FC<LayoutProps> = ({
           </div>
         )}
 
-        <nav className={`flex-1 overflow-y-auto custom-scrollbar ${isSidebarOpen ? 'px-3 mt-0 mb-4 bg-white/5 rounded-b-2xl mx-1 pt-4' : 'px-3 mt-8'} space-y-2`}>
+        <nav className={`flex-1 overflow-y-auto sidebar-scrollbar ${isSidebarOpen ? 'px-3 mt-0 mb-4 bg-white/5 rounded-b-2xl mx-1 pt-4' : 'px-3 mt-8'} space-y-2`}>
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeRoute === item.id;
@@ -337,8 +337,8 @@ const Layout: React.FC<LayoutProps> = ({
       )}
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <header className="h-20 bg-white border-b flex items-center justify-between px-10 shadow-sm shrink-0 z-10">
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative print:h-auto print:overflow-visible print:block">
+        <header className="h-20 bg-white border-b flex items-center justify-between px-10 shadow-sm shrink-0 z-10 print:hidden">
           <div className="flex items-center gap-3 text-[10px] font-black tracking-widest text-gray-400 uppercase">
             <span>{institutionName || 'UNIDADE'}</span>
             <ChevronRight size={14} />
@@ -404,7 +404,7 @@ const Layout: React.FC<LayoutProps> = ({
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-10 bg-gray-50/50">
+        <div className="flex-1 overflow-y-auto p-10 bg-gray-50/50 print:overflow-visible print:h-auto print:p-4 print:bg-white print:block">
           {children}
         </div>
 
@@ -421,6 +421,7 @@ const Layout: React.FC<LayoutProps> = ({
           institutionId={institutionId || cnpj || ''} 
           cnpj={cnpj}
           username={username || ''} 
+          accessLevel={accessLevel}
         />
 
         <ChangePasswordModal

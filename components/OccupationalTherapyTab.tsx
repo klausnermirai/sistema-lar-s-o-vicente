@@ -239,9 +239,9 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         attendanceEvolution: newAttendance.attendanceEvolution,
         prontuarioNotes: newAttendance.prontuarioNotes || '',
         muralNotes: newAttendance.muralNotes || '',
-        notifyFamily: newAttendance.notifyFamily || false,
-        signature: newAttendance.signature
+        signature: newAttendance.signature || ''
       };
+      
       onChange({
         ...otData,
         attendances: [attendance, ...(otData.attendances || [])]
@@ -263,7 +263,6 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         attendanceEvolution: '',
         prontuarioNotes: '',
         muralNotes: '',
-        notifyFamily: false,
         signature: ''
       });
     }
@@ -860,19 +859,6 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                       Limite de 150 caracteres para o mural e notificação familiar
                     </span>
                   </div>
-                </div>
-
-                <div className="flex items-center gap-3 bg-green-50 p-4 rounded-xl border border-green-100 mt-4">
-                  <input 
-                    type="checkbox"
-                    id="notifyFamily"
-                    checked={newAttendance.notifyFamily || false}
-                    onChange={(e) => setNewAttendance({ ...newAttendance, notifyFamily: e.target.checked })}
-                    className="w-5 h-5 text-green-600 rounded focus:ring-green-500"
-                  />
-                  <label htmlFor="notifyFamily" className="text-sm font-bold text-green-900 cursor-pointer">
-                    Notificação Familiar - Incluir este atendimento no resumo mensal de repasse à familia
-                  </label>
                 </div>
 
                 <div>

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Resident, PerData } from '../types';
+import React, { useState } from 'react';
+import { Resident, PerData, ClinicalProgressEntry } from '../types';
 import { 
   Heart, 
   Activity, 
@@ -10,7 +10,11 @@ import {
   Calendar,
   User,
   Plus,
-  Stethoscope
+  Stethoscope,
+  Clock,
+  Save,
+  X,
+  Pill
 } from 'lucide-react';
 
 interface PerTabProps {
@@ -20,6 +24,10 @@ interface PerTabProps {
 
 const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
   const per = resident.per;
+  const [isAddingProgress, setIsAddingProgress] = useState(false);
+  const [newProgressNote, setNewProgressNote] = useState('');
+  const [professionalName, setProfessionalName] = useState('');
+  const [professionalCRM, setProfessionalCRM] = useState('');
 
   if (!per) {
     return (
@@ -60,6 +68,32 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
   const latestVitalSigns = per.vitalSignsHistory.length > 0 
     ? per.vitalSignsHistory[per.vitalSignsHistory.length - 1] 
     : null;
+
+  const handleAddProgress = () => {
+    if (!newProgressNote.trim() || !professionalName.trim()) {
+      alert("Por favor, preencha o nome do profissional e a nota clínica.");
+      return;
+    }
+
+    const newProgress: ClinicalProgressEntry = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      professionalName,
+      crm: professionalCRM,
+      note: newProgressNote
+    };
+
+    onUpdatePer({
+      ...per,
+      lastUpdated: new Date().toISOString(),
+      clinicalProgress: [newProgress, ...(per.clinicalProgress || [])]
+    });
+
+    setNewProgressNote('');
+    setProfessionalName('');
+    setProfessionalCRM('');
+    setIsAddingProgress(false);
+  };
 
   return (
     <div className="space-y-8 p-8 animate-in fade-in duration-500">
@@ -192,8 +226,14 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
-                <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Medicações</h5>
+                <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Medicações (Triagem)</h5>
                 <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{per.currentMedications || 'Não informado'}</p>
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                  <p className="text-[10px] font-black text-blue-800 uppercase tracking-widest flex items-center gap-2">
+                    <Pill size={12} /> Alterações de Prescrição
+                  </p>
+                  <p className="text-xs text-blue-900 mt-1">Acesse a aba <strong>Médicamentos</strong> para ver as alterações recentes e a prescrição atual rigorosa.</p>
+                </div>
               </div>
               <div className="space-y-4">
                 <div>
@@ -231,6 +271,98 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Clinical Progress / Evolução Médica */}
+          <div className="bg-white border rounded-3xl shadow-sm overflow-hidden">
+            <div className="p-6 border-b flex justify-between items-center bg-gray-50/50">
+              <h4 className="text-sm font-black text-gray-800 uppercase tracking-tight flex items-center gap-2">
+                <History size={18} className="text-[#004c99]" />
+                Registros de Consultas e Evolução Clínica
+              </h4>
+              <button 
+                onClick={() => setIsAddingProgress(!isAddingProgress)}
+                className="px-4 py-2 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 shadow-sm transition-all"
+              >
+                {isAddingProgress ? 'Cancelar' : '+ Nova Evolução'}
+              </button>
+            </div>
+
+            {isAddingProgress && (
+              <div className="p-6 bg-blue-50/30 border-b space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1 block">Profissional / Avaliador</label>
+                    <input 
+                      type="text" 
+                      value={professionalName}
+                      onChange={e => setProfessionalName(e.target.value)}
+                      placeholder="Nome do Médico/Enfermeiro" 
+                      className="w-full px-3 py-2 border rounded-xl text-xs outline-none focus:border-[#004c99] focus:ring-1 focus:ring-[#004c99]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1 block">CRM/COREN (Opcional)</label>
+                    <input 
+                      type="text" 
+                      value={professionalCRM}
+                      onChange={e => setProfessionalCRM(e.target.value)}
+                      placeholder="Ex: CRM-SP 12345" 
+                      className="w-full px-3 py-2 border rounded-xl text-xs outline-none focus:border-[#004c99] focus:ring-1 focus:ring-[#004c99]"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1 block">Anotação Clínica</label>
+                  <textarea 
+                    value={newProgressNote}
+                    onChange={e => setNewProgressNote(e.target.value)}
+                    placeholder="Evolução clínica, alterações de conduta, resumo da consulta..." 
+                    className="w-full px-3 py-2 border rounded-xl text-xs min-h-[100px] outline-none focus:border-[#004c99] focus:ring-1 focus:ring-[#004c99]"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button onClick={() => setIsAddingProgress(false)} className="px-4 py-2 text-gray-400 font-bold text-xs uppercase hover:bg-gray-100 rounded-xl">Cancelar</button>
+                  <button onClick={handleAddProgress} className="px-6 py-2 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 flex items-center gap-2">
+                    <Save size={14} /> Salvar Registro
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="p-6">
+              {(!per.clinicalProgress || per.clinicalProgress.length === 0) ? (
+                <div className="text-center py-8">
+                  <History className="mx-auto text-gray-200 mb-3" size={32} />
+                  <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Nenhuma evolução registrada</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {per.clinicalProgress.map(prog => (
+                    <div key={prog.id} className="p-4 bg-gray-50 rounded-2xl border flex gap-4">
+                      <div className="pt-1">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 text-[#004c99] flex items-center justify-center">
+                          <Stethoscope size={14} />
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <p className="text-xs font-black text-gray-900 uppercase">{prog.professionalName}</p>
+                            {prog.crm && <p className="text-[9px] font-bold text-gray-400 uppercase">{prog.crm}</p>}
+                          </div>
+                          <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                            <Clock size={10} />
+                            {new Date(prog.date).toLocaleDateString('pt-BR')}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{prog.note}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

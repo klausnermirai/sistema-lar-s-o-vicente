@@ -2460,19 +2460,6 @@ const NutritionalAttendanceForm: React.FC<NutritionalAttendanceFormProps> = ({ a
         />
       </div>
 
-      <div className="flex items-center gap-3 bg-green-50 p-4 rounded-xl border border-green-100 mt-4">
-        <input 
-          type="checkbox"
-          id="notifyFamily"
-          checked={formData.notifyFamily || false}
-          onChange={(e) => setFormData({ ...formData, notifyFamily: e.target.checked })}
-          className="w-5 h-5 text-green-600 rounded focus:ring-green-500"
-        />
-        <label htmlFor="notifyFamily" className="text-sm font-bold text-green-900 cursor-pointer">
-          Notificação Familiar - Incluir este atendimento no resumo mensal de repasse à familia
-        </label>
-      </div>
-
       <div className="flex justify-end gap-3 pt-6 border-t">
         <button 
           type="button" 
@@ -3301,13 +3288,27 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
   });
 
   const [isPrivateUnlocked, setIsPrivateUnlocked] = useState(false);
-  const PRIVATE_PASSWORD = 'PSICO';
 
-  const handleUnlockPrivate = () => {
-    const password = prompt('Digite a senha para desbloquear a anotação privada:');
-    if (password === PRIVATE_PASSWORD) {
-      setIsPrivateUnlocked(true);
-    } else if (password !== null) {
+  const handleUnlockPrivate = async () => {
+    const password = prompt('Digite a sua senha de acesso para desbloquear a anotação privada:');
+    if (!password) return;
+    try {
+      const sessionStr = localStorage.getItem('ssvp_session');
+      if (sessionStr) {
+        const sessionObj = JSON.parse(sessionStr);
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cnpj: sessionObj.cnpj, username: sessionObj.username, password })
+        });
+        if (!response.ok) {
+          throw new Error('Senha incorreta.');
+        }
+        setIsPrivateUnlocked(true);
+      } else {
+        alert('Sessão expirada. Faça login novamente.');
+      }
+    } catch (error) {
       alert('Senha incorreta.');
     }
   };
@@ -3533,21 +3534,6 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
           className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-500 font-bold text-sm"
         />
       </div>
-
-      {!isCandidate && (
-        <div className="flex items-center gap-3 bg-green-50 p-4 rounded-xl border border-green-100 mt-4">
-          <input 
-            type="checkbox"
-            id="notifyFamily"
-            checked={formData.notifyFamily || false}
-            onChange={(e) => setFormData({ ...formData, notifyFamily: e.target.checked })}
-            className="w-5 h-5 text-green-600 rounded focus:ring-green-500"
-          />
-          <label htmlFor="notifyFamily" className="text-sm font-bold text-green-900 cursor-pointer">
-            Notificação Familiar - Incluir este atendimento no resumo mensal de repasse à familia
-          </label>
-        </div>
-      )}
 
       <div className="flex justify-end gap-3 pt-6 border-t">
         <button 

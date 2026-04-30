@@ -15,8 +15,10 @@ service cloud.firestore {
         request.resource.data.author is string && request.resource.data.author.size() > 0 && request.resource.data.author.size() <= 128 &&
         request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 5000;
       allow update: if
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text']) &&
-        request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 5000;
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text']) &&
+         request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 5000) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']) &&
+         request.resource.data.likes is list && request.resource.data.likes.size() <= 2000);
       allow delete: if true;
     }
 

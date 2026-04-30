@@ -23,6 +23,7 @@ interface VitalSignsTabProps {
 
 const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave }) => {
   const [isRecording, setIsRecording] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [formData, setFormData] = useState<Partial<VitalSignEntry>>({
     paSystolic: 120,
     paDiastolic: 80,
@@ -38,7 +39,7 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave }) => {
 
   const history = resident.per?.vitalSignsHistory || [];
   const latest = history[0];
-  const last5 = history.slice(0, 5);
+  const filteredHistory = history.filter(h => new Date(h.date).toISOString().split('T')[0] === selectedDate);
 
   const handleSave = () => {
     const newEntry: VitalSignEntry = {
@@ -295,16 +296,27 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave }) => {
           {/* Mini Gráfico ou Destaque Biométrico aqui no futuro */}
         </div>
 
-        {/* Histórico Recente (Últimas 5) */}
+        {/* Histórico por Data */}
         <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm overflow-hidden flex flex-col">
-          <div className="p-6 border-b bg-gray-50/50 flex items-center gap-3">
-            <div className="p-2 bg-white shadow-sm rounded-xl text-gray-600">
-              <History size={18} />
+          <div className="p-6 border-b bg-gray-50/50 flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white shadow-sm rounded-xl text-gray-600">
+                <History size={18} />
+              </div>
+              <h3 className="text-sm font-black uppercase text-gray-800 tracking-widest">Histórico Diário</h3>
             </div>
-            <h3 className="text-sm font-black uppercase text-gray-800 tracking-widest">Últimas 5 Medições</h3>
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] font-black text-gray-400 uppercase">Filtrar por data:</label>
+              <input 
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold outline-none focus:border-[#004c99]"
+              />
+            </div>
           </div>
           <div className="flex-1 divide-y divide-gray-50 max-h-[600px] overflow-y-auto no-scrollbar">
-            {last5.map((entry) => (
+            {filteredHistory.map((entry) => (
               <div key={entry.id} className="p-5 hover:bg-blue-50/10 cursor-default transition-all group">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex items-center gap-2">
@@ -342,10 +354,10 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave }) => {
                 </div>
               </div>
             ))}
-            {last5.length === 0 && (
+            {filteredHistory.length === 0 && (
               <div className="p-12 text-center opacity-20 flex flex-col items-center gap-2">
                 <History size={32} />
-                <span className="text-[9px] font-black uppercase">Histórico vazio</span>
+                <span className="text-[9px] font-black uppercase">Histórico vazio para a data</span>
               </div>
             )}
           </div>

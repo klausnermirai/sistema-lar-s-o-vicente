@@ -11,8 +11,12 @@ export interface AgendaEvent {
   professionalName: string;
   professionalRole: string;
   residentId?: string; // Optional related resident
-  type?: 'comum' | 'consulta_exame' | 'atividade_grupo' | 'triagem' | string;
+  type?: 'comum' | 'consulta_exame' | 'atividade_grupo' | 'triagem' | 'salao' | string;
   companion?: string;
+  salaoEndTime?: string;
+  salaoResponsibleName?: string;
+  salaoPhone?: string;
+  salaoGroupName?: string;
 }
 
 export interface Institution {
@@ -60,6 +64,8 @@ export interface InstitutionSettings {
   logoUrl?: string;
   roles?: string[];
   muralPhone?: string;
+  telegramBotToken?: string;
+  telegramChatId?: string;
 }
 
 export interface AssistedFamily {
@@ -216,7 +222,7 @@ export interface InterviewData {
   rentValue: string;
 
   // 6. Socioeconômica
-  incomeSource: string;
+  incomeSource: string | string[];
   incomeValue: string;
   hasLoan: string;
   loanValue: string;
@@ -453,7 +459,6 @@ export interface NutritionalAttendance {
   reason: string;
   notes: string;
   muralNotes?: string;
-  notifyFamily?: boolean;
   signature: string;
 }
 
@@ -497,7 +502,6 @@ export interface PsychologicalAttendance {
   muralNotes?: string;
   privateNotes?: string;
   needsTeamReport: boolean;
-  notifyFamily?: boolean;
   signature: string;
   candidateStatus?: 'apto' | 'inapto' | 'necessita_atencao';
 }
@@ -566,7 +570,6 @@ export interface OccupationalTherapyAttendance {
   attendanceEvolution: string;
   prontuarioNotes: string;
   muralNotes: string;
-  notifyFamily?: boolean;
   signature: string;
 }
 
@@ -623,7 +626,6 @@ export interface PhysiotherapyAttendance {
   attendanceEvolution: string;
   prontuarioNotes: string;
   muralNotes: string;
-  notifyFamily?: boolean;
   signature: string;
 }
 
@@ -721,6 +723,7 @@ export interface Resident {
   room: string;
   bedNumber: string;
   income: string;
+  incomeSource?: string | string[];
   admissionReason: string;
   residentGroup: string;
   dependencyLevel: string;
@@ -875,11 +878,12 @@ export interface Appointment {
   date: string;
   time: string;
   location: string;
+  specialty?: string;
+  professional?: string;
   type: 'consulta' | 'retorno' | 'exame';
   companionId?: string;
   status: 'agendado' | 'realizado' | 'cancelado';
   notes?: string;
-  notifyFamily?: boolean;
 }
 
 export interface MuralMessage {
@@ -887,7 +891,9 @@ export interface MuralMessage {
   institutionId: string;
   author: string;
   text: string;
+  detailedContent?: string;
   timestamp: number;
+  likes?: string[]; // Array of usernames who liked this message
 }
 
 export interface GroupActivity {
@@ -924,7 +930,7 @@ export enum AppRoute {
   VISITANTES = 'visitantes'
 }
 
-export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'prontuario' | 'pia' | 'prontuario-medico' | 'medicamentos';
+export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'prontuario' | 'pia' | 'prontuario-medico' | 'medicamentos' | 'intercorrencias';
 
 export interface MedicationProduct {
   id: string;

@@ -80,7 +80,7 @@ export const SupportChat: React.FC<SupportChatProps> = ({ isOpen, onClose, insti
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages.length]);
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();

@@ -635,7 +635,7 @@ async function startServer() {
     res.json(candidates);
   });
 
-  app.post('/api/candidates', requireRole(['assistente_social', 'enfermeira', 'gerencial']), async (req, res) => {
+  app.post('/api/candidates', requireRole(['assistente_social', 'enfermeira', 'gerencial', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'medico', 'administrador']), async (req, res) => {
     const data = req.body;
     try {
       const auditEntry = {
@@ -811,6 +811,43 @@ async function startServer() {
     }
   });
 
+  app.post('/api/mural/telegram', async (req, res) => {
+    const data = req.body;
+    try {
+      if (data.institutionId) {
+        const realId = await getRealInstitutionId(data.institutionId);
+        const settingsDoc = await db.collection('settings').doc(realId).get();
+        if (settingsDoc.exists) {
+          const settings = settingsDoc.data();
+          if (settings?.telegramBotToken && settings?.telegramChatId) {
+            const token = settings.telegramBotToken.replace(/^bot/i, '').trim();
+            const chatId = settings.telegramChatId.trim();
+            
+            const safeName = (data.author || 'Usuário').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            const safeContent = (data.text || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            
+            console.log('Enviando Telegram (Webhook) para', chatId);
+            const tgResponse = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: `<b>Novo Recado no Mural</b>\nDe: ${safeName}\n\n${safeContent}`,
+                parse_mode: 'HTML'
+              })
+            });
+            const tgData = await tgResponse.json();
+            console.log('Resposta do Telegram (Webhook):', tgData);
+          }
+        }
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Erro no webhook do Telegram:', error);
+      res.status(500).json({ error: 'Erro ao enviar notificação' });
+    }
+  });
+
   app.post('/api/mural', async (req, res) => {
     const data = req.body;
     try {
@@ -903,27 +940,31 @@ async function startServer() {
 
   app.get('/api/job-candidates', async (req, res) => {
     try {
-      const institutionId = resolveInstitutionId(req);
+      const institutionId = req.query.institutionId || req.headers['x-tenant-id'];
       if (!institutionId) {
         return res.status(401).json({ error: 'Tenant (institutionId) não fornecido.' });
       }
+      const realId = await getRealInstitutionId(institutionId as string);
 
-      const snapshot = await db.collection('jobCandidates').where('institutionId', '==', institutionId).get();
+      const snapshot = await db.collection('jobCandidates').where('institutionId', '==', realId).get();
       const jobCandidates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(jobCandidates);
     } catch (error) {
-      handleFirebaseError(error, res, 'Erro ao buscar candidatos a vagas');
+      console.error('Erro ao buscar candidatos a vagas', error);
+      res.status(500).json({ error: 'Erro ao buscar candidatos a vagas' });
     }
   });
 
   app.post('/api/job-candidates', requireRole(['psicologia', 'gerencial', 'administrador']), async (req, res) => {
     try {
-      const institutionId = resolveInstitutionId(req);
+      const institutionId = req.query.institutionId || req.headers['x-tenant-id'] || req.body.institutionId;
       if (!institutionId) {
          return res.status(401).json({ error: 'Tenant (institutionId) não fornecido.' });
       }
+      
+      const realId = await getRealInstitutionId(institutionId as string);
 
-      const candidateData = { ...req.body, institutionId };
+      const candidateData = { ...req.body, institutionId: realId };
       if (!candidateData.id) {
         candidateData.id = Date.now().toString();
       }
@@ -931,7 +972,8 @@ async function startServer() {
       await db.collection('jobCandidates').doc(candidateData.id).set(candidateData);
       res.json({ success: true, candidate: candidateData });
     } catch (error) {
-      handleFirebaseError(error, res, 'Erro ao salvar candidato a vaga');
+      console.error('Erro ao salvar candidato a vaga', error);
+      res.status(500).json({ error: 'Erro ao salvar candidato a vaga' });
     }
   });
 
@@ -941,7 +983,8 @@ async function startServer() {
       await db.collection('jobCandidates').doc(id).delete();
       res.json({ success: true, message: 'Excluído definitivamente com sucesso.' });
     } catch (error) {
-      handleFirebaseError(error, res, 'Erro ao excluir definitivamente o candidato a vaga');
+      console.error('Erro ao excluir definitivamente o candidato a vaga', error);
+      res.status(500).json({ error: 'Erro ao excluir definitivamente o candidato a vaga' });
     }
   });
 

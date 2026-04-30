@@ -190,7 +190,6 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, onChange,
     attendanceEvolution: '',
     prontuarioNotes: '',
     muralNotes: '',
-    notifyFamily: false,
     signature: ''
   });
 
@@ -303,7 +302,6 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, onChange,
       attendanceEvolution: newAttendance.attendanceEvolution || '',
       prontuarioNotes: newAttendance.prontuarioNotes || '',
       muralNotes: newAttendance.muralNotes || '',
-      notifyFamily: newAttendance.notifyFamily,
       signature: newAttendance.signature || ''
     };
 
@@ -321,10 +319,6 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, onChange,
         author: newAttendance.signature || 'Fisioterapeuta',
         text: muralText
       });
-    }
-    
-    if (newAttendance.notifyFamily) {
-      alert(`Notificação enviada aos familiares de ${resident.name} referente ao atendimento de fisioterapia.`);
     }
     
     // Also save in the common Prontuário if prontuarioNotes is filled
@@ -355,7 +349,6 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, onChange,
       attendanceEvolution: '',
       prontuarioNotes: '',
       muralNotes: '',
-      notifyFamily: false,
       signature: ''
     });
   };
@@ -831,19 +824,6 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, onChange,
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 p-4 bg-gray-50 border rounded-xl">
-                <input
-                  type="checkbox"
-                  id="notifyFamily"
-                  checked={newAttendance.notifyFamily}
-                  onChange={e => setNewAttendance({ ...newAttendance, notifyFamily: e.target.checked })}
-                  className="w-5 h-5 text-[#004c99] rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
-                />
-                <label htmlFor="notifyFamily" className="text-sm font-bold text-gray-700 cursor-pointer">
-                  Notificar Familiares sobre este atendimento
-                </label>
-              </div>
-
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Assinatura / Responsável</label>
                 <input
@@ -900,11 +880,6 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, onChange,
                         </div>
                       </div>
                     </div>
-                    {attendance.notifyFamily && (
-                      <span className="px-3 py-1 bg-green-100 text-green-700 text-[9px] font-black uppercase tracking-widest rounded-full">
-                        Família Notificada
-                      </span>
-                    )}
                   </div>
                   
                   <div className="space-y-4">

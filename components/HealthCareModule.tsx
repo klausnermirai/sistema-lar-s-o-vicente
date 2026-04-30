@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Resident, PerData, Medication, DailyRoutineLog, VitalSignEntry, Appointment, MuralMessage } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Resident, PerData, Medication, DailyRoutineLog, VitalSignEntry, Appointment, MuralMessage, ShiftHandover } from '../types';
 import { 
   ShieldCheck, 
   Search,
@@ -11,7 +11,9 @@ import {
   CalendarDays,
   HeartPulse,
   Stethoscope,
-  RotateCcw
+  RotateCcw,
+  Tablet,
+  Monitor
 } from 'lucide-react';
 import DailyRoutineTab from './DailyRoutineTab';
 import VitalSignsTab from './VitalSignsTab';
@@ -30,6 +32,15 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
   const [activeSubTab, setActiveSubTab] = useState<'sinais_vitais' | 'rotinas' | 'consultas' | 'plantao'>('rotinas');
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isTabletMode, setIsTabletMode] = useState(false);
+  const [handovers, setHandovers] = useState<ShiftHandover[]>(() => {
+    try {
+      const saved = localStorage.getItem('ssvp_handovers');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
@@ -91,6 +102,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
     if (activeSubTab === 'plantao') {
       return (
         <HandoverTab 
+          handovers={handovers}
           residents={residents}
           onSaveIncident={(incident) => {
             // Save incident to each involved resident
@@ -105,11 +117,9 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
             });
           }}
           onSaveHandover={(handover) => {
-            // Handover is usually global, for now we log it as a mural post
-            onPostToMural({
-              author: handover.nurseName || 'Enfermagem',
-              text: `[Saúde/Cuidados] Plantão finalizado (${handover.shift}). Notas: ${handover.notes}`
-            });
+            const updatedHandovers = [handover, ...handovers];
+            setHandovers(updatedHandovers);
+            localStorage.setItem('ssvp_handovers', JSON.stringify(updatedHandovers));
           }}
           onPostToMural={onPostToMural}
         />
@@ -135,9 +145,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
         <AppointmentTab 
           resident={selectedResident}
           companions={INITIAL_COMPANIONS}
-          onUpdateAppointments={(newApps) => {
-            onSaveResident({ ...selectedResident, appointments: newApps });
-          }}
+          onUpdateResident={onSaveResident}
           onPostToMural={onPostToMural}
         />
       );
@@ -169,7 +177,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] gap-6 animate-in fade-in duration-500 p-2">
+    <div className={`flex flex-col gap-6 animate-in fade-in duration-500 p-2 ${isTabletMode ? 'fixed inset-0 z-50 bg-gray-50 h-screen overflow-hidden' : 'h-[calc(100vh-140px)]'}`}>
       {/* Top Search Bar - Hidden in Collective Modes */}
       {activeSubTab !== 'rotinas' && activeSubTab !== 'plantao' && (
         <div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
@@ -243,9 +251,10 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col bg-white border border-gray-200 rounded-[40px] shadow-sm overflow-hidden min-h-0">
         {/* Module Sub-tabs */}
-        <div className="flex border-b px-8 bg-white shrink-0">
-          <button
-            onClick={() => setActiveSubTab('rotinas')}
+        <div className="flex border-b px-8 bg-white shrink-0 justify-between items-center no-scrollbar overflow-x-auto">
+          <div className="flex">
+            <button
+              onClick={() => setActiveSubTab('rotinas')}
             className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
               activeSubTab === 'rotinas' 
                 ? 'border-[#004c99] text-[#004c99]' 
@@ -287,6 +296,14 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
           >
             <Stethoscope size={16} />
             Consultas e Exames
+          </button>
+          </div>
+          <button
+            onClick={() => setIsTabletMode(!isTabletMode)}
+            className={`shrink-0 ml-4 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isTabletMode ? 'bg-[#004c99] text-white shadow-xl hover:bg-blue-800' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+          >
+            {isTabletMode ? <Monitor size={14} /> : <Tablet size={14} />}
+            {isTabletMode ? 'Modo PC' : 'Modo Tablet'}
           </button>
         </div>
 

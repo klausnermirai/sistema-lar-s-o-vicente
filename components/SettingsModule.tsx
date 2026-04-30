@@ -463,6 +463,29 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                   <p className="text-[9px] text-gray-400 mt-1 uppercase font-bold text-blue-600">Este número será usado para enviar as notificações e exportações do mural.</p>
                 </div>
 
+                <div className="space-y-1 mt-4">
+                  <label className="text-[10px] font-black text-gray-400 uppercase">Token do Bot (Telegram)</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 123456789:AA..."
+                    value={institution.telegramBotToken || ''}
+                    onChange={e => setInstitution({ ...institution, telegramBotToken: e.target.value })}
+                    className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div className="space-y-1 mt-4">
+                  <label className="text-[10px] font-black text-gray-400 uppercase">Chat ID do Grupo/Canal (Telegram)</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: -10012345678"
+                    value={institution.telegramChatId || ''}
+                    onChange={e => setInstitution({ ...institution, telegramChatId: e.target.value })}
+                    className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                  <p className="text-[9px] text-gray-400 mt-1 uppercase font-bold text-blue-600">As mensagens do mural serão encaminhadas automaticamente.</p>
+                </div>
+
                 <div className="md:col-span-2 space-y-4 pt-4 border-t border-dashed">
                   <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Linhagem Hierárquica SSVP (IDs)</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

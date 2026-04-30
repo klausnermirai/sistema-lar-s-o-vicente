@@ -363,7 +363,10 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident }) => {
     return true;
   });
 
-  const currentUser = { role: 'admin' }; // Mock user for now since authStore doesn't exist
+  const sessionStr = localStorage.getItem('ssvp_session');
+  const session = sessionStr ? JSON.parse(sessionStr) : null;
+  const accessLevel = session?.accessLevel?.toLowerCase() || '';
+  const currentUser = { role: accessLevel === 'administrador' ? 'admin' : accessLevel };
 
   const handleGeneratePDF = () => {
     const doc = new jsPDF();
