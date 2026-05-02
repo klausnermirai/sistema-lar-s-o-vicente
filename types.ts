@@ -825,9 +825,14 @@ export interface Resident {
 
 export interface IncidentReport {
   id: string;
+  institutionId?: string;
+  dataOperacional?: string;
+  turnoId?: string;
+  turnoNome?: string;
+  responsavelUserId?: string;
   timestamp: number;
   residentIds: string[];
-  type: 'queda' | 'comportamental' | 'clinica' | 'outros';
+  type: 'queda' | 'comportamental' | 'clinica' | 'outros' | 'lesao' | 'recusa_alimentacao' | 'recusa_medicacao' | 'sinais_vitais' | 'medicacao_procedimento' | 'comunicacao';
   description: string;
   conduct: string;
   visibilidade?: string[];
@@ -836,8 +841,13 @@ export interface IncidentReport {
 
 export interface ShiftHandover {
   id: string;
+  institutionId?: string;
+  dataOperacional?: string;
+  turnoId?: string;
+  turnoNome?: string;
+  responsavelUserId?: string;
   timestamp: number;
-  shift: 'manha' | 'tarde' | 'noite';
+  shift: 'manha' | 'tarde' | 'noite' | string; // Allow any string for dynamic shifts
   summary: string;
   pendingTasks: string;
   visibilidade?: string[];

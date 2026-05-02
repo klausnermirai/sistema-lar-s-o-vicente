@@ -1,4 +1,4 @@
-import { getProfessionalSignature } from '../lib/api';
+import { getProfessionalSignature, fetchProcedureLogs } from '../lib/api';
 import React, { useState } from 'react';
 import { Resident, IncidentReport, ShiftHandover, MuralMessage, InstitutionSettings } from '../types';
 import { 
@@ -25,9 +25,13 @@ import { addPdfSignatureNode } from '../lib/pdfUtils';
 import autoTable from 'jspdf-autotable';
 import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 
+import HandoverTabletView from './HandoverTabletView';
+
 interface HandoverTabProps {
   handovers: ShiftHandover[];
   residents: Resident[];
+  shifts?: any[];
+  isTabletMode?: boolean;
   onSaveIncident: (incident: IncidentReport) => void;
   onSaveHandover: (handover: ShiftHandover) => void;
   onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
@@ -37,6 +41,8 @@ interface HandoverTabProps {
 const HandoverTab: React.FC<HandoverTabProps> = ({ 
   handovers,
   residents, 
+  shifts = [],
+  isTabletMode = false,
   onSaveIncident, 
   onSaveHandover, 
   onPostToMural,
@@ -59,66 +65,6 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
   const [incidentType, setIncidentType] = useState<IncidentReport['type']>('clinica');
   
   const [visibilidade, setVisibilidade] = useState<string[]>(['admin', 'publico']);
-
-  const handleExportPDF = async () => {
-    const doc = new jsPDF();
-    const dateStr = new Date().toLocaleDateString('pt-BR');
-    
-    let currentY = 45;
-
-    // Plantão Details
-    doc.setFontSize(14);
-    doc.text('Passagem de Plantão', 14, currentY);
-    currentY += 8;
-    
-    doc.setFontSize(10);
-    autoTable(doc, {
-      startY: currentY,
-      head: [['Relatório de Atividades / Eventos', 'Pendências']],
-      body: [
-        [summary || 'Nenhum relato', pendingTasks || 'Nenhuma pendência']
-      ],
-      headStyles: { fillColor: [0, 76, 153] },
-      styles: { cellPadding: 4, minCellHeight: 20 },
-      margin: { top: 45, bottom: 20 }
-    });
-
-    currentY = (doc as any).lastAutoTable.finalY + 15;
-
-    // Intercorrência Details
-    if (hasIncident) {
-      doc.setFontSize(14);
-      doc.text('Intercorrência Registrada', 14, currentY);
-      currentY += 8;
-
-      const residentNames = residents
-        .filter(r => selectedResidentIds.includes(r.id))
-        .map(r => r.name)
-        .join(', ');
-
-      doc.setFontSize(10);
-      autoTable(doc, {
-        startY: currentY,
-        head: [['Tipo', 'Residentes', 'Descrição', 'Conduta']],
-        body: [
-          [
-            incidentType.toUpperCase(),
-            residentNames || 'Nenhum selecionado',
-            description || '-',
-            conduct || '-'
-          ]
-        ],
-        headStyles: { fillColor: [220, 38, 38] },
-        styles: { cellPadding: 4, minCellHeight: 20 },
-        margin: { top: 45, bottom: 20 }
-      });
-    }
-
-    await addPdfHeaderAndFooter(doc, settings, `Relatório Unificado de Plantão e Intercorrências - ${shift.toUpperCase()}`);
-
-    addPdfSignatureNode(doc);
-    doc.save(`plantao_${shift}_${dateStr.replace(/\//g, '-')}.pdf`);
-  };
 
   const handleSaveAll = () => {
     if (!summary.trim()) {
@@ -216,9 +162,40 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
   const getHandoversForDate = (dateStr: string) => {
     return handovers.filter(h => {
       const d = new Date(h.timestamp);
-      const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      // fallback to timestamp if dataOperacional missing for older entries
+      const localDate = h.dataOperacional || `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       return localDate === dateStr;
     });
+  };
+
+  const handlePrintHandover = async (handover: ShiftHandover) => {
+    let logs: any[] = [];
+    if (settings?.id && handover.dataOperacional) {
+       const allLogs = await fetchProcedureLogs(settings.id, handover.dataOperacional);
+       logs = allLogs.filter(l => l.turnoId === handover.turnoId);
+    }
+    
+    // Fallback for older entries
+    const opDate = handover.dataOperacional || new Date(handover.timestamp).toISOString().split('T')[0];
+    const turnoId = handover.turnoId;
+
+    const vitalSigns = residents.flatMap(r => 
+      (r.per?.vitalSignsHistory || []).map(v => ({...v, residentName: r.name}))
+    ).filter(v => v.date.split('T')[0] === opDate);
+
+    const handoverIncidents = residents.flatMap(r => 
+      (r.incidents || []).map(inc => ({...inc, residentName: r.name}))
+    ).filter(inc => {
+       if (turnoId && inc.turnoId) return inc.turnoId === turnoId && inc.dataOperacional === opDate;
+       // legacy comparison
+       return new Date(inc.timestamp).toISOString().split('T')[0] === opDate;
+    });
+
+    const sigAuth = getProfessionalSignature() as { name: string, role: string, doc: string };
+    
+    // Import dynamically since it's inside an async handle
+    const { printHandoverHtmlPdf } = await import('../lib/printHandover');
+    await printHandoverHtmlPdf(handover, logs, vitalSigns, handoverIncidents, settings, sigAuth);
   };
 
   return (
@@ -248,46 +225,6 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
           </div>
         </div>
 
-        {viewMode === 'registrar' && (
-          <div className="flex items-center gap-6">
-            <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 flex flex-col gap-2">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Visibilidade no Mural</label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input 
-                    type="checkbox" 
-                    checked={visibilidade.includes('publico')}
-                    onChange={(e) => {
-                      if (e.target.checked) setVisibilidade([...visibilidade, 'publico']);
-                      else setVisibilidade(visibilidade.filter(v => v !== 'publico'));
-                    }}
-                    className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
-                  />
-                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-[#004c99] transition-colors">Público</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input 
-                    type="checkbox" 
-                    checked={visibilidade.includes('admin')}
-                    onChange={(e) => {
-                      if (e.target.checked) setVisibilidade([...visibilidade, 'admin']);
-                      else setVisibilidade(visibilidade.filter(v => v !== 'admin'));
-                    }}
-                    className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
-                  />
-                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-purple-600 transition-colors">Direção e coordenação</span>
-                </label>
-              </div>
-            </div>
-
-            <button 
-               onClick={handleExportPDF}
-               className="px-6 py-4 bg-gray-100 text-gray-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all flex items-center gap-2 border"
-             >
-               <Download size={18} /> Exportar PDF
-             </button>
-          </div>
-        )}
         {viewMode === 'historico' && (
           <div className="flex items-center gap-2">
             <label className="text-[10px] font-black uppercase text-gray-400">Data:</label>
@@ -313,14 +250,26 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                   <p className="text-xs text-gray-400 font-bold uppercase py-4 text-center">Nenhum plantão registrado nesta data.</p>
                 ) : (
                   getHandoversForDate(selectedHistoryDate).map(h => (
-                    <div key={h.id} className="p-4 border rounded-2xl bg-gray-50">
+                    <div key={h.id} className="p-4 border rounded-2xl bg-gray-50 relative group">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-[10px] font-black bg-[#004c99] text-white px-2 py-1 rounded-lg uppercase">
                           Turno: {h.shift}
                         </span>
-                        <span className="text-xs text-gray-500 font-medium">
-                          {new Date(h.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {h.professionalName}
-                        </span>
+                        <div className="flex items-center gap-4">
+                          <span className="text-xs text-gray-500 font-medium">
+                            {new Date(h.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {h.professionalName}
+                          </span>
+                          <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handlePrintHandover(h);
+                            }}
+                            className="bg-transparent text-gray-400 hover:text-[#004c99] transition-colors"
+                            title="Exportar PDF do Plantão"
+                          >
+                             <Download size={16} />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-sm text-gray-800 mb-2"><strong>Resumo:</strong> {h.summary}</p>
                       {h.pendingTasks && <p className="text-xs text-red-600 font-medium"><strong>Pendências:</strong> {h.pendingTasks}</p>}
@@ -355,6 +304,18 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                 )}
               </div>
             </div>
+          </div>
+        ) : isTabletMode ? (
+          <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom duration-500">
+            <HandoverTabletView 
+              handovers={handovers}
+              residents={residents}
+              shifts={shifts}
+              settings={settings}
+              onSaveIncident={onSaveIncident}
+              onSaveHandover={onSaveHandover}
+              onPostToMural={onPostToMural}
+            />
           </div>
         ) : (
           <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom duration-500">

@@ -108,23 +108,25 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
   };
 
   const getLastRecords = (id: string, max: number = 3) => {
+    const sortedHistory = [...history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
     switch (id) {
         case 'hgt':
-            return history.filter(h => h.hgtValue !== undefined).slice(0, max).map(h => `${h.hgtValue}`);
+            return sortedHistory.filter(h => h.hgtValue !== undefined).slice(0, max).map(h => `${h.hgtValue}`);
         case 'pa':
-            return history.filter(h => h.paSystolic !== undefined).slice(0, max).map(h => `${h.paSystolic}x${h.paDiastolic}`);
+            return sortedHistory.filter(h => h.paSystolic !== undefined).slice(0, max).map(h => `${h.paSystolic}x${h.paDiastolic}`);
         case 'fc':
-            return history.filter(h => h.fc !== undefined).slice(0, max).map(h => `${h.fc}`);
+            return sortedHistory.filter(h => h.fc !== undefined).slice(0, max).map(h => `${h.fc}`);
         case 'fr':
-            return history.filter(h => h.fr !== undefined).slice(0, max).map(h => `${h.fr}`);
+            return sortedHistory.filter(h => h.fr !== undefined).slice(0, max).map(h => `${h.fr}`);
         case 'temp':
-            return history.filter(h => h.temperature !== undefined).slice(0, max).map(h => `${h.temperature}`);
+            return sortedHistory.filter(h => h.temperature !== undefined).slice(0, max).map(h => `${h.temperature}`);
         case 'spo2':
-            return history.filter(h => h.spo2 !== undefined).slice(0, max).map(h => `${h.spo2}`);
+            return sortedHistory.filter(h => h.spo2 !== undefined).slice(0, max).map(h => `${h.spo2}`);
         case 'weight':
-            return history.filter(h => h.weight !== undefined && h.weight !== '').slice(0, max).map(h => `${h.weight}`);
+            return sortedHistory.filter(h => h.weight !== undefined && h.weight !== '').slice(0, max).map(h => `${h.weight}`);
         case 'height':
-            return history.filter(h => h.height !== undefined && h.height !== '').slice(0, 1).map(h => `${h.height}`);
+            return sortedHistory.filter(h => h.height !== undefined && h.height !== '').slice(0, 1).map(h => `${h.height}`);
     }
     return [];
   };

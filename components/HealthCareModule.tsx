@@ -212,6 +212,8 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
           handovers={handovers}
           residents={residents}
           settings={settings}
+          shifts={shifts}
+          isTabletMode={isTabletMode}
           onSaveIncident={(incident) => {
             // Save incident to each involved resident
             incident.residentIds.forEach(rid => {
