@@ -1,4 +1,5 @@
 
+import { getProfessionalSignature } from '../lib/api';
 import React, { useRef } from 'react';
 import { motion } from 'motion/react';
 import { 
@@ -225,13 +226,13 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
   };
 
   const addRelative = () => {
-    const newRel: Relative = { id: Date.now().toString(), name: '', kinship: '', phone: '', observation: '', isResponsible: formData.relatives.length === 0 };
+    const newRel: Relative = { id: Date.now().toString(), ...getProfessionalSignature(), name: '', kinship: '', phone: '', observation: '', isResponsible: formData.relatives.length === 0 };
     setFormData(prev => ({ ...prev, relatives: [...prev.relatives, newRel] }));
   };
 
   const addVisitRecord = () => {
     const newVisit: VisitRecord = { 
-      id: Date.now().toString(), 
+      id: Date.now().toString(), ...getProfessionalSignature(), 
       date: new Date().toISOString().split('T')[0], 
       visitorName: '', 
       visitorDoc: '', 
@@ -243,25 +244,25 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
   };
 
   const addFinancial = (type: 'entrada' | 'saída') => {
-    const newFin: FinancialTransaction = { id: Date.now().toString(), date: new Date().toISOString().split('T')[0], type, description: '', amount: 0 };
+    const newFin: FinancialTransaction = { id: Date.now().toString(), ...getProfessionalSignature(), date: new Date().toISOString().split('T')[0], type, description: '', amount: 0 };
     setFormData(prev => ({ ...prev, financials: [...prev.financials, newFin] }));
   };
 
   const balance = formData.financials.reduce((acc, curr) => curr.type === 'entrada' ? acc + Number(curr.amount) : acc - Number(curr.amount), 0);
 
   const addPersonalItem = () => {
-    const newItem: PersonalItem = { id: Date.now().toString(), description: '', status: 'Entrada', date: new Date().toISOString().split('T')[0], observation: '' };
+    const newItem: PersonalItem = { id: Date.now().toString(), ...getProfessionalSignature(), description: '', status: 'Entrada', date: new Date().toISOString().split('T')[0], observation: '' };
     setFormData(prev => ({ ...prev, personalItems: [...prev.personalItems, newItem] }));
   };
 
   const addHealthUpdate = () => {
-    const newHealth: HealthUpdate = { id: Date.now().toString(), date: new Date().toISOString().split('T')[0], summary: '', professional: '', observation: '' };
+    const newHealth: HealthUpdate = { id: Date.now().toString(), ...getProfessionalSignature(), date: new Date().toISOString().split('T')[0], summary: '', professional: '', observation: '' };
     setFormData(prev => ({ ...prev, healthUpdates: [...prev.healthUpdates, newHealth] }));
   };
 
   const addMedication = () => {
     const newMed: Medication = { 
-      id: Date.now().toString(), 
+      id: Date.now().toString(), ...getProfessionalSignature(), 
       name: '', 
       concentration: '',
       dose: '',

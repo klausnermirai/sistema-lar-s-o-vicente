@@ -1,3 +1,4 @@
+import { getProfessionalSignature } from '../lib/api';
 import React, { useState, useEffect } from 'react';
 import { Resident, GroupActivity, MuralMessage } from '../types';
 import { Plus, Save, ArrowLeft, Users, Calendar, CheckCircle, Edit, Search, Trash2 } from 'lucide-react';
@@ -46,7 +47,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
     involvedProfessionals: [],
     result: '',
     observations: '',
-    sharedToMural: false
+    visibilidade: ['admin', 'publico']
   });
 
   const [involvedInput, setInvolvedInput] = useState('');
@@ -65,7 +66,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
       involvedProfessionals: [],
       result: '',
       observations: '',
-      sharedToMural: false
+      visibilidade: ['admin', 'publico']
     });
     setResidentSearchTerm('');
     setIsFormOpen(true);
@@ -140,7 +141,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
       involvedProfessionals: formData.involvedProfessionals || [],
       result: formData.result as any,
       observations: formData.observations || '',
-      sharedToMural: formData.sharedToMural || false,
+      visibilidade: formData.visibilidade || ['admin', 'publico'],
       timestamp: Date.now()
     };
 
@@ -168,13 +169,13 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
       return [newActivity, ...prev];
     });
 
-    // Save to Mural if checked and not already shared or just updating
-    if (newActivity.sharedToMural && onPostToMural && !editingId) {
+    // Save to Mural if visibilidade length > 0 and not already shared or just updating
+    if (newActivity.visibilidade && newActivity.visibilidade.length > 0 && onPostToMural && !editingId) {
       onPostToMural({
         author: newActivity.responsibleProfessional,
         text: `Atividade em Grupo (${newActivity.type}): ${newActivity.description}`,
         detailedContent: `Data e Hora: ${newActivity.date} às ${newActivity.time}\nCompetência: ${newActivity.competence}\nParticipantes selecionados: ${newActivity.selectedResidents?.length || 0}\n\nDescrição:\n${newActivity.description}\n\nResultado/Evolução:\n${newActivity.result || 'Sem resultado registrado.'}`,
-        isPublic: true
+        visibilidade: newActivity.visibilidade
       });
     }
 
@@ -495,18 +496,31 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
               </div>
             </div>
 
-            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.sharedToMural}
-                  onChange={(e) => setFormData({ ...formData, sharedToMural: e.target.checked })}
-                  className="w-5 h-5 rounded border-blue-300 text-[#004c99] focus:ring-[#004c99]"
+            <div className="flex items-center gap-4 bg-gray-50 border p-2 rounded-xl">
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Mural:</label>
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={formData.visibilidade?.includes('publico')}
+                  onChange={(e) => {
+                    const v = formData.visibilidade || [];
+                    setFormData({ ...formData, visibilidade: e.target.checked ? [...v, 'publico'] : v.filter((x: string) => x !== 'publico') });
+                  }}
+                  className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
                 />
-                <div>
-                  <span className="block text-sm font-bold text-blue-900">Compartilhar no Mural</span>
-                  <span className="block text-xs text-blue-700">Enviar resumo desta atividade para o mural da equipe</span>
-                </div>
+                <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-[#004c99] transition-colors">Público</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={formData.visibilidade?.includes('admin')}
+                  onChange={(e) => {
+                    const v = formData.visibilidade || [];
+                    setFormData({ ...formData, visibilidade: e.target.checked ? [...v, 'admin'] : v.filter((x: string) => x !== 'admin') });
+                  }}
+                  className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+                />
+                <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-purple-600 transition-colors">Direção e coordenação</span>
               </label>
             </div>
           </div>

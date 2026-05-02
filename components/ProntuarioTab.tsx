@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Resident, InstitutionSettings } from '../types';
 import { Calendar, Clock, User, FileText, AlertCircle, Volume2, ChevronDown, ChevronUp, Printer, Stethoscope, Activity } from 'lucide-react';
 import jsPDF from 'jspdf';
+import { addPdfSignatureNode } from '../lib/pdfUtils';
+
 import 'jspdf-autotable';
 import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 
@@ -571,6 +573,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
 
     await addPdfHeaderAndFooter(doc, settings, 'Prontuário Multidisciplinar');
 
+    addPdfSignatureNode(doc);
     doc.save(`Prontuario_Multidisciplinar_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };
 

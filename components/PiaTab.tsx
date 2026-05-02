@@ -1,7 +1,10 @@
+import { getProfessionalSignature } from '../lib/api';
 import React, { useState } from 'react';
 import { Resident, PiaData, PiaGoalStatus, PiaRevision, InstitutionSettings } from '../types';
 import { Plus, Save, Edit2, CheckCircle, Clock, Printer, User, FileText, HeartPulse, Activity } from 'lucide-react';
 import jsPDF from 'jspdf';
+import { addPdfSignatureNode } from '../lib/pdfUtils';
+
 import 'jspdf-autotable';
 import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 
@@ -50,7 +53,7 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange, settings }) => {
   const handleSaveRevision = () => {
     if (newRevision.changes && newRevision.professional) {
       const revision: PiaRevision = {
-        id: Date.now().toString(),
+        id: Date.now().toString(), ...getProfessionalSignature(),
         date: new Date().toLocaleDateString('pt-BR'),
         changes: newRevision.changes || '',
         professional: newRevision.professional || '',
@@ -311,6 +314,7 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, onChange, settings }) => {
     // Add page numbers
     await addPdfHeaderAndFooter(doc, settings, 'Plano Individual de Atendimento (PIA)');
 
+    addPdfSignatureNode(doc);
     doc.save(`Ficha_Completa_PIA_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };
 

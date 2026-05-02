@@ -2,6 +2,8 @@ import React from 'react';
 import { X, User, Home, Users, FileDown, Printer } from 'lucide-react';
 import { Resident, InstitutionSettings } from '../types';
 import { jsPDF } from 'jspdf';
+import { addPdfSignatureNode } from '../lib/pdfUtils';
+
 import autoTable from 'jspdf-autotable';
 import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 
@@ -89,6 +91,7 @@ const RoomMappingModal: React.FC<RoomMappingModalProps> = ({
     // Add header to all pages
     await addPdfHeaderAndFooter(doc, settings, 'Mapeamento Geral de Leitos');
 
+    addPdfSignatureNode(doc);
     doc.save(`mapeamento_geral_leitos_${instName.toLowerCase().replace(/\s+/g, '_')}.pdf`);
   };
 

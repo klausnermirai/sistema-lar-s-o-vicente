@@ -324,14 +324,38 @@ async function startServer() {
       }
 
       const userData = userSnapshot.docs[0].data();
+      let signatureInfo: any = {};
+      
+      if (userData.funcionarioId) {
+        try {
+          const empDoc = await db.collection('employees').doc(userData.funcionarioId).get();
+          if (empDoc.exists) {
+            const empData = empDoc.data();
+            signatureInfo = {
+              profissionalId: userData.funcionarioId,
+              profissionalNome: empData?.nomeExibicao || empData?.nomeCompleto,
+              profissionalFuncao: empData?.funcao,
+              profissionalConselho: empData?.conselhoProfissional,
+              profissionalRegistro: empData?.numeroRegistro,
+              profissionalUfRegistro: empData?.ufRegistro,
+              profissionalAssinaturaTexto: `${empData?.nomeExibicao || empData?.nomeCompleto}\n${empData?.funcao}${empData?.conselhoProfissional && empData?.numeroRegistro ? ` — ${empData?.conselhoProfissional} ${empData?.numeroRegistro}` : ''}`,
+            };
+          }
+        } catch (err) {
+          console.error("Erro ao buscar funcionario do usuario logado:", err);
+        }
+      }
+
       res.json({
         success: true,
         user: { 
           id: userSnapshot.docs[0].id,
           username: userData.username, 
           fullName: userData.fullName, 
-          role: userData.role, 
-          accessLevel: userData.accessLevel 
+          role: userData.role,
+          professionalRegistration: userData.professionalRegistration,
+          accessLevel: userData.accessLevel,
+          signature: signatureInfo
         },
         cnpj,
         institutionId,
@@ -844,15 +868,50 @@ async function startServer() {
   });
 
   // Mural Messages
-  app.get('/api/mural', async (req, res) => {
+  app.get('/api/mural', async (req: any, res) => {
     const { institutionId } = req.query;
+    const accessLevel = req.user?.accessLevel;
+    const username = req.user?.username;
+
     try {
       const snapshot = await db.collection('muralMessages')
         .where('institutionId', '==', institutionId)
         .orderBy('timestamp', 'asc')
         .get();
+        
       const messages = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
-      res.json(messages);
+      
+      // Filtra mensagens do mural baseado na visibilidade e no usuário
+      const filteredMessages = messages.filter((msg: any) => {
+        const isAuthor = msg.author === username;
+        
+        let visArray: string[] = [];
+        if (Array.isArray(msg.visibilidade)) {
+           visArray = msg.visibilidade;
+        } else if (typeof msg.visibilidade === 'string') {
+           visArray = [msg.visibilidade];
+        } else if (msg.isPublic) {
+           visArray = ['publico'];
+        } else {
+           visArray = ['admin'];
+        }
+        
+        if (visArray.includes('publico')) return true;
+        
+        if (visArray.includes('privado')) {
+           return isAuthor; // Só o próprio autor pode ver
+        }
+
+        if (visArray.includes('admin')) {
+           // Se for restrito, apenas se for autor ou se tiver papel que permita ver coisas restritas admin
+           const viewAdminRoles = ['administrador', 'gerencial', 'enfermeira', 'medico', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'assistente_social'];
+           return isAuthor || viewAdminRoles.includes(accessLevel);
+        }
+
+        return true;
+      });
+
+      res.json(filteredMessages);
     } catch (error) {
       console.error('Error fetching mural:', error);
       res.status(500).json({ error: 'Erro ao buscar mural.' });
@@ -871,6 +930,100 @@ async function startServer() {
   });
 
   // User Management
+  app.get('/api/employees', requireAuth, async (req, res) => {
+    try {
+      const q = req.query.q as string;
+      const realId = await getRealInstitutionId((req as any).user.institutionId);
+      const snapshot = await db.collection('employees').where('institutionId', '==', realId).get();
+      const employees = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+      const filtered = employees.filter(e => !e.archived);
+      
+      let result = filtered;
+      if (q) {
+        const query = q.toLowerCase();
+        result = filtered.filter(e => 
+          (e.nomeCompleto && e.nomeCompleto.toLowerCase().includes(query)) ||
+          (e.funcao && e.funcao.toLowerCase().includes(query))
+        );
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao buscar funcionários.' });
+    }
+  });
+
+  app.post('/api/employees', requireRole(['administrador', 'gerencial']), async (req, res) => {
+    const data = req.body;
+    try {
+      const realId = await getRealInstitutionId((req as any).user.institutionId);
+      const now = Date.now();
+      data.institutionId = realId;
+      
+      if (!data.id) {
+        data.criadoEm = now;
+      }
+      data.atualizadoEm = now;
+      
+      if (data.id) {
+        const { id, ...updateData } = data;
+        await db.collection('employees').doc(id).set(updateData, { merge: true });
+        res.json(data);
+      } else {
+        const docRef = await db.collection('employees').add(data);
+        res.json({ ...data, id: docRef.id });
+      }
+    } catch (error) {
+      console.error('Error saving employee to Firestore:', error);
+      res.status(500).json({ error: 'Erro ao salvar funcionário.' });
+    }
+  });
+
+  app.post('/api/employees/bulk', requireRole(['administrador', 'gerencial']), async (req, res) => {
+    const employees = req.body;
+    try {
+      const realId = await getRealInstitutionId((req as any).user.institutionId);
+      const batch = db.batch();
+      
+      employees.forEach((emp: any) => {
+        emp.institutionId = realId;
+        const now = Date.now();
+        if (!emp.id) {
+            const newRef = db.collection('employees').doc();
+            emp.id = newRef.id;
+            emp.criadoEm = now;
+            emp.atualizadoEm = now;
+            batch.set(newRef, emp);
+        } else {
+            const ref = db.collection('employees').doc(emp.id);
+            const { id, ...updateData } = emp;
+            updateData.atualizadoEm = now;
+            batch.set(ref, updateData, { merge: true });
+        }
+      });
+      await batch.commit();
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Bulk save error for employees:', error);
+      res.status(500).json({ error: 'Erro de bulk em funcionários' });
+    }
+  });
+
+  app.delete('/api/employees/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
+    const { id } = req.params;
+    try {
+      await db.collection('employees').doc(id).update({
+        archived: true,
+        archivedAt: Date.now(),
+        archivedBy: (req as any).user?.id || 'unknown',
+        status: 'inativo'
+      });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao arquivar funcionário' });
+    }
+  });
+
+  // ========== /USERS ==========
   app.get('/api/users', requireRole(['administrador', 'gerencial']), async (req, res) => {
     const { institutionId } = req.query;
     try {

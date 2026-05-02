@@ -1,3 +1,4 @@
+import { getProfessionalSignature } from '../lib/api';
 import React, { useState } from 'react';
 import { Resident, Appointment, Companion, MuralMessage } from '../types';
 import { 
@@ -44,6 +45,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
 
   const [formData, setFormData] = useState(initialFormState);
   const [notes, setNotes] = useState('');
+  const [visibilidade, setVisibilidade] = useState<string[]>(['admin', 'publico']);
 
   const handleOpenModal = () => {
     setFormData(initialFormState);
@@ -72,7 +74,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
     );
 
     const newProgress = {
-      id: Date.now().toString(),
+      id: Date.now().toString(), ...getProfessionalSignature(),
       date: new Date().toISOString(),
       professionalName: `Retorno de ${selectedAppointment.type === 'consulta' ? 'Consulta Externa' : 'Exame Externo'}`,
       note: `Local: ${selectedAppointment.location}\nRelatório: ${notes}`
@@ -96,11 +98,14 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
     onUpdateResident({ ...resident, appointments: updatedAppointments, per: updatedPer });
 
     // Post to Mural
-    onPostToMural({
-      author: 'Sistema de Cuidados Clínicos',
-      text: `Pós-${selectedAppointment.type === 'consulta' ? 'Consulta' : 'Exame'} - ${resident.name}`,
-      detailedContent: `Local: ${selectedAppointment.location}\nEspecialidade: ${selectedAppointment.specialty || 'N/A'}\n\nConclusões / Anotações:\n${notes}`
-    });
+    if (visibilidade.length > 0) {
+      onPostToMural({
+        author: 'Sistema de Cuidados Clínicos',
+        text: `Pós-${selectedAppointment.type === 'consulta' ? 'Consulta' : 'Exame'} - ${resident.name}`,
+        detailedContent: `Local: ${selectedAppointment.location}\nEspecialidade: ${selectedAppointment.specialty || 'N/A'}\n\nConclusões / Anotações:\n${notes}`,
+        visibilidade
+      });
+    }
 
     setIsNotesModalOpen(false);
     setSelectedAppointment(null);
@@ -381,15 +386,44 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
               </div>
             </div>
 
-            <div className="p-8 border-t bg-gray-50 flex gap-4">
-              <button onClick={() => setIsNotesModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400">Pular Notas</button>
-              <button 
-                onClick={handleCompleteAppointment}
-                disabled={!notes.trim()}
-                className="flex-1 py-4 bg-green-600 text-white rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-green-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-              >
-                <CheckCircle2 size={16} /> Salvar e Compartilhar
-              </button>
+            <div className="p-8 border-t bg-gray-50 flex flex-col gap-4">
+              <div className="flex items-center gap-4 bg-white border border-gray-200 p-3 rounded-2xl">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Visibilidade no Mural:</label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    checked={visibilidade.includes('publico')}
+                    onChange={(e) => {
+                      if (e.target.checked) setVisibilidade([...visibilidade, 'publico']);
+                      else setVisibilidade(visibilidade.filter(v => v !== 'publico'));
+                    }}
+                    className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                  />
+                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-[#004c99] transition-colors">Público</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    checked={visibilidade.includes('admin')}
+                    onChange={(e) => {
+                      if (e.target.checked) setVisibilidade([...visibilidade, 'admin']);
+                      else setVisibilidade(visibilidade.filter(v => v !== 'admin'));
+                    }}
+                    className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+                  />
+                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-purple-600 transition-colors">Direção e coordenação</span>
+                </label>
+              </div>
+              <div className="flex gap-4">
+                <button onClick={() => setIsNotesModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400">Pular Notas</button>
+                <button 
+                  onClick={handleCompleteAppointment}
+                  disabled={!notes.trim()}
+                  className="flex-1 py-4 bg-green-600 text-white rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-green-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 size={16} /> Salvar e Compartilhar
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -52,6 +52,7 @@ const MedicalModule: React.FC<MedicalModuleProps> = ({ residents, onSaveResident
   const [otherExams, setOtherExams] = useState('');
   const [activeExamId, setActiveExamId] = useState<string | null>(null);
   const [examResultText, setExamResultText] = useState('');
+  const [visibilidade, setVisibilidade] = useState<string[]>(['admin', 'publico']);
 
   const COMMON_EXAMS = [
     'Hemograma Completo', 'Glicemia em Jejum', 'Colesterol Total e Frações',
@@ -108,6 +109,16 @@ const MedicalModule: React.FC<MedicalModuleProps> = ({ residents, onSaveResident
     setSelectedExams([]);
     setOtherExams('');
     setExamTab('historico');
+    
+    if (onPostToMural) {
+      onPostToMural({
+        author: session?.username || 'Médico',
+        text: `📑 Solicitação de exames para ${selectedPerson.name}`,
+        detailedContent: `Exames Solicitados:\n${selectedExams.join('\n')}${otherExams ? `\n\nOutros:\n${otherExams}` : ''}`,
+        visibilidade
+      });
+    }
+
     alert('Exames solicitados e salvos no histórico!');
   };
 
@@ -207,7 +218,8 @@ const MedicalModule: React.FC<MedicalModuleProps> = ({ residents, onSaveResident
       onPostToMural({
         author: session?.username || 'Médico',
         text: `[Médico] Evolução clínica salva para o residente ${resident.name}.`,
-        detailedContent: `Evolução:\n${newNote}\n\nAgendamento: ${nextAppointmentDate || 'Nenhum'} às ${nextAppointmentTime || 'Sem horário'} para ${resident.name}`
+        detailedContent: `Evolução:\n${newNote}\n\nAgendamento: ${nextAppointmentDate || 'Nenhum'} às ${nextAppointmentTime || 'Sem horário'} para ${resident.name}`,
+        visibilidade
       });
     }
     alert('Evolução médica salva com sucesso!');
@@ -440,6 +452,33 @@ const MedicalModule: React.FC<MedicalModuleProps> = ({ residents, onSaveResident
                  ) : <div></div>}
 
                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-3">
+                   <div className="flex items-center gap-4 bg-gray-50 border p-2 rounded-xl">
+                     <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Mural:</label>
+                     <label className="flex items-center gap-2 cursor-pointer group">
+                       <input 
+                         type="checkbox" 
+                         checked={visibilidade.includes('publico')}
+                         onChange={(e) => {
+                           if (e.target.checked) setVisibilidade([...visibilidade, 'publico']);
+                           else setVisibilidade(visibilidade.filter(v => v !== 'publico'));
+                         }}
+                         className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                       />
+                       <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-[#004c99] transition-colors">Público</span>
+                     </label>
+                     <label className="flex items-center gap-2 cursor-pointer group">
+                       <input 
+                         type="checkbox" 
+                         checked={visibilidade.includes('admin')}
+                         onChange={(e) => {
+                           if (e.target.checked) setVisibilidade([...visibilidade, 'admin']);
+                           else setVisibilidade(visibilidade.filter(v => v !== 'admin'));
+                         }}
+                         className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+                       />
+                       <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-purple-600 transition-colors">Direção e coordenação</span>
+                     </label>
+                   </div>
                    <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 p-2 rounded-xl">
                      <span className="text-[9px] font-black text-blue-800 uppercase tracking-widest px-1">Próxima Consulta:</span>
                      <input 
@@ -765,21 +804,50 @@ const MedicalModule: React.FC<MedicalModuleProps> = ({ residents, onSaveResident
               </div>
 
               {examTab === 'solicitar' && (
-                <div className="p-6 border-t bg-slate-50 flex justify-end shrink-0 gap-3">
-                  <button 
-                    onClick={handlePrintExams}
-                    disabled={selectedExams.length === 0 && !otherExams.trim()}
-                    className="px-6 py-3 bg-white text-purple-600 border border-purple-200 hover:bg-purple-50 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-2"
-                  >
-                    <FileText size={16} /> Imprimir Apenas
-                  </button>
-                  <button 
-                    onClick={handleSaveExamRequest}
-                    disabled={selectedExams.length === 0 && !otherExams.trim()}
-                    className="px-8 py-3 bg-purple-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md hover:bg-purple-700 transition-all flex items-center gap-2 disabled:opacity-50"
-                  >
-                    <Save size={16} /> Salvar Solicitação
-                  </button>
+                <div className="p-6 border-t bg-slate-50 flex items-center justify-between shrink-0 gap-3">
+                   <div className="flex items-center gap-4 bg-white border border-gray-200 p-2 rounded-xl">
+                     <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Mural:</label>
+                     <label className="flex items-center gap-2 cursor-pointer group">
+                       <input 
+                         type="checkbox" 
+                         checked={visibilidade.includes('publico')}
+                         onChange={(e) => {
+                           if (e.target.checked) setVisibilidade([...visibilidade, 'publico']);
+                           else setVisibilidade(visibilidade.filter(v => v !== 'publico'));
+                         }}
+                         className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                       />
+                       <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-[#004c99] transition-colors">Público</span>
+                     </label>
+                     <label className="flex items-center gap-2 cursor-pointer group">
+                       <input 
+                         type="checkbox" 
+                         checked={visibilidade.includes('admin')}
+                         onChange={(e) => {
+                           if (e.target.checked) setVisibilidade([...visibilidade, 'admin']);
+                           else setVisibilidade(visibilidade.filter(v => v !== 'admin'));
+                         }}
+                         className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+                       />
+                       <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-purple-600 transition-colors">Direção e coordenação</span>
+                     </label>
+                   </div>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={handlePrintExams}
+                      disabled={selectedExams.length === 0 && !otherExams.trim()}
+                      className="px-6 py-3 bg-white text-purple-600 border border-purple-200 hover:bg-purple-50 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <FileText size={16} /> Imprimir Apenas
+                    </button>
+                    <button 
+                      onClick={handleSaveExamRequest}
+                      disabled={selectedExams.length === 0 && !otherExams.trim()}
+                      className="px-8 py-3 bg-purple-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md hover:bg-purple-700 transition-all flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Save size={16} /> Salvar Solicitação
+                    </button>
+                  </div>
                 </div>
               )}
             </motion.div>

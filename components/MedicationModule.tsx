@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
 import jsPDF from 'jspdf';
+import { addPdfSignatureNode } from '../lib/pdfUtils';
+
 import 'jspdf-autotable';
 import { Pill, Package, Clock, Users, CheckCircle2, AlertCircle, Plus, Search, Calendar, ChevronRight } from 'lucide-react';
 import { Resident, MedicationProduct, MedicationSeparationLog, MedicationAdministrationLog, Medication } from '../types';
@@ -14,6 +16,7 @@ interface MedicationModuleProps {
   session: any;
   onSaveResident?: (resident: Resident) => void;
   settings?: InstitutionSettings | null;
+  onPostToMural?: any;
 }
 
 const MODULES = [
@@ -23,7 +26,7 @@ const MODULES = [
   { id: 'ministracao', label: 'Ministração', icon: CheckCircle2 }
 ] as const;
 
-export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, session, onSaveResident, settings }) => {
+export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, session, onSaveResident, settings, onPostToMural }) => {
   const [activeTab, setActiveTab] = useState<typeof MODULES[number]['id']>('prescricao');
   const [inventory, setInventory] = useState<MedicationProduct[]>([]);
   
@@ -84,7 +87,7 @@ export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, s
 
       <div className="flex-1 overflow-auto p-8">
         {activeTab === 'prescricao' && (
-          <PrescriptionListTab residents={residents} onSaveResident={onSaveResident!} />
+          <PrescriptionListTab residents={residents} onSaveResident={onSaveResident!} onPostToMural={onPostToMural} />
         )}
         {activeTab === 'estoque' && (
           <InventoryTab inventory={inventory} setInventory={handleUpdateInventory} residents={residents} settings={settings} />
@@ -259,6 +262,7 @@ const InventoryTab: React.FC<{ inventory: MedicationProduct[], setInventory: (in
     });
 
     await addPdfHeaderAndFooter(doc, settings, `Relatório de Estoque - ${view === 'todos' ? 'Todos' : view === 'baixo' ? 'Baixo Estoque' : 'Vencidos/Próximos'}`);
+    addPdfSignatureNode(doc);
     doc.save(`estoque_${view}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
@@ -607,6 +611,7 @@ const SeparationTab: React.FC<{
 
     await addPdfHeaderAndFooter(doc, settings, `Ficha de Separação - ${shift} - ${date.split('-').reverse().join('/')}`);
     
+    addPdfSignatureNode(doc);
     doc.save(`separacao_${shift}_${date}.pdf`);
   };
 
@@ -798,6 +803,7 @@ const AdministrationTab: React.FC<{
     
     await addPdfHeaderAndFooter(doc, settings, `Ficha de Ministração - ${shift} - ${date.split('-').reverse().join('/')}`);
 
+    addPdfSignatureNode(doc);
     doc.save(`ministracao_${shift}_${date}.pdf`);
   };
 
@@ -924,7 +930,7 @@ const AdministrationTab: React.FC<{
   );
 };
 
-const PrescriptionListTab: React.FC<{ residents: Resident[], onSaveResident: (r: Resident) => void }> = ({ residents, onSaveResident }) => {
+const PrescriptionListTab: React.FC<{ residents: Resident[], onSaveResident: (r: Resident) => void, onPostToMural?: any }> = ({ residents, onSaveResident, onPostToMural }) => {
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -984,7 +990,8 @@ const PrescriptionListTab: React.FC<{ residents: Resident[], onSaveResident: (r:
                 if (onSaveResident) {
                   onSaveResident({ ...selectedResident, medications: newMeds });
                 }
-              }} 
+              }}
+              onPostToMural={onPostToMural}
             />
           </div>
         ) : (

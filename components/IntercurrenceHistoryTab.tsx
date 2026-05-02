@@ -69,10 +69,12 @@ const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resid
                     </div>
                   )}
                   
-                  {inc.shareOnMural && (
-                    <p className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded w-fit border border-green-100">
-                      Compartilhado no Mural
-                    </p>
+                  {inc.visibilidade && inc.visibilidade.length > 0 && (
+                    <div className="flex gap-2">
+                      <p className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded w-fit border border-green-100">
+                        Mural: {inc.visibilidade.includes('publico') ? 'Público' : ''} {inc.visibilidade.includes('admin') ? 'Direção' : ''}
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>

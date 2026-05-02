@@ -1,3 +1,4 @@
+import { getProfessionalSignature } from '../lib/api';
 import React from "react";
 import {
   Plus,
@@ -263,6 +264,9 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
       { id: "acolhido" as CandidateStage, label: "Acolhidos", color: "green" },
     ];
 
+    const printDate = new Date().toLocaleDateString("pt-BR");
+    const sigDetails = getProfessionalSignature();
+
     let html = `
       <html>
         <head>
@@ -336,6 +340,14 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
     });
 
     html += `
+          <div style="margin-top: 60px; text-align: center;">
+            <div style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold; font-size: 11px;">
+              ${(sigDetails.profissionalAssinaturaTexto || sigDetails.profissionalNome || 'Assistente Social').replace(/\n/g, '<br/>')}
+            </div>
+            <div style="font-size: 10px; color: #666; margin-top: 2px;">
+              ${printDate}
+            </div>
+          </div>
           <div class="footer">Este documento é de uso interno da SSVP e contém dados sensíveis.</div>
         </body>
       </html>
@@ -1040,6 +1052,7 @@ function StatusManagementModal({
   const [data, setData] = React.useState<Candidate>(candidate);
   const [view, setView] = React.useState<"update" | "archive">("update");
   const [isNursingModalOpen, setIsNursingModalOpen] = React.useState(false);
+  const [visibilidade, setVisibilidade] = React.useState<string[]>(['admin', 'publico']);
 
   const updateField = (field: keyof Candidate, value: any) => {
     setData((prev) => ({ ...prev, [field]: value }));
@@ -1233,14 +1246,43 @@ function StatusManagementModal({
                 <Printer size={16} /> Acessar Ficha p/ Gerar PDF
               </button>
 
+              <div className="flex items-center gap-4 bg-gray-50 border p-2 rounded-xl">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Mural:</label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    checked={visibilidade.includes('publico')}
+                    onChange={(e) => {
+                      if (e.target.checked) setVisibilidade([...visibilidade, 'publico']);
+                      else setVisibilidade(visibilidade.filter(v => v !== 'publico'));
+                    }}
+                    className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                  />
+                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-[#004c99] transition-colors">Público</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    checked={visibilidade.includes('admin')}
+                    onChange={(e) => {
+                      if (e.target.checked) setVisibilidade([...visibilidade, 'admin']);
+                      else setVisibilidade(visibilidade.filter(v => v !== 'admin'));
+                    }}
+                    className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+                  />
+                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-purple-600 transition-colors">Direção e coordenação</span>
+                </label>
+              </div>
+
               <button
                 onClick={() => {
                   onSave(data);
-                  if (onPostToMural && data.boardOpinion) {
+                  if (onPostToMural && data.boardOpinion && visibilidade.length > 0) {
                     onPostToMural({
                       author: 'Sistema de Triagem',
                       text: `Foi registrado um parecer da diretoria para o candidato(a) ${data.name}.`,
-                      detailedContent: `Parecer da Diretoria:\n${data.boardOpinion}`
+                      detailedContent: `Parecer da Diretoria:\n${data.boardOpinion}`,
+                      visibilidade
                     });
                   }
                   onClose();
@@ -1340,14 +1382,43 @@ function StatusManagementModal({
                 <Printer size={16} /> Acessar Ficha p/ Gerar PDF
               </button>
               
+              <div className="flex items-center gap-4 bg-gray-50 border p-2 rounded-xl">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Mural:</label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    checked={visibilidade.includes('publico')}
+                    onChange={(e) => {
+                      if (e.target.checked) setVisibilidade([...visibilidade, 'publico']);
+                      else setVisibilidade(visibilidade.filter(v => v !== 'publico'));
+                    }}
+                    className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                  />
+                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-[#004c99] transition-colors">Público</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    checked={visibilidade.includes('admin')}
+                    onChange={(e) => {
+                      if (e.target.checked) setVisibilidade([...visibilidade, 'admin']);
+                      else setVisibilidade(visibilidade.filter(v => v !== 'admin'));
+                    }}
+                    className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+                  />
+                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-purple-600 transition-colors">Direção e coordenação</span>
+                </label>
+              </div>
+              
               <button
                 onClick={() => {
                   onSave(data);
-                  if (onPostToMural && (data.medicalOpinion || data.medicalStatus)) {
+                  if (onPostToMural && (data.medicalOpinion || data.medicalStatus) && visibilidade.length > 0) {
                     onPostToMural({
                       author: 'Sistema de Triagem',
                       text: `Foi registrado um parecer médico para o candidato(a) ${data.name}.`,
-                      detailedContent: `Status: ${data.medicalStatus}\n\nParecer: ${data.medicalOpinion || 'Nenhum'}`
+                      detailedContent: `Status: ${data.medicalStatus}\n\nParecer: ${data.medicalOpinion || 'Nenhum'}`,
+                      visibilidade
                     });
                   }
                   onClose();
@@ -1747,6 +1818,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
     if (!printWindow) return;
 
     const printDate = new Date().toLocaleDateString('pt-BR');
+    const sigDetails = getProfessionalSignature();
     
     const renderMulti = (val: any) => {
       if (Array.isArray(val)) return val.join(', ');
@@ -1899,6 +1971,15 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
           <h2 class="section-title">11. Parecer Social</h2>
           <div class="paragraph">${data.interview?.socialAnalysis || ''}</div>
 
+          <div class="signature-box" style="margin-top: 40px; text-align: center;">
+            <div class="signature-line" style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold;">
+              ${(sigDetails.profissionalAssinaturaTexto || sigDetails.profissionalNome || 'Assistente Social').replace(/\n/g, '<br/>')}
+            </div>
+            <div class="signature-role" style="font-size: 10px; color: #666; margin-top: 2px;">
+              ${printDate}
+            </div>
+          </div>
+
           ${getHtmlPrintFooter()}
         </body>
       </html>
@@ -1937,7 +2018,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
 
   const addFamilyMember = () => {
     const newMember: FamilyMemberRecord = {
-      id: Date.now().toString(),
+      id: Date.now().toString(), ...getProfessionalSignature(),
       name: "",
       kinship: "",
       age: "",

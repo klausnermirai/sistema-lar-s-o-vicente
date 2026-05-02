@@ -93,11 +93,15 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogi
 
       if (data.success) {
         const session = { 
+          id: data.user?.id,
           cnpj: institution.cnpj, 
           username: admin.username.toLowerCase(), 
+          fullName: admin.fullName,
+          role: admin.role,
           accessLevel: 'administrador',
           institutionId: data.institutionId,
-          hierarchy: data.hierarchy // Pass hierarchy from backend
+          hierarchy: data.hierarchy, // Pass hierarchy from backend
+          signature: data.user?.signature
         };
         localStorage.setItem('ssvp_session', JSON.stringify(session));
         onSetupComplete(session);

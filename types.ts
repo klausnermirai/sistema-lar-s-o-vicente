@@ -105,8 +105,10 @@ export interface User {
   password?: string;
   fullName: string;
   role: string;
+  professionalRegistration?: string;
   accessLevel: 'administrador' | 'assistente_social' | 'psicologia' | 'terapeuta_ocupacional' | 'fisioterapeuta' | 'nutricionista' | 'medico' | 'cuidados';
   institutionType?: InstitutionType;
+  funcionarioId?: string;
 }
 
 export interface Relative {
@@ -467,9 +469,16 @@ export interface NutritionalEvolution {
 export interface NutritionalAttendance {
   id: string;
   dateTime: string;
-  reason: string;
-  notes: string;
+  reason?: string;
+  
+  // Substituição de múltiplos campos por um só:
+  descricaoAtendimento: string;
+  visibilidade: string[] | string;
+  
+  // Legado (opcional para não quebrar o que já existe):
+  notes?: string;
   muralNotes?: string;
+
   signature: string;
 }
 
@@ -508,10 +517,16 @@ export interface PsychologicalEvolution {
 export interface PsychologicalAttendance {
   id: string;
   dateTime: string;
-  interventionType: string;
-  attendanceEvolution: string;
+  interventionType?: string;
+  
+  descricaoAtendimento: string;
+  visibilidade: string[] | string;
+  
+  // Legado
+  attendanceEvolution?: string;
   muralNotes?: string;
   privateNotes?: string;
+  
   needsTeamReport: boolean;
   signature: string;
   candidateStatus?: 'apto' | 'inapto' | 'necessita_atencao';
@@ -577,10 +592,16 @@ export interface OccupationalTherapyEvolution {
 export interface OccupationalTherapyAttendance {
   id: string;
   dateTime: string;
-  attendanceType: string;
-  attendanceEvolution: string;
-  prontuarioNotes: string;
-  muralNotes: string;
+  attendanceType?: string;
+  
+  descricaoAtendimento: string;
+  visibilidade: string[] | string;
+  
+  // Legado
+  attendanceEvolution?: string;
+  prontuarioNotes?: string;
+  muralNotes?: string;
+  
   signature: string;
 }
 
@@ -633,10 +654,16 @@ export interface PhysiotherapyEvolution {
 export interface PhysiotherapyAttendance {
   id: string;
   dateTime: string;
-  attendanceType: string;
-  attendanceEvolution: string;
-  prontuarioNotes: string;
-  muralNotes: string;
+  attendanceType?: string;
+  
+  descricaoAtendimento: string;
+  visibilidade: string[] | string;
+  
+  // Legado
+  attendanceEvolution?: string;
+  prontuarioNotes?: string;
+  muralNotes?: string;
+  
   signature: string;
 }
 
@@ -798,7 +825,7 @@ export interface IncidentReport {
   type: 'queda' | 'comportamental' | 'clinica' | 'outros';
   description: string;
   conduct: string;
-  shareOnMural: boolean;
+  visibilidade?: string[];
   professionalName: string;
 }
 
@@ -808,7 +835,7 @@ export interface ShiftHandover {
   shift: 'manha' | 'tarde' | 'noite';
   summary: string;
   pendingTasks: string;
-  shareOnMural: boolean;
+  visibilidade?: string[];
   professionalName: string;
 }
 
@@ -902,9 +929,12 @@ export interface MuralMessage {
   id: string;
   institutionId: string;
   author: string;
+  authorName?: string;
+  authorRole?: string;
   text: string;
   detailedContent?: string;
-  isPublic?: boolean; // If true, anyone can see detailed content. If false/undefined, only admin can.
+  visibilidade?: string[] | string; // Novo campo para controle padronizado
+  isPublic?: boolean; // Legacy: If true, anyone can see detailed content. If false/undefined, only admin can.
   timestamp: number;
   likes?: string[]; // Array of usernames who liked this message
 }
@@ -924,7 +954,7 @@ export interface GroupActivity {
   involvedProfessionals: string[];
   result?: 'Excelente' | 'Boa' | 'Regular' | 'Baixa adesão' | string;
   observations?: string;
-  sharedToMural: boolean;
+  visibilidade?: string[];
   timestamp: number;
 }
 
@@ -940,8 +970,37 @@ export enum AppRoute {
   AGENDA = 'agenda',
   MEDICAMENTOS = 'medicamentos',
   GUIAS = 'guias',
-  VISITANTES = 'visitantes'
+  VISITANTES = 'visitantes',
+  EMPLOYEES = 'employees'
 }
+
+export interface Employee {
+  id: string;
+  institutionId: string;
+  nomeCompleto: string;
+  nomeExibicao?: string;
+  grupoOrigem?: string;
+  funcao: string;
+  areaProfissional?: string;
+  conselhoProfissional?: string;
+  numeroRegistro?: string;
+  ufRegistro?: string;
+  email?: string;
+  telefone?: string;
+  vinculo?: string;
+  cargaHorariaSemanal?: number | string;
+  dataAdmissao?: string;
+  status: 'ativo' | 'inativo';
+  criarUsuarioSistema?: boolean;
+  nivelAcessoSugerido?: string;
+  observacoes?: string;
+  criadoEm: number;
+  atualizadoEm: number;
+  archived?: boolean;
+  archivedAt?: number;
+  archivedBy?: string;
+}
+
 
 export type SubTab = 'geral' | 'familiares-visitantes' | 'financeiro' | 'itens' | 'prontuario' | 'pia' | 'prontuario-medico' | 'medicamentos' | 'intercorrencias';
 

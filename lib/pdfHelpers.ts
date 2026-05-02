@@ -273,4 +273,146 @@ export const getHtmlPrintStyles = () => `
   
   .section-title { font-size: 12px; font-weight: bold; text-transform: uppercase; color: #000; border-bottom: 1px solid #000; margin-top: 20px; margin-bottom: 10px; padding-bottom: 2px; }
   .paragraph { text-align: justify; white-space: pre-wrap; font-size: 11px; margin-top: 5px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; min-height: 60px; }
+  
+  .signature-box { margin-top: 50px; text-align: center; }
+  .signature-line { border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold; }
+  .signature-role { font-size: 10px; color: #666; }
 `;
+
+export const printAttendanceHtmlPdf = async (
+  attendance: any,
+  resident: any,
+  settings: any,
+  area: string
+) => {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return;
+
+  const title = `Relatório de Atendimento - ${area}`;
+  const headerHtml = await getHtmlPrintHeader(settings, title);
+  
+  const rawDate = attendance.dateTime || attendance.date;
+  let dateStr = "";
+  let timeStr = "";
+  if (rawDate) {
+    try {
+      const dt = new Date(rawDate);
+      if (!isNaN(dt.getTime())) {
+        dateStr = dt.toLocaleDateString("pt-BR");
+        // If it's a full ISO string (has T) or has hours
+        if (rawDate.includes('T') || rawDate.includes(' ')) {
+          timeStr = dt.toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' });
+        }
+      } else {
+        dateStr = rawDate.split('T')[0].split('-').reverse().join('/');
+      }
+    } catch {
+      dateStr = rawDate;
+    }
+  }
+
+  const tipo = attendance.attendanceType || attendance.interventionType || attendance.reason || "Não especificado";
+  const desc = attendance.descricaoAtendimento || attendance.attendanceEvolution || attendance.notes || "Sem descrição";
+  
+  let residentBirth = "";
+  let residentAge = "";
+  if (resident.birthDate) {
+    const dt = new Date(resident.birthDate + 'T12:00:00');
+    residentBirth = dt.toLocaleDateString("pt-BR");
+  }
+  if (resident.age) {
+    residentAge = resident.age.toString();
+  } else if (resident.birthDate) {
+    const bd = new Date(resident.birthDate);
+    const ageDifMs = Date.now() - bd.getTime();
+    const ageDate = new Date(ageDifMs);
+    residentAge = Math.abs(ageDate.getUTCFullYear() - 1970).toString();
+  }
+
+  const html = `
+    <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          ${getHtmlPrintStyles()}
+        </style>
+      </head>
+      <body>
+        ${headerHtml}
+
+        <h2 class="section-title">1. Dados do Residente</h2>
+        <div class="flex-row">
+          <div class="flex-col-full field">
+            <span class="label">Nome Completo:</span>
+            <span class="value">${resident.name || ""}</span>
+          </div>
+        </div>
+        <div class="flex-row">
+          <div class="flex-col field">
+            <span class="label">Data de Nascimento:</span>
+            <span class="value">${residentBirth}</span>
+          </div>
+          <div class="flex-col field">
+            <span class="label">Idade:</span>
+            <span class="value">${residentAge ? residentAge + ' anos' : ''}</span>
+          </div>
+        </div>
+
+        <h2 class="section-title">2. Dados do Atendimento</h2>
+        <div class="flex-row">
+          <div class="flex-col field">
+            <span class="label">Data:</span>
+            <span class="value">${dateStr}</span>
+          </div>
+          <div class="flex-col field">
+            <span class="label">Horário:</span>
+            <span class="value">${timeStr || "N/A"}</span>
+          </div>
+        </div>
+        <div class="flex-row">
+          <div class="flex-col field">
+            <span class="label">Área/Especialidade:</span>
+            <span class="value">${area}</span>
+          </div>
+          <div class="flex-col field">
+            <span class="label">Profissional Responsável:</span>
+            <span class="value">${attendance.signature || "Não especificado"}</span>
+          </div>
+        </div>
+        <div class="flex-row">
+          <div class="flex-col-full field">
+            <span class="label">Tipo/Motivo:</span>
+            <span class="value">${tipo}</span>
+          </div>
+        </div>
+
+        <h2 class="section-title">3. Descrição do Atendimento</h2>
+        <div class="paragraph">${desc}</div>
+
+        <div class="signature-box" style="margin-top: 50px; text-align: center;">
+          <div class="signature-line" style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold;">
+            ${(attendance.profissionalAssinaturaTexto || attendance.signature || "Assinatura do Profissional").replace(/\n/g, '<br/>')}
+          </div>
+          <div class="signature-role" style="font-size: 10px; color: #666; margin-top: 2px;">
+            ${area}
+          </div>
+          <div class="signature-role" style="font-size: 10px; color: #666; margin-top: 2px;">
+            ${dateStr}
+          </div>
+        </div>
+
+        ${getHtmlPrintFooter()}
+      </body>
+    </html>
+  `;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 500);
+};
+

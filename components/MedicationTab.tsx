@@ -15,11 +15,13 @@ import {
 interface MedicationTabProps {
   resident: Resident;
   onUpdateMedications: (meds: Medication[]) => void;
+  onPostToMural?: any;
 }
 
-const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedications }) => {
+const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedications, onPostToMural }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMedId, setEditingMedId] = useState<string | null>(null);
+  const [visibilidade, setVisibilidade] = useState<string[]>(['admin', 'publico']);
   
   const initialMedState: Omit<Medication, 'id'> = {
     name: '',
@@ -43,6 +45,7 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
       setEditingMedId(null);
       setFormData(initialMedState);
     }
+    setVisibilidade(['admin', 'publico']);
     setIsModalOpen(true);
   };
 
@@ -53,12 +56,28 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
         m.id === editingMedId ? { ...formData, id: editingMedId } : m
       );
       onUpdateMedications(updatedMeds);
+      if (onPostToMural && formData.observation && visibilidade.length > 0) {
+        onPostToMural({
+          author: 'Sistema de Cuidados',
+          text: `Prescrição de medicamento atualizada: ${formData.name} - ${resident.name}`,
+          detailedContent: `Dose: ${formData.dose}\nObservações: ${formData.observation}`,
+          visibilidade
+        });
+      }
     } else {
       const newMed: Medication = {
         ...formData,
         id: Math.random().toString(36).substr(2, 9)
       };
       onUpdateMedications([...currentMeds, newMed]);
+      if (onPostToMural && formData.observation && visibilidade.length > 0) {
+        onPostToMural({
+          author: 'Sistema de Cuidados',
+          text: `Nova prescrição de medicamento: ${formData.name} - ${resident.name}`,
+          detailedContent: `Dose: ${formData.dose}\nObservações: ${formData.observation}`,
+          visibilidade
+        });
+      }
     }
     setIsModalOpen(false);
   };
@@ -360,19 +379,48 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
               </div>
             </div>
 
-            <div className="p-8 border-t bg-gray-50 flex gap-4">
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400 hover:bg-gray-100 rounded-2xl transition-all"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSave}
-                className="flex-1 py-4 bg-[#004c99] text-white rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-blue-800 transition-all flex items-center justify-center gap-3"
-              >
-                <CheckCircle2 size={18} /> {editingMedId ? 'Atualizar Medicamento' : 'Salvar Medicamento'}
-              </button>
+            <div className="p-8 border-t bg-gray-50 flex flex-col gap-4">
+              <div className="flex items-center gap-4 bg-white border border-gray-200 p-3 rounded-2xl">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Visibilidade no Mural:</label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    checked={visibilidade.includes('publico')}
+                    onChange={(e) => {
+                      if (e.target.checked) setVisibilidade([...visibilidade, 'publico']);
+                      else setVisibilidade(visibilidade.filter(v => v !== 'publico'));
+                    }}
+                    className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                  />
+                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-[#004c99] transition-colors">Público</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    checked={visibilidade.includes('admin')}
+                    onChange={(e) => {
+                      if (e.target.checked) setVisibilidade([...visibilidade, 'admin']);
+                      else setVisibilidade(visibilidade.filter(v => v !== 'admin'));
+                    }}
+                    className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+                  />
+                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-purple-600 transition-colors">Direção e coordenação</span>
+                </label>
+              </div>
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400 hover:bg-gray-100 rounded-2xl transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="flex-1 py-4 bg-[#004c99] text-white rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-blue-800 transition-all flex items-center justify-center gap-3"
+                >
+                  <CheckCircle2 size={18} /> {editingMedId ? 'Atualizar Medicamento' : 'Salvar Medicamento'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

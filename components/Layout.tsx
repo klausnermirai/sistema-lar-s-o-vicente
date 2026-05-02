@@ -198,8 +198,8 @@ const Layout: React.FC<LayoutProps> = ({
   const gestaoItems = [
     { id: AppRoute.AMENDMENTS, label: 'Planejamento de Emendas', icon: BarChart3 },
     { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+    { id: AppRoute.EMPLOYEES, label: 'Funcionários (RH)', icon: Users },
     // Placeholders for future modules
-    { id: 'rh' as any, label: 'Recursos Humanos', icon: Users, disabled: true },
     { id: 'financeiro' as any, label: 'Gestão Financeira', icon: DollarSign, disabled: true },
     { id: 'compras' as any, label: 'Compras e Estoque', icon: Package, disabled: true },
   ];

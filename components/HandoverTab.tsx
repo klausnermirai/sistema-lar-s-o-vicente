@@ -1,3 +1,4 @@
+import { getProfessionalSignature } from '../lib/api';
 import React, { useState } from 'react';
 import { Resident, IncidentReport, ShiftHandover, MuralMessage, InstitutionSettings } from '../types';
 import { 
@@ -19,6 +20,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import jsPDF from 'jspdf';
+import { addPdfSignatureNode } from '../lib/pdfUtils';
+
 import autoTable from 'jspdf-autotable';
 import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 
@@ -55,7 +58,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
   const [conduct, setConduct] = useState('');
   const [incidentType, setIncidentType] = useState<IncidentReport['type']>('clinica');
   
-  const [shareOnMural, setShareOnMural] = useState(true);
+  const [visibilidade, setVisibilidade] = useState<string[]>(['admin', 'publico']);
 
   const handleExportPDF = async () => {
     const doc = new jsPDF();
@@ -113,6 +116,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
 
     await addPdfHeaderAndFooter(doc, settings, `Relatório Unificado de Plantão e Intercorrências - ${shift.toUpperCase()}`);
 
+    addPdfSignatureNode(doc);
     doc.save(`plantao_${shift}_${dateStr.replace(/\//g, '-')}.pdf`);
   };
 
@@ -130,11 +134,11 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
     // 1. Save Handover
     const handover: ShiftHandover = {
       id: Math.random().toString(36).substr(2, 9),
-      timestamp: Date.now(),
+      timestamp: Date.now(), ...getProfessionalSignature(),
       shift,
       summary,
       pendingTasks,
-      shareOnMural,
+      visibilidade,
       professionalName: 'Supervisor de Turno' // Placeholder
     };
     onSaveHandover(handover);
@@ -145,12 +149,12 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
     if (hasIncident) {
       const incident: IncidentReport = {
         id: Math.random().toString(36).substr(2, 9),
-        timestamp: Date.now(),
+        timestamp: Date.now(), ...getProfessionalSignature(),
         residentIds: selectedResidentIds,
         type: incidentType,
         description,
         conduct,
-        shareOnMural,
+        visibilidade,
         professionalName: 'Equipe de Enfermagem' // Placeholder
       };
       onSaveIncident(incident);
@@ -164,13 +168,13 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
     }
 
     // 3. Post to Mural
-    if (shareOnMural) {
+    if (visibilidade.length > 0) {
       // Post Shift Handover
       onPostToMural({
         author: `Relatório de Plantão - ${shift.toUpperCase()}`,
         text: `🔄 Resumo do Turno Adicionado`,
         detailedContent: `RESUMO DO TURNO:\n${summary}\n\nPENDÊNCIAS:\n${pendingTasks || 'Nenhuma'}`,
-        isPublic: true
+        visibilidade
       });
 
       // Post Incident separately for better visibility if it exists
@@ -184,7 +188,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
           author: `🚨 INTERCORRÊNCIA [${incidentType.toUpperCase()}]`,
           text: `🚩 Nova intercorrência registrada para: ${residentNames}`,
           detailedContent: `Descrição:\n${description}\n\nConduta:\n${conduct}`,
-          isPublic: true
+          visibilidade
         });
       }
     }
@@ -245,30 +249,44 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
         </div>
 
         {viewMode === 'registrar' && (
-          <div className="flex items-center gap-4">
-           <div className={`p-4 rounded-2xl flex items-center gap-3 transition-all border ${shareOnMural ? 'bg-green-50 border-green-100 text-green-700' : 'bg-gray-100 border-gray-200 text-gray-400'}`}>
-              <Megaphone size={18} />
-              <div className="text-left">
-                <p className="text-[10px] font-black uppercase tracking-widest leading-none">Compartilhar no Mural</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[8px] font-bold uppercase">{shareOnMural ? 'Ativado' : 'Desativado'}</span>
-                  <button 
-                    onClick={() => setShareOnMural(!shareOnMural)}
-                    className={`w-8 h-4 rounded-full relative transition-all ${shareOnMural ? 'bg-green-500' : 'bg-gray-300'}`}
-                  >
-                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${shareOnMural ? 'left-4.5' : 'left-0.5'}`} />
-                  </button>
-                </div>
+          <div className="flex items-center gap-6">
+            <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 flex flex-col gap-2">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Visibilidade no Mural</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    checked={visibilidade.includes('publico')}
+                    onChange={(e) => {
+                      if (e.target.checked) setVisibilidade([...visibilidade, 'publico']);
+                      else setVisibilidade(visibilidade.filter(v => v !== 'publico'));
+                    }}
+                    className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                  />
+                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-[#004c99] transition-colors">Público</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    checked={visibilidade.includes('admin')}
+                    onChange={(e) => {
+                      if (e.target.checked) setVisibilidade([...visibilidade, 'admin']);
+                      else setVisibilidade(visibilidade.filter(v => v !== 'admin'));
+                    }}
+                    className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+                  />
+                  <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-purple-600 transition-colors">Direção e coordenação</span>
+                </label>
               </div>
-           </div>
+            </div>
 
-          <button 
-             onClick={handleExportPDF}
-             className="px-6 py-4 bg-gray-100 text-gray-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all flex items-center gap-2 border"
-           >
-             <Download size={18} /> Exportar PDF
-           </button>
-        </div>
+            <button 
+               onClick={handleExportPDF}
+               className="px-6 py-4 bg-gray-100 text-gray-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all flex items-center gap-2 border"
+             >
+               <Download size={18} /> Exportar PDF
+             </button>
+          </div>
         )}
         {viewMode === 'historico' && (
           <div className="flex items-center gap-2">

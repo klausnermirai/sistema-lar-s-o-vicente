@@ -87,8 +87,20 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
     fullName: '',
     role: '',
     accessLevel: 'administrador',
-    password: ''
+    password: '',
+    funcionarioId: ''
   });
+
+  const [employees, setEmployees] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    if (activeTab === 'acesso') {
+      fetch('/api/employees', { headers: { 'Authorization': `Bearer ${currentUserId}` } })
+        .then(res => res.json())
+        .then(data => setEmployees(data))
+        .catch(console.error);
+    }
+  }, [activeTab, currentUserId]);
 
   const showMessage = (text: string, type: 'success' | 'error') => {
     setMessage({ text, type });
@@ -157,8 +169,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
         username: newUser.username!.trim().toLowerCase(),
         fullName: newUser.fullName || '',
         role: newUser.role || '',
+        professionalRegistration: newUser.professionalRegistration || '',
         accessLevel: newUser.accessLevel || 'gerencial',
         ...(newUser.password ? { password: newUser.password } : {}),
+        funcionarioId: newUser.funcionarioId || undefined,
         institutionId: institutionId,
         createdAt: editUserId ? undefined : new Date().toISOString()
       };
@@ -173,7 +187,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
         showMessage('Usuário cadastrado com sucesso!', 'success');
       }
 
-      setNewUser({ username: '', fullName: '', role: '', accessLevel: 'administrador', password: '' });
+      setNewUser({ username: '', fullName: '', role: '', professionalRegistration: '', accessLevel: 'administrador', password: '', funcionarioId: '' });
       setEditUserId(null);
       setShowPassword(false);
     } catch (error: any) {
@@ -188,14 +202,16 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
       username: user.username,
       fullName: user.fullName,
       role: user.role,
+      professionalRegistration: user.professionalRegistration,
       accessLevel: user.accessLevel,
-      password: '' // Don't show password
+      password: '', // Don't show password
+      funcionarioId: user.funcionarioId || ''
     });
   };
 
   const handleCancelEdit = () => {
     setEditUserId(null);
-    setNewUser({ username: '', fullName: '', role: '', accessLevel: 'administrador', password: '' });
+    setNewUser({ username: '', fullName: '', role: '', professionalRegistration: '', accessLevel: 'administrador', password: '', funcionarioId: '' });
   };
 
   const handleDeleteUser = async (id: string) => {
@@ -824,6 +840,16 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                              user.accessLevel === 'fisioterapeuta' ? 'Fisioterapeuta' : user.accessLevel}
                           </span>
                         </div>
+                        {user.funcionarioId && employees.find(e => e.id === user.funcionarioId) && (() => {
+                          const emp = employees.find(e => e.id === user.funcionarioId);
+                          return (
+                            <div className="mt-1 flex items-center gap-1.5 text-[10px] text-blue-600 bg-blue-50 w-fit px-2 py-0.5 rounded-md border border-blue-100">
+                              <span className="font-bold">Vínculo RH:</span> 
+                              {emp.nomeCompleto} ({emp.funcao})
+                              {emp.conselhoProfissional && ` - ${emp.conselhoProfissional} ${emp.numeroRegistro}`}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -912,6 +938,16 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                   </select>
                 </div>
                 <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-400 uppercase">Registro Profissional (CRM/CRESS/Etc)</label>
+                  <input
+                    type="text"
+                    value={newUser.professionalRegistration || ''}
+                    onChange={e => setNewUser({ ...newUser, professionalRegistration: e.target.value })}
+                    placeholder="Ex: CRM 12345, CRESS 54321..."
+                    className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+                <div className="space-y-1">
                   <label className="text-[10px] font-black text-gray-400 uppercase">Nível de Acesso *</label>
                   <select
                     value={newUser.accessLevel}
@@ -928,6 +964,19 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                     <option value="nutricionista">Nutricionista</option>
                     <option value="medico">Médico</option>
                     <option value="cuidados">Cuidados (Cuidadores)</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-400 uppercase">Vincular Funcionário (RH)</label>
+                  <select
+                    value={newUser.funcionarioId || ''}
+                    onChange={e => setNewUser({ ...newUser, funcionarioId: e.target.value })}
+                    className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+                  >
+                    <option value="">(Nenhum vínculo)</option>
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.nomeCompleto} - {emp.funcao}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="space-y-1">

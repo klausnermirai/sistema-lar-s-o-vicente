@@ -1,3 +1,4 @@
+import { getProfessionalSignature } from '../lib/api';
 import React, { useState, useEffect, useRef } from 'react';
 import { AgendaEvent, Resident, InstitutionSettings, MuralMessage, Appointment } from '../types';
 import { loadAgendaEvents, saveAgendaEvent, deleteAgendaEvent } from '../lib/agendaStore';
@@ -85,7 +86,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
       const resident = residents.find(r => r.id === newEvent.residentId);
       if (resident) {
         const newAppointment: Appointment = {
-          id: Date.now().toString(),
+          id: Date.now().toString(), ...getProfessionalSignature(),
           date: newEvent.date,
           time: newEvent.time,
           location: 'Local não definido (via agenda)',

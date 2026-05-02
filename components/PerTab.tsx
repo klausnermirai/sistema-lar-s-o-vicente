@@ -1,3 +1,4 @@
+import { getProfessionalSignature } from '../lib/api';
 import React, { useState } from 'react';
 import { Resident, PerData, ClinicalProgressEntry } from '../types';
 import { 
@@ -76,7 +77,7 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
     }
 
     const newProgress: ClinicalProgressEntry = {
-      id: Date.now().toString(),
+      id: Date.now().toString(), ...getProfessionalSignature(),
       date: new Date().toISOString(),
       professionalName,
       crm: professionalCRM,

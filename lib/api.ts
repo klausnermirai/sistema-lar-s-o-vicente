@@ -3,8 +3,12 @@ export interface Session {
   id?: string;
   cnpj: string;
   username: string;
+  fullName?: string;
+  role?: string;
+  professionalRegistration?: string;
   accessLevel: string;
   institutionId?: string;
+  signature?: any;
   hierarchy?: {
     type: 'nacional' | 'metropolitano' | 'central' | 'particular' | 'conferencia' | 'obra_unida';
     nacionalId?: string;
@@ -55,6 +59,25 @@ export const getAuthHeaders = (): HeadersInit => {
     }
   } catch (e) {}
   return headers;
+};
+
+export const getProfessionalSignature = () => {
+    try {
+        const saved = localStorage.getItem('ssvp_session');
+        if (!saved) return {};
+        const session = JSON.parse(saved);
+        if (session.signature && session.signature.profissionalAssinaturaTexto) {
+            return session.signature;
+        }
+        return {
+             profissionalId: session.id,
+             profissionalNome: session.fullName || session.username || 'Usuário',
+             profissionalFuncao: session.role || 'Profissional',
+             profissionalAssinaturaTexto: `${session.fullName || session.username}\n${session.role || 'Profissional'}${session.professionalRegistration ? `\n${session.professionalRegistration}` : ''}`
+        };
+    } catch (e) {
+        return {};
+    }
 };
 
 export const fetchResidents = async (institutionId: string, type: string = 'obra_unida') => {

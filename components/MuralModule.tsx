@@ -9,13 +9,15 @@ import { db } from '../lib/firebase';
 interface MuralModuleProps {
   institutionId: string;
   username: string;
+  fullName?: string;
+  role?: string;
   hideHeader?: boolean;
   cnpj?: string;
   muralPhone?: string;
   accessLevel?: string;
 }
 
-const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hideHeader = false, cnpj, muralPhone, accessLevel }) => {
+const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, fullName, role, hideHeader = false, cnpj, muralPhone, accessLevel }) => {
   const [messages, setMessages] = useState<MuralMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [filterDate, setFilterDate] = useState('');
@@ -31,10 +33,9 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
   const [residentSearch, setResidentSearch] = useState('');
   const [loadingResidents, setLoadingResidents] = useState(false);
 
-  const [newDetailedContent, setNewDetailedContent] = useState('');
-  const [showDetailsInput, setShowDetailsInput] = useState(false);
+  const [newVisibilidade, setNewVisibilidade] = useState<string[]>(['admin']);
 
-  const [viewingDetailsMsg, setViewingDetailsMsg] = useState<MuralMessage | null>(null);
+  // Removed viewingDetailsMsg state
 
   const handleDelete = async (id: string) => {
     if (confirm('Deseja realmente apagar esta mensagem?')) {
@@ -133,22 +134,21 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
     if (!newMessage.trim()) return;
 
     try {
-      const msgData: any = {
+      const msgData: Partial<MuralMessage> = {
         institutionId,
         author: username,
+        authorName: fullName || '',
+        authorRole: role || '',
         text: newMessage.trim(),
-        timestamp: serverTimestamp(),
-        isPublic: true,
+        timestamp: serverTimestamp() as unknown as number,
+        visibilidade: newVisibilidade,
+        // Mantém isPublic para compatibilidade com versões antigas
+        isPublic: newVisibilidade.includes('publico'),
       };
       
-      if (showDetailsInput && newDetailedContent.trim() && accessLevel?.toLowerCase().includes('admin')) {
-        msgData.detailedContent = newDetailedContent.trim();
-      }
-
       await addDoc(collection(db, 'muralMessages'), msgData);
       setNewMessage('');
-      setNewDetailedContent('');
-      setShowDetailsInput(false);
+      setNewVisibilidade(['admin']);
     } catch (err) {
       console.error('Error sending to mural:', err);
       alert('Erro ao enviar mensagem');
@@ -172,7 +172,8 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
   const formatMessageForExport = (msg: MuralMessage) => {
     const date = new Date(msg.timestamp).toLocaleDateString('pt-BR');
     const time = new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    return `[${date}] [${time}] - ${msg.author}: ${msg.text}`;
+    const authorDisplay = (msg.authorName && msg.authorRole) ? `${msg.authorName} - ${msg.authorRole}` : (msg.authorName || msg.author);
+    return `[${date}] [${time}] - ${authorDisplay}: ${msg.text}`;
   };
 
   const handleExportMessage = (msg: MuralMessage) => {
@@ -318,7 +319,9 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
                   )}
                   <div className="flex flex-col bg-white border border-gray-100 shadow-sm rounded-2xl p-5 w-full relative group">
                     <div className="flex items-center gap-3 mb-3">
-                      <span className="text-[11px] font-black text-gray-800">{msg.author}</span>
+                      <span className="text-[11px] font-black text-gray-800">
+                        {msg.authorName && msg.authorRole ? `${msg.authorName} - ${msg.authorRole}` : (msg.authorName || msg.author)}
+                      </span>
                       <span className="text-[10px] font-bold text-gray-400">{date} às {time}</span>
                     </div>
                     <div className="text-gray-800">
@@ -344,7 +347,27 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
                            </div>
                         </div>
                       ) : (
-                        <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            {(() => {
+                               const vis = Array.isArray(msg.visibilidade) ? msg.visibilidade : [msg.visibilidade || (msg.isPublic ? 'publico' : 'admin')];
+                               return (
+                                 <>
+                                   {vis.includes('publico') && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-700">Público</span>}
+                                   {vis.includes('admin') && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-purple-100 text-purple-700">Direção e Coordenação</span>}
+                                   {vis.includes('privado') && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-gray-100 text-gray-600">Atendimento Particular</span>}
+                                 </>
+                               )
+                            })()}
+                          </div>
+                          <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                          {msg.detailedContent && (
+                            <div className="mt-4 p-4 bg-gray-50 border-l-2 border-gray-300 rounded-lg">
+                              <span className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Conteúdo Detalhado (Legado)</span>
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{msg.detailedContent}</p>
+                            </div>
+                          )}
+                        </div>
                       )}
                       
                       {/* Likes Area */}
@@ -406,18 +429,6 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
                             <MessageCircle size={12} />
                           </button>
                         )}
-                        {(accessLevel?.toLowerCase().includes('admin') || msg.isPublic) && msg.detailedContent && (
-                          <button 
-                            onClick={() => {
-                              console.log('Visualizando detalhes:', msg.detailedContent);
-                              setViewingDetailsMsg(msg);
-                            }}
-                            className={`p-2 rounded-full shadow-lg border-2 border-white animate-pulse transition-all ${msg.isPublic ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
-                            title={msg.isPublic ? "Ver Conteúdo (Público)" : "Ver Conteúdo Detalhado (Admin)"}
-                          >
-                            <Eye size={14} />
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -432,56 +443,75 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
       {/* Input Area */}
       <div className="bg-white p-4 border-t shrink-0 flex flex-col gap-2">
         <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex flex-col gap-3 max-w-5xl mx-auto w-full">
-          <div className="flex gap-3 items-start">
-            <textarea
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder="Digite sua mensagem simples para o mural..."
-              rows={1}
-              className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none resize-none min-h-[48px] max-h-[120px]"
-              style={{ height: 'auto' }}
-              onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement;
-                target.style.height = 'auto';
-                target.style.height = Math.min(target.scrollHeight, 120) + 'px';
-              }}
-            />
-            {accessLevel?.toLowerCase().includes('admin') && (
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-3 items-start">
+              <textarea
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="Digite sua mensagem para o mural..."
+                rows={1}
+                className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none resize-none min-h-[48px] max-h-[120px]"
+                style={{ height: 'auto' }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+                }}
+              />
               <button
-                type="button"
-                onClick={() => setShowDetailsInput(!showDetailsInput)}
-                className={`p-3 rounded-xl transition-colors border flex-shrink-0 ${showDetailsInput ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'}`}
-                title="Adicionar Conteúdo Detalhado"
+                type="submit"
+                disabled={!newMessage.trim()}
+                className="px-6 py-3 bg-[#004c99] text-white rounded-xl font-black text-xs uppercase hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors h-12 shrink-0"
               >
-                <Eye size={20} />
+                <Send size={16} />
+                Enviar
               </button>
-            )}
-            <button
-              type="submit"
-              disabled={!newMessage.trim()}
-              className="px-6 py-3 bg-[#004c99] text-white rounded-xl font-black text-xs uppercase hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors h-12"
-            >
-              <Send size={16} />
-              Enviar
-            </button>
+            </div>
+            
+            <div className="flex items-center gap-4 px-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Visibilidade:</span>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={Array.isArray(newVisibilidade) ? newVisibilidade.includes('publico') : newVisibilidade === 'publico'}
+                  onChange={(e) => {
+                     let current = Array.isArray(newVisibilidade) ? [...newVisibilidade] : [newVisibilidade as string];
+                     if (current.includes('privado')) current = [];
+                     if (e.target.checked) current.push('publico');
+                     else current = current.filter((v: string) => v !== 'publico');
+                     if (!current.includes('admin')) current.push('admin'); 
+                     setNewVisibilidade(current);
+                  }}
+                  className="w-3.5 h-3.5 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                />
+                <span className="text-xs font-medium text-gray-700">Público</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={Array.isArray(newVisibilidade) ? newVisibilidade.includes('admin') : newVisibilidade === 'admin'}
+                  onChange={(e) => {
+                     let current = Array.isArray(newVisibilidade) ? [...newVisibilidade] : [newVisibilidade as string];
+                     if (current.includes('privado')) current = [];
+                     if (e.target.checked) {
+                       if (!current.includes('admin')) current.push('admin');
+                     } else {
+                       current = current.filter((v: string) => v !== 'admin');
+                     }
+                     setNewVisibilidade(current);
+                  }}
+                  className="w-3.5 h-3.5 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+                />
+                <span className="text-xs font-medium text-gray-700">Equipe/Admin</span>
+              </label>
+            </div>
           </div>
-          {showDetailsInput && accessLevel?.toLowerCase().includes('admin') && (
-             <div className="flex gap-3">
-               <textarea
-                 value={newDetailedContent}
-                 onChange={(e) => setNewDetailedContent(e.target.value)}
-                 placeholder="Digite o conteúdo detalhado oculto (apenas administradores poderão ver no olhinho)..."
-                 rows={3}
-                 className="flex-1 px-4 py-3 bg-purple-50 border border-purple-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-500 outline-none resize-y min-h-[80px]"
-               />
-             </div>
-          )}
         </form>
       </div>
       {/* Notify Family Modal */}
@@ -556,63 +586,6 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, hide
                   <div className="text-center py-8 text-sm font-medium text-gray-400">Nenhum residente encontrado.</div>
                 )}
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* View Detailed Content Modal */}
-      {viewingDetailsMsg && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => setViewingDetailsMsg(null)}
-        >
-          <div 
-            className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] border border-purple-100"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6 border-b flex justify-between items-center bg-[#004c99] text-white">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-white/10 rounded-xl">
-                  <Eye size={20} />
-                </div>
-                <h3 className="font-black uppercase tracking-tight text-lg">Conteúdo Detalhado</h3>
-              </div>
-              <button 
-                onClick={() => setViewingDetailsMsg(null)} 
-                className="opacity-70 hover:opacity-100 transition-opacity p-2 hover:bg-white/10 rounded-full"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="p-8 overflow-y-auto">
-              <div className="flex items-center gap-4 mb-8 pb-6 border-b border-gray-50">
-                <div className="w-12 h-12 bg-[#004c99] text-white rounded-2xl flex items-center justify-center text-xl font-black">
-                  {viewingDetailsMsg.author[0]}
-                </div>
-                <div>
-                  <p className="font-black text-gray-900 uppercase tracking-tighter">{viewingDetailsMsg.author}</p>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                    Postado em {new Date(viewingDetailsMsg.timestamp).toLocaleString('pt-BR')}
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-purple-50/30 p-8 rounded-3xl border border-purple-100/50">
-                <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed font-medium">
-                  {viewingDetailsMsg.detailedContent}
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 border-t bg-gray-50 flex justify-end">
-               <button 
-                 onClick={() => setViewingDetailsMsg(null)}
-                 className="px-8 py-3 bg-[#004c99] text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-800 transition-all shadow-lg"
-               >
-                 Fechar Detalhes
-               </button>
             </div>
           </div>
         </div>

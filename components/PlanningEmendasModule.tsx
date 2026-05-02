@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
+import { addPdfSignatureNode } from '../lib/pdfUtils';
+
 import autoTable from 'jspdf-autotable';
 import { 
   fetchAmendmentCategories, 
@@ -376,6 +378,7 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
       }
     });
 
+    addPdfSignatureNode(doc);
     doc.save('relatorio-analise-gaps-lar-sao-vicente.pdf');
   };
 

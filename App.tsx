@@ -5,6 +5,7 @@ import ElderlyList from './components/ElderlyList';
 import ElderlyForm from './components/ElderlyForm';
 import ScreeningModule from './components/ScreeningModule';
 import SettingsModule from './components/SettingsModule';
+import { EmployeesModule } from './components/EmployeesModule';
 import MultidisciplinaryModule from './components/MultidisciplinaryModule';
 import HealthCareModule from './components/HealthCareModule';
 import { PlanningEmendasModule } from './components/PlanningEmendasModule';
@@ -308,9 +309,15 @@ const App: React.FC = () => {
   };
 
   const handlePostToMural = async (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => {
+    const isCurrentUserAuthor = message.author === session?.username;
+    const authorName = isCurrentUserAuthor ? (message.authorName || session?.fullName || '') : (message.authorName || message.author);
+    const authorRole = isCurrentUserAuthor ? (message.authorRole || session?.role || '') : (message.authorRole || '');
+
     const fullMessage = {
       ...message,
       institutionId: session?.institutionId || session?.cnpj || 'default',
+      authorName,
+      authorRole,
       timestamp: Date.now()
     };
     try {
@@ -391,6 +398,8 @@ const App: React.FC = () => {
               institutionId={session?.institutionId || session?.cnpj || ''} 
               cnpj={session?.cnpj} 
               username={session?.username || ''}
+              fullName={session?.fullName || ''}
+              role={session?.role || ''}
               muralPhone={settings?.muralPhone}
               accessLevel={session?.accessLevel}
             />
@@ -569,6 +578,7 @@ const App: React.FC = () => {
           session={session}
           onSaveResident={handleSaveResident}
           settings={settings}
+          onPostToMural={handlePostToMural}
         />
       )}
 
@@ -601,6 +611,13 @@ const App: React.FC = () => {
           onSettingsChange={(newSettings) => setSettings(newSettings)}
           accessLevel={session.accessLevel}
           currentUserId={session.id}
+        />
+      )}
+
+      {activeRoute === AppRoute.EMPLOYEES && session && (
+        <EmployeesModule 
+          session={session}
+          settings={settings}
         />
       )}
     </Layout>

@@ -1,7 +1,10 @@
+import { getProfessionalSignature } from '../lib/api';
 import React, { useState } from 'react';
 import { Resident, OccupationalTherapyData, OccupationalTherapyAssessment, OccupationalTherapyEvolution, OccupationalTherapyAttendance, MuralMessage } from '../types';
 import { Plus, Save, Edit2, CheckCircle, Clock, Printer, FileSpreadsheet } from 'lucide-react';
 import jsPDF from 'jspdf';
+import { addPdfSignatureNode } from '../lib/pdfUtils';
+
 import 'jspdf-autotable';
 import GroupActivityTab from './GroupActivityTab';
 
@@ -44,15 +47,18 @@ const ChecklistGroup = ({ label, options, selected = [], onChange, isEditing }: 
 }
 
 
+import { printAttendanceHtmlPdf } from '../lib/pdfHelpers';
+
 interface OccupationalTherapyTabProps {
   resident: Resident;
+  settings?: any;
   onChange: (data: OccupationalTherapyData) => void;
   residents: Resident[];
   onSaveResident: (resident: Resident) => void;
   onPostToMural?: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
 }
 
-const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ resident, onChange, residents, onSaveResident, onPostToMural }) => {
+const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ resident, settings, onChange, residents, onSaveResident, onPostToMural }) => {
   const [activeSubTab, setActiveSubTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos'>('avaliacao');
   
   const handleExportAssessmentPDF = () => {
@@ -86,6 +92,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
       styles: { fontSize: 8 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Avaliacao_TO_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -117,6 +124,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
       styles: { fontSize: 9 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Evolucoes_TO_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -137,7 +145,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
     const tableData = (otData.attendances || []).map(at => [
       new Date(at.dateTime).toLocaleString('pt-BR'),
       at.attendanceType || 'N/A',
-      at.signature || 'N/A'
+      at.profissionalAssinaturaTexto || at.signature || at.profissionalNome || 'N/A'
     ]);
 
     (doc as any).autoTable({
@@ -149,7 +157,12 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
       styles: { fontSize: 9 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Atendimentos_TO_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+  const handleExportIndividualAttendancePDF = async (att: any) => {
+    await printAttendanceHtmlPdf(att, resident, settings, 'Terapia Ocupacional');
   };
 
   
@@ -189,13 +202,15 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
   });
 
   const [isAddingAttendance, setIsAddingAttendance] = useState(false);
-  const [newAttendance, setNewAttendance] = useState<Partial<OccupationalTherapyAttendance>>({
-    dateTime: new Date().toISOString().slice(0, 16),
-    attendanceType: '',
-    attendanceEvolution: '',
-    prontuarioNotes: '',
-    muralNotes: '',
-    signature: ''
+  const [newAttendance, setNewAttendance] = useState<Partial<OccupationalTherapyAttendance>>(() => {
+    const sigData = getProfessionalSignature();
+    return {
+      dateTime: new Date().toISOString().slice(0, 16),
+      attendanceType: '',
+      descricaoAtendimento: '',
+      visibilidade: ['admin'],
+      signature: sigData.profissionalAssinaturaTexto || sigData.profissionalNome || ''
+    };
   });
 
   const handleSaveAssessment = () => {
@@ -208,7 +223,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
   const handleSaveEvolution = () => {
     if (newEvolution.functionalEvolution && newEvolution.newConduct) {
       const evolution: OccupationalTherapyEvolution = {
-        id: Date.now().toString(),
+        id: Date.now().toString(), ...getProfessionalSignature(),
         date: newEvolution.date || new Date().toISOString().split('T')[0],
         functionalEvolution: newEvolution.functionalEvolution,
         participationEvolution: newEvolution.participationEvolution || '',
@@ -231,14 +246,13 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
   };
 
   const handleSaveAttendance = () => {
-    if (newAttendance.attendanceType && newAttendance.attendanceEvolution && newAttendance.signature) {
+    if (newAttendance.attendanceType && newAttendance.descricaoAtendimento && newAttendance.signature) {
       const attendance: OccupationalTherapyAttendance = {
-        id: Date.now().toString(),
+        id: Date.now().toString(), ...getProfessionalSignature(),
         dateTime: newAttendance.dateTime || new Date().toISOString().slice(0, 16),
         attendanceType: newAttendance.attendanceType,
-        attendanceEvolution: newAttendance.attendanceEvolution,
-        prontuarioNotes: newAttendance.prontuarioNotes || '',
-        muralNotes: newAttendance.muralNotes || '',
+        descricaoAtendimento: newAttendance.descricaoAtendimento,
+        visibilidade: newAttendance.visibilidade as any,
         signature: newAttendance.signature || ''
       };
       
@@ -247,25 +261,23 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         attendances: [attendance, ...(otData.attendances || [])]
       });
 
-      if (onPostToMural) {
-        let muralText = `[T.O.] Atendimento de ${resident.name} finalizado.`;
-        if (attendance.muralNotes) muralText += ` Notas: ${attendance.muralNotes}`;
+      if (Array.isArray(attendance.visibilidade) && !attendance.visibilidade.includes('privado') && onPostToMural) {
+        let muralText = `[T.O.] Atendimento de ${resident.name} finalizado.\n\n${attendance.descricaoAtendimento}`;
         onPostToMural({
           author: attendance.signature || 'Terapeuta Ocupacional',
           text: muralText,
-          detailedContent: `Tipo: ${attendance.attendanceType}\n\nEvolução:\n${attendance.attendanceEvolution}\n\nNotas do Prontuário:\n${attendance.prontuarioNotes || 'Nenhuma'}`,
-          isPublic: !!attendance.muralNotes?.trim()
+          visibilidade: attendance.visibilidade as string[]
         });
       }
 
       setIsAddingAttendance(false);
+      const sigData = getProfessionalSignature();
       setNewAttendance({
         dateTime: new Date().toISOString().slice(0, 16),
         attendanceType: '',
-        attendanceEvolution: '',
-        prontuarioNotes: '',
-        muralNotes: '',
-        signature: ''
+        descricaoAtendimento: '',
+        visibilidade: ['admin'],
+        signature: sigData.profissionalAssinaturaTexto || sigData.profissionalNome || ''
       });
     }
   };
@@ -827,49 +839,62 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
 
               <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Evolução do atendimento</label>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Descrição do atendimento</label>
                   <textarea
-                    value={newAttendance.attendanceEvolution || ''}
-                    onChange={(e) => setNewAttendance({ ...newAttendance, attendanceEvolution: e.target.value })}
+                    value={newAttendance.descricaoAtendimento || ''}
+                    onChange={(e) => setNewAttendance({ ...newAttendance, descricaoAtendimento: e.target.value })}
                     rows={3}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Anotação do prontuário (Registro Interno)</label>
-                  <textarea
-                    value={newAttendance.prontuarioNotes || ''}
-                    onChange={(e) => setNewAttendance({ ...newAttendance, prontuarioNotes: e.target.value })}
-                    rows={2}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Compartilhar no mural (Visível para todos)</label>
-                  <textarea
-                    value={newAttendance.muralNotes || ''}
-                    onChange={(e) => setNewAttendance({ ...newAttendance, muralNotes: e.target.value.slice(0, 150) })}
-                    maxLength={150}
-                    rows={2}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
-                  />
-                  <div className="flex justify-between items-center mt-1 text-[10px] font-bold uppercase tracking-widest">
-                    <span className="text-gray-400">
-                      {newAttendance.muralNotes?.length || 0}/150 caracteres
-                    </span>
-                    <span className="text-[#004c99]">
-                      Limite de 150 caracteres para o mural e notificação familiar
-                    </span>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Visibilidade do Atendimento</label>
+                  <div className="flex flex-col gap-3 sm:flex-row mb-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={Array.isArray(newAttendance.visibilidade) ? newAttendance.visibilidade.includes('publico') : newAttendance.visibilidade === 'publico'}
+                        onChange={(e) => {
+                           let current = Array.isArray(newAttendance.visibilidade) ? [...newAttendance.visibilidade] : [newAttendance.visibilidade as string];
+                           if (current.includes('privado')) current = [];
+                           if (e.target.checked) current.push('publico');
+                           else current = current.filter((v: string) => v !== 'publico');
+                           if (!current.includes('admin')) current.push('admin'); 
+                           setNewAttendance({...newAttendance, visibilidade: current});
+                        }}
+                        className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Público (todos verão no mural)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={Array.isArray(newAttendance.visibilidade) ? newAttendance.visibilidade.includes('admin') : newAttendance.visibilidade === 'admin'}
+                        onChange={(e) => {
+                           let current = Array.isArray(newAttendance.visibilidade) ? [...newAttendance.visibilidade] : [newAttendance.visibilidade as string];
+                           if (current.includes('privado')) current = [];
+                           if (e.target.checked) {
+                             if (!current.includes('admin')) current.push('admin');
+                           } else {
+                             current = current.filter((v: string) => v !== 'admin');
+                           }
+                           setNewAttendance({...newAttendance, visibilidade: current});
+                        }}
+                        className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Direção e coordenação</span>
+                    </label>
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Assinatura (Nome do profissional)</label>
-                  <input
-                    type="text"
+                  <textarea
                     value={newAttendance.signature || ''}
-                    onChange={(e) => setNewAttendance({ ...newAttendance, signature: e.target.value })}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
+                    readOnly
+                    rows={3}
+                    className="w-full p-3 bg-gray-50 text-gray-500 font-bold text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#004c99] outline-none resize-none whitespace-pre-wrap"
                   />
                 </div>
               </div>
@@ -884,7 +909,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 </button>
                 <button
                   type="button"
-                  onClick={handleExportAttendancePDF}
+                  onClick={() => handleExportIndividualAttendancePDF(newAttendance)}
                   className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-all font-black text-[10px] uppercase border"
                 >
                   <Printer size={14} />
@@ -893,7 +918,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                 <button
                   type="button"
                   onClick={handleSaveAttendance}
-                  disabled={!newAttendance.attendanceType || !newAttendance.attendanceEvolution || !newAttendance.signature}
+                  disabled={!newAttendance.attendanceType || !newAttendance.descricaoAtendimento || !newAttendance.signature}
                   className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
                 >
                   <Save size={14} />
@@ -916,29 +941,46 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                       <Clock size={16} />
                       <span className="font-bold">{new Date(att.dateTime).toLocaleString('pt-BR')}</span>
                     </div>
-                    <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">
-                      {att.attendanceType}
-                    </span>
+                    <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">
+                        {att.attendanceType}
+                        </span>
+                        <button
+                        onClick={() => handleExportIndividualAttendancePDF(att)}
+                        className="p-2 text-gray-400 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border"
+                        title="Exportar Atendimento"
+                        >
+                        <Printer size={16} />
+                        </button>
+                    </div>
                   </div>
                   <div className="space-y-3">
-                    <div>
-                      <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Evolução</span>
-                      <p className="text-sm text-gray-800 mt-1">{att.attendanceEvolution}</p>
-                    </div>
+                    { (att.descricaoAtendimento || att.attendanceEvolution) && (
+                      <div>
+                        <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Descrição / Evolução</span>
+                        <p className="text-sm text-gray-800 mt-1 whitespace-pre-wrap">{att.descricaoAtendimento || att.attendanceEvolution}</p>
+                      </div>
+                    )}
+                    {att.visibilidade && (
+                      <div>
+                        <span className="block text-[10px] font-black text-[#004c99] uppercase tracking-widest">Visibilidade</span>
+                        <p className="text-sm text-gray-700 mt-1 capitalize">{att.visibilidade}</p>
+                      </div>
+                    )}
                     {att.prontuarioNotes && (
                       <div>
-                        <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Anotação Prontuário</span>
+                        <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Anotação Prontuário (Legado)</span>
                         <p className="text-sm text-gray-600 mt-1 italic">{att.prontuarioNotes}</p>
                       </div>
                     )}
                     {att.muralNotes && (
                       <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
-                        <span className="block text-[10px] font-black text-orange-600 uppercase tracking-widest">Compartilhado no Mural</span>
+                        <span className="block text-[10px] font-black text-orange-600 uppercase tracking-widest">Compartilhado no Mural (Legado)</span>
                         <p className="text-sm text-orange-800 mt-1">{att.muralNotes}</p>
                       </div>
                     )}
                     <div className="pt-2 border-t border-gray-100">
-                      <span className="text-xs text-gray-500">Profissional: <strong className="text-gray-700">{att.signature}</strong></span>
+                      <span className="text-xs text-gray-500">Profissional: <strong className="text-gray-700 whitespace-pre-wrap">{att.profissionalAssinaturaTexto || att.signature || att.profissionalNome || 'N/A'}</strong></span>
                     </div>
                   </div>
                 </div>

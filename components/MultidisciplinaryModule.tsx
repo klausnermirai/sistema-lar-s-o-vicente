@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Resident, Candidate, NutritionalEvolution, NutritionalAttendance, PsychologicalEvolution, PsychologicalAttendance, MuralMessage } from '../types';
 import { Search, Save, AlertTriangle, Plus, ChevronRight, ChevronDown, ArrowLeft, HeartPulse, Users, Activity, FileSearch, X, User, Printer, FileSpreadsheet, Eye, Clock } from 'lucide-react';
-import { fetchResidentById, fetchMultidisciplinaryHistory } from '../lib/api';
+import { fetchResidentById, fetchMultidisciplinaryHistory, getProfessionalSignature } from '../lib/api';
 import jsPDF from 'jspdf';
+import { addPdfSignatureNode } from '../lib/pdfUtils';
+import { printAttendanceHtmlPdf } from '../lib/pdfHelpers';
+
 import 'jspdf-autotable';
 import OccupationalTherapyTab from './OccupationalTherapyTab';
 import GroupActivityTab from './GroupActivityTab';
@@ -11,16 +14,20 @@ import PhysiotherapyTab from './PhysiotherapyTab';
 import PsychologyJobCandidatesSection from './PsychologyJobCandidatesSection';
 import BirthdaySection from './BirthdaySection';
 
-interface MultidisciplinaryModuleProps {
+import { auth } from '../lib/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+
+export interface MultidisciplinaryModuleProps {
   residents: Resident[];
   onSaveResident: (resident: Resident) => void;
   candidates?: Candidate[];
   onSaveCandidate?: (candidate: Candidate) => void;
   accessLevel?: string;
   onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
+  settings?: any;
 }
 
-const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ residents, onSaveResident, candidates = [], onSaveCandidate, accessLevel, onPostToMural }) => {
+const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ residents, onSaveResident, candidates = [], onSaveCandidate, accessLevel, onPostToMural, settings }) => {
   const [selectedResidentId, setSelectedResidentId] = useState<string>('');
   const [targetType, setTargetType] = useState<'resident' | 'candidate' | 'job_candidate'>('resident');
   const [activeCompetence, setActiveCompetence] = useState<string | null>(null);
@@ -575,7 +582,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                 <div className="grid grid-cols-2 gap-8 border-b pb-8">
                    <div>
                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Profissional / Assinatura</p>
-                     <p className="text-sm font-bold text-gray-800">{selectedHistoryItem.signature || 'N/A'}</p>
+                     <p className="text-sm font-bold text-gray-800 whitespace-pre-wrap">{selectedHistoryItem.profissionalAssinaturaTexto || selectedHistoryItem.signature || selectedHistoryItem.profissionalNome || 'N/A'}</p>
                    </div>
                    <div>
                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Tipo / Categoria</p>
@@ -601,7 +608,42 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                    </div>
                 )}
              </div>
-             <div className="p-8 bg-gray-50 border-t flex justify-end">
+             <div className="p-8 bg-gray-50 border-t flex justify-end gap-3">
+                <button
+                  onClick={async () => {
+                    let area = 'Multidisciplinar';
+                    switch (activeCompetence) {
+                      case 'nutricionista': area = 'Nutrição'; break;
+                      case 'psicologia': area = 'Psicologia'; break;
+                      case 'terapeuta_ocupacional': area = 'Terapia Ocupacional'; break;
+                      case 'fisioterapeuta': area = 'Fisioterapia'; break;
+                      case 'enfermagem_medico': area = 'Enfermagem/Médico'; break;
+                    }
+                    
+                    let targetResident = fullResident;
+                    if (!targetResident) {
+                      targetResident = residents.find(r => r.name === selectedHistoryItem.residentName) || null;
+                    }
+                    if (!targetResident) {
+                      targetResident = candidates.find(c => c.name === selectedHistoryItem.residentName) || null as any;
+                    }
+
+                    if (targetResident) {
+                      const payload = {
+                        ...selectedHistoryItem,
+                        dateTime: selectedHistoryItem.timestamp || selectedHistoryItem.date,
+                        attendanceType: selectedHistoryItem.interventionType || selectedHistoryItem.attendanceType,
+                        descricaoAtendimento: selectedHistoryItem.attendanceEvolution || selectedHistoryItem.notes || selectedHistoryItem.moodBehaviorEvolution || selectedHistoryItem.treatmentResponse
+                      };
+                      await printAttendanceHtmlPdf(payload, targetResident, settings, area);
+                    } else {
+                      alert('Não foi possível carregar os dados do residente para gerar o PDF.');
+                    }
+                  }}
+                  className="px-10 py-4 bg-gray-100 text-gray-700 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all shadow-sm flex items-center gap-2"
+                >
+                  <Printer size={16} /> Exportar PDF
+                </button>
                 <button 
                   onClick={() => setIsHistoryModalOpen(false)}
                   className="px-10 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all shadow-lg active:scale-95"
@@ -637,6 +679,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
           {activeCompetence === 'fisioterapeuta' && (
             <PhysiotherapyTab 
               resident={selectedResident}
+              settings={settings}
               onPostToMural={onPostToMural}
               onChange={(data) => handleSaveEntity({ ...selectedResident, physiotherapy: data })}
               residents={residents}
@@ -700,6 +743,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                 {activeTab === 'atendimentos' && (
                   <NutritionalAttendanceSection 
                     resident={selectedResident} 
+                    settings={settings}
                     onPostToMural={onPostToMural}
                     onSave={(attendances) => {
                       const updatedResident = {
@@ -777,6 +821,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                 {activeTab === 'atendimentos' && (
                   <PsychologicalAttendanceSection 
                     resident={selectedResident} 
+                    settings={settings}
                     isCandidate={targetType === 'candidate'}
                     onPostToMural={onPostToMural}
                     onSave={(attendances) => {
@@ -799,6 +844,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
             <div className="p-10">
               <OccupationalTherapyTab 
                 resident={selectedResident}
+                settings={settings}
                 onPostToMural={onPostToMural}
                 onChange={(otData) => {
                   const updatedResident = {
@@ -918,6 +964,7 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
       styles: { fontSize: 9 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Avaliacao_Nutricional_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -1791,6 +1838,7 @@ const NutritionalEvolutionSection: React.FC<NutritionalEvolutionSectionProps> = 
       styles: { fontSize: 8 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Evolucoes_Nutricionais_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -1887,7 +1935,7 @@ interface NutritionalEvolutionFormProps {
 
 const NutritionalEvolutionForm: React.FC<NutritionalEvolutionFormProps> = ({ resident, evolution, onSave, onCancel }) => {
   const [formData, setFormData] = useState<any>(evolution || {
-    id: Date.now().toString(),
+    id: Date.now().toString(), ...getProfessionalSignature(),
     date: new Date().toISOString().split('T')[0],
     weight: '',
     foodAcceptance: '',
@@ -1973,6 +2021,7 @@ const NutritionalEvolutionForm: React.FC<NutritionalEvolutionFormProps> = ({ res
       styles: { fontSize: 9 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Evolucao_Nutricional_${resident.name.replace(/\s+/g, '_')}_${formData.date}.pdf`);
   };
 
@@ -2146,15 +2195,20 @@ const NutritionalEvolutionForm: React.FC<NutritionalEvolutionFormProps> = ({ res
 
 interface NutritionalAttendanceSectionProps {
   resident: Resident;
+  settings?: any;
   onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
   onSave: (attendances: NutritionalAttendance[]) => void;
 }
 
-const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> = ({ resident, onPostToMural, onSave }) => {
+const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> = ({ resident, settings, onPostToMural, onSave }) => {
   const [editingAttendance, setEditingAttendance] = useState<NutritionalAttendance | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const attendances = resident.nutrition?.attendances || [];
+
+  const handleExportIndividualAttendancePDF = async (att: any) => {
+    await printAttendanceHtmlPdf(att, resident, settings, 'Nutrição');
+  };
 
   const handleExportPDF = () => {
     const doc = new jsPDF();
@@ -2172,7 +2226,7 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
     const tableData = attendances.map(at => [
       new Date(at.dateTime).toLocaleString('pt-BR'),
       at.attendanceType || 'N/A',
-      at.signature || 'N/A'
+      at.profissionalAssinaturaTexto || at.signature || at.profissionalNome || 'N/A'
     ]);
 
     (doc as any).autoTable({
@@ -2184,6 +2238,7 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
       styles: { fontSize: 9 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Atendimentos_Nutricionais_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -2201,15 +2256,15 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
     
     onSave(newAttendances);
 
-    // Emit notification to mural
-    let muralText = `[Nutrição] Atendimento de ${resident.name} finalizado.`;
-    if (attendance.muralNotes) muralText += ` Notas: ${attendance.muralNotes}`;
-    onPostToMural({
-      author: attendance.signature || 'Nutricionista',
-      text: muralText,
-      detailedContent: `Motivo:\n${attendance.reason}\n\nNotas/Evolução:\n${attendance.notes}`,
-      isPublic: !!attendance.muralNotes.trim()
-    });
+    // Only post to mural if not 'privado'
+    if (Array.isArray(attendance.visibilidade) && !attendance.visibilidade.includes('privado')) {
+      let muralText = `[Nutrição] Atendimento de ${resident.name} finalizado.\n\n${attendance.descricaoAtendimento}`;
+      onPostToMural({
+        author: attendance.signature || 'Nutricionista',
+        text: muralText,
+        visibilidade: attendance.visibilidade // passe a visibilidade também para a nova propriedade do Mural
+      });
+    }
 
     setEditingAttendance(null);
     setIsCreating(false);
@@ -2218,6 +2273,8 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
   if (isCreating || editingAttendance) {
     return (
       <NutritionalAttendanceForm 
+        resident={resident}
+        settings={settings}
         attendance={editingAttendance}
         onSave={handleSave}
         onCancel={() => {
@@ -2279,16 +2336,25 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
                 <div className="text-xs text-gray-500 font-bold uppercase mt-1">
                   Motivo: <span className="text-gray-700">{attendance.reason}</span>
                 </div>
-                <div className="text-[10px] text-gray-400 font-bold uppercase mt-1">
-                  Profissional: {attendance.signature}
+                <div className="text-[10px] text-gray-400 font-bold uppercase mt-1 whitespace-pre-wrap">
+                  Profissional: {attendance.profissionalAssinaturaTexto || attendance.signature || attendance.profissionalNome || 'Profissional'}
                 </div>
               </div>
-              <button 
-                onClick={() => setEditingAttendance(attendance)}
-                className="p-2 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
-              >
-                <ChevronRight size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleExportIndividualAttendancePDF(attendance)}
+                  className="p-2 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
+                  title="Exportar PDF do Atendimento"
+                >
+                  <Printer size={18} />
+                </button>
+                <button 
+                  onClick={() => setEditingAttendance(attendance)}
+                  className="p-2 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -2298,36 +2364,27 @@ const NutritionalAttendanceSection: React.FC<NutritionalAttendanceSectionProps> 
 };
 
 interface NutritionalAttendanceFormProps {
+  resident: Resident;
+  settings: any;
   attendance: NutritionalAttendance | null;
   onSave: (attendance: NutritionalAttendance) => void;
   onCancel: () => void;
 }
 
-const NutritionalAttendanceForm: React.FC<NutritionalAttendanceFormProps> = ({ attendance, onSave, onCancel }) => {
+const NutritionalAttendanceForm: React.FC<NutritionalAttendanceFormProps> = ({ resident, settings, attendance, onSave, onCancel }) => {
   const [formData, setFormData] = useState<any>(attendance || {
-    id: Date.now().toString(),
+    id: Date.now().toString(), ...getProfessionalSignature(),
     dateTime: new Date().toISOString().slice(0, 16), // YYYY-MM-DDThh:mm
     reason: '',
-    notes: '',
-    muralNotes: '',
+    descricaoAtendimento: '',
+    visibilidade: ['admin'],
     signature: ''
   });
 
   useEffect(() => {
     if (!attendance) {
-      // Try to get the logged-in user's name
-      const sessionStr = localStorage.getItem('ssvp_session');
-      let signatureName = 'Usuário';
-      if (sessionStr) {
-        try {
-          const session = JSON.parse(sessionStr);
-          if (session.username) {
-            signatureName = session.username;
-          }
-        } catch (e) {
-          console.error('Error parsing session', e);
-        }
-      }
+      const sigData = getProfessionalSignature();
+      let signatureName = sigData.profissionalAssinaturaTexto || sigData.profissionalNome || 'Usuário';
       
       // Adjust timezone offset for local datetime-local input
       const now = new Date();
@@ -2347,33 +2404,8 @@ const NutritionalAttendanceForm: React.FC<NutritionalAttendanceFormProps> = ({ a
     onSave(formData as NutritionalAttendance);
   };
 
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text('Atendimento Nutricional', pageWidth / 2, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Data/Hora: ${formData.dateTime.replace('T', ' ')}`, 14, 30);
-    doc.text(`Motivo: ${formData.reason || 'N/A'}`, 14, 35);
-    doc.text(`Profissional: ${formData.signature}`, 14, 40);
-
-    const tableData = [
-      ['Anotação do Prontuário', { content: formData.notes || 'N/A' }],
-      ['Compartilhado no Mural', { content: formData.muralNotes || 'N/A' }]
-    ];
-
-    (doc as any).autoTable({
-      startY: 45,
-      body: tableData,
-      theme: 'grid',
-      styles: { fontSize: 9 }
-    });
-
-    doc.save(`Atendimento_Nutricional_${formData.dateTime.split('T')[0]}.pdf`);
+  const handleExportPDF = async () => {
+    await printAttendanceHtmlPdf(formData, resident, settings, 'Nutrição');
   };
 
   return (
@@ -2422,43 +2454,63 @@ const NutritionalAttendanceForm: React.FC<NutritionalAttendanceFormProps> = ({ a
       </div>
 
       <div>
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Anotação do Prontuário</label>
+        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Descrição do Atendimento</label>
         <textarea 
           rows={6}
-          value={formData.notes} 
-          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+          value={formData.descricaoAtendimento || formData.notes || ''} 
+          onChange={(e) => setFormData({ ...formData, descricaoAtendimento: e.target.value })}
           className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
           required
         />
       </div>
 
       <div>
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Compartilhar no Mural <span className="text-[#004c99] lowercase">(opcional)</span></label>
-        <textarea 
-          rows={4}
-          value={formData.muralNotes} 
-          onChange={(e) => setFormData({ ...formData, muralNotes: e.target.value.slice(0, 150) })}
-          maxLength={150}
-          className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
-          placeholder="Anotação que será visível para toda a equipe no mural..."
-        />
-        <div className="flex justify-between items-center mt-1 text-[10px] font-bold uppercase tracking-widest">
-          <span className="text-gray-400">
-            {formData.muralNotes?.length || 0}/150 caracteres
-          </span>
-          <span className="text-[#004c99]">
-            Limite de 150 caracteres para o mural e notificação familiar
-          </span>
+        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Visibilidade do Atendimento</label>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={Array.isArray(formData.visibilidade) ? formData.visibilidade.includes('publico') : formData.visibilidade === 'publico'}
+              onChange={(e) => {
+                 let current = Array.isArray(formData.visibilidade) ? [...formData.visibilidade] : [formData.visibilidade];
+                 if (current.includes('privado')) current = [];
+                 if (e.target.checked) current.push('publico');
+                 else current = current.filter((v: string) => v !== 'publico');
+                 if (!current.includes('admin')) current.push('admin'); 
+                 setFormData({...formData, visibilidade: current});
+              }}
+              className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+            />
+            <span className="text-sm font-medium text-gray-700">Público (todos verão no mural)</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={Array.isArray(formData.visibilidade) ? formData.visibilidade.includes('admin') : formData.visibilidade === 'admin'}
+              onChange={(e) => {
+                 let current = Array.isArray(formData.visibilidade) ? [...formData.visibilidade] : [formData.visibilidade];
+                 if (current.includes('privado')) current = [];
+                 if (e.target.checked) {
+                   if (!current.includes('admin')) current.push('admin');
+                 } else {
+                   current = current.filter((v: string) => v !== 'admin');
+                 }
+                 setFormData({...formData, visibilidade: current});
+              }}
+              className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+            />
+            <span className="text-sm font-medium text-gray-700">Direção e coordenação</span>
+          </label>
         </div>
       </div>
 
       <div>
         <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Assinatura do Profissional</label>
-        <input 
-          type="text" 
+        <textarea 
           value={formData.signature} 
           readOnly
-          className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-500 font-bold text-sm"
+          rows={3}
+          className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-500 font-bold text-sm resize-none whitespace-pre-wrap"
         />
       </div>
 
@@ -2541,6 +2593,7 @@ const PsychologicalAssessmentForm: React.FC<PsychologicalAssessmentFormProps> = 
       styles: { fontSize: 9 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Avaliacao_Psicologica_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -2813,6 +2866,7 @@ const PsychologicalEvolutionSection: React.FC<PsychologicalEvolutionSectionProps
       styles: { fontSize: 9 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Evolucoes_Psicologicas_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -2907,7 +2961,7 @@ interface PsychologicalEvolutionFormProps {
 
 const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({ resident, evolution, onSave, onCancel }) => {
   const [formData, setFormData] = useState<any>(evolution || {
-    id: Date.now().toString(),
+    id: Date.now().toString(), ...getProfessionalSignature(),
     date: new Date().toISOString().split('T')[0],
     institutionalAdaptationStatus: '',
     moodBehaviorEvolution: '',
@@ -2958,6 +3012,7 @@ const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({
       styles: { fontSize: 9 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Evolucao_Psicologica_${resident.name.replace(/\s+/g, '_')}_${formData.date}.pdf`);
   };
 
@@ -3096,16 +3151,49 @@ const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({
 
 interface PsychologicalAttendanceSectionProps {
   resident: Resident;
+  settings?: any;
   isCandidate?: boolean;
   onPostToMural: (message: Omit<MuralMessage, 'id' | 'timestamp' | 'institutionId'>) => void;
   onSave: (attendances: PsychologicalAttendance[]) => void;
 }
 
-const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionProps> = ({ resident, isCandidate, onPostToMural, onSave }) => {
+const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionProps> = ({ resident, settings, isCandidate, onPostToMural, onSave }) => {
   const [editingAttendance, setEditingAttendance] = useState<PsychologicalAttendance | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [authChallengeAttendance, setAuthChallengeAttendance] = useState<PsychologicalAttendance | null>(null);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  const handleAttendanceClick = (attendance: PsychologicalAttendance) => {
+    if (Array.isArray(attendance.visibilidade) && attendance.visibilidade.includes('privado')) {
+      setAuthChallengeAttendance(attendance);
+      setPasswordInput('');
+      setPasswordError('');
+    } else {
+      setEditingAttendance(attendance);
+    }
+  };
+
+  const handleAuthChallengeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (auth.currentUser && auth.currentUser.email) {
+        await signInWithEmailAndPassword(auth, auth.currentUser.email, passwordInput);
+        setEditingAttendance(authChallengeAttendance);
+        setAuthChallengeAttendance(null);
+      } else {
+         setPasswordError('Usuário não autenticado no Firebase.');
+      }
+    } catch (error) {
+      setPasswordError('Senha incorreta.');
+    }
+  };
 
   const attendances = resident.psychology?.attendances || [];
+
+  const handleExportIndividualAttendancePDF = async (att: any) => {
+    await printAttendanceHtmlPdf(att, resident, settings, 'Psicologia');
+  };
 
   const handleExportPDF = () => {
     const doc = new jsPDF();
@@ -3123,7 +3211,7 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
     const tableData = attendances.map(at => [
       new Date(at.dateTime).toLocaleString('pt-BR'),
       at.attendanceType || 'N/A',
-      at.signature || 'N/A'
+      at.profissionalAssinaturaTexto || at.signature || at.profissionalNome || 'N/A'
     ]);
 
     (doc as any).autoTable({
@@ -3135,6 +3223,7 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
       styles: { fontSize: 9 }
     });
 
+    addPdfSignatureNode(doc);
     doc.save(`Atendimentos_Psicologicos_${resident.name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -3152,15 +3241,15 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
     
     onSave(newAttendances);
 
-    // Emit notification to mural
-    let muralText = `[Psicologia] Atendimento de ${resident.name} finalizado.`;
-    if (attendance.muralNotes) muralText += ` Notas: ${attendance.muralNotes}`;
-    onPostToMural({
-      author: attendance.signature || 'Psicologia',
-      text: muralText,
-      detailedContent: `Tipo de Intervenção: ${attendance.interventionType}\n\nEvolução:\n${attendance.attendanceEvolution}\n\nNotas Privadas (não postadas no mural normal):\n${attendance.privateNotes || 'Nenhuma'}`,
-      isPublic: !!attendance.muralNotes.trim()
-    });
+    // Only post to mural if not 'privado'
+    if (Array.isArray(attendance.visibilidade) && !attendance.visibilidade.includes('privado')) {
+      let muralText = `[Psicologia] Atendimento de ${resident.name} finalizado.\n\n${attendance.descricaoAtendimento}`;
+      onPostToMural({
+        author: attendance.signature || 'Psicologia',
+        text: muralText,
+        visibilidade: attendance.visibilidade // passe a visibilidade também para a nova propriedade do Mural
+      });
+    }
 
     setEditingAttendance(null);
     setIsCreating(false);
@@ -3170,6 +3259,7 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
     return (
       <PsychologicalAttendanceForm 
         resident={resident}
+        settings={settings}
         attendance={editingAttendance}
         isCandidate={isCandidate}
         onSave={handleSave}
@@ -3253,18 +3343,81 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
                     Intervenção: <span className="text-gray-700">{attendance.interventionType}</span>
                   </div>
                 )}
-                <div className="text-[10px] text-gray-400 font-bold uppercase mt-1">
-                  Profissional: {attendance.signature}
+                <div className="text-[10px] text-gray-400 font-bold uppercase mt-1 whitespace-pre-wrap">
+                  Profissional: {attendance.profissionalAssinaturaTexto || attendance.signature || attendance.profissionalNome || 'Profissional'}
                 </div>
               </div>
-              <button 
-                onClick={() => setEditingAttendance(attendance)}
-                className="p-2 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
-              >
-                <ChevronRight size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleExportIndividualAttendancePDF(attendance)}
+                  className="p-2 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
+                  title="Exportar PDF do Atendimento"
+                >
+                  <Printer size={18} />
+                </button>
+                <button 
+                  onClick={() => handleAttendanceClick(attendance)}
+                  className="p-2 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Password Challenge Modal for Private Attendances */}
+      {authChallengeAttendance && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-6 border-b flex justify-between items-center bg-[#004c99] text-white">
+              <h3 className="font-black uppercase tracking-tight text-lg">Acesso Restrito</h3>
+              <button onClick={() => setAuthChallengeAttendance(null)} className="opacity-70 hover:opacity-100 transition-opacity">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleAuthChallengeSubmit} className="p-6">
+              <p className="text-sm text-gray-600 mb-4">
+                Este é um atendimento particular. Insira sua senha de login para acessá-lo.
+              </p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Senha</label>
+                  <input 
+                    type="password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+                    placeholder="Sua senha de login"
+                    required
+                    autoFocus
+                  />
+                  {passwordError && (
+                    <p className="text-red-500 text-xs mt-1 font-medium">{passwordError}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button 
+                  type="button" 
+                  onClick={() => setAuthChallengeAttendance(null)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-6 py-2 bg-[#004c99] text-white rounded-lg font-bold text-xs uppercase hover:bg-blue-800 transition-all shadow-md"
+                >
+                  Acessar
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
@@ -3273,20 +3426,20 @@ const PsychologicalAttendanceSection: React.FC<PsychologicalAttendanceSectionPro
 
 interface PsychologicalAttendanceFormProps {
   resident: Resident;
+  settings?: any;
   attendance: PsychologicalAttendance | null;
   isCandidate?: boolean;
   onSave: (attendance: PsychologicalAttendance) => void;
   onCancel: () => void;
 }
 
-const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = ({ resident, attendance, isCandidate, onSave, onCancel }) => {
+const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = ({ resident, settings, attendance, isCandidate, onSave, onCancel }) => {
   const [formData, setFormData] = useState<any>(attendance || {
-    id: Date.now().toString(),
+    id: Date.now().toString(), ...getProfessionalSignature(),
     dateTime: new Date().toISOString().slice(0, 16), // YYYY-MM-DDThh:mm
     interventionType: '',
-    attendanceEvolution: '',
-    muralNotes: '',
-    privateNotes: '',
+    descricaoAtendimento: '',
+    visibilidade: ['admin'],
     needsTeamReport: false,
     signature: ''
   });
@@ -3319,19 +3472,8 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
 
   useEffect(() => {
     if (!attendance) {
-      // Try to get the logged-in user's name
-      const sessionStr = localStorage.getItem('ssvp_session');
-      let signatureName = 'Usuário';
-      if (sessionStr) {
-        try {
-          const session = JSON.parse(sessionStr);
-          if (session.username) {
-            signatureName = session.username;
-          }
-        } catch (e) {
-          console.error('Error parsing session', e);
-        }
-      }
+      const sigData = getProfessionalSignature();
+      let signatureName = sigData.profissionalAssinaturaTexto || sigData.profissionalNome || 'Usuário';
       
       // Adjust timezone offset for local datetime-local input
       const now = new Date();
@@ -3351,34 +3493,8 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
     onSave(formData as PsychologicalAttendance);
   };
 
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text('Atendimento Psicológico', pageWidth / 2, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Data/Hora: ${formData.dateTime.replace('T', ' ')}`, 14, 30);
-    doc.text(`Tipo Intervenção: ${formData.interventionType || 'N/A'}`, 14, 35);
-    doc.text(`Profissional: ${formData.signature}`, 14, 40);
-
-    const tableData = [
-      ['Anotação do Prontuário', { content: formData.attendanceEvolution || 'N/A' }],
-      ['Compartilhado no Mural', { content: formData.muralNotes || 'N/A' }],
-      ['Repasse Equipe?', { content: formData.needsTeamReport ? 'Sim' : 'Não' }]
-    ];
-
-    (doc as any).autoTable({
-      startY: 45,
-      body: tableData,
-      theme: 'grid',
-      styles: { fontSize: 9 }
-    });
-
-    doc.save(`Atendimento_Psicologico_${formData.dateTime.split('T')[0]}.pdf`);
+  const handleExportPDF = async () => {
+    await printAttendanceHtmlPdf(formData, resident, settings, 'Psicologia');
   };
 
   return (
@@ -3454,88 +3570,74 @@ const PsychologicalAttendanceForm: React.FC<PsychologicalAttendanceFormProps> = 
       </div>
 
       <div>
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{isCandidate ? "Relatório do Atendimento" : "Anotação do Prontuário"}</label>
+        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{isCandidate ? "Relatório do Atendimento" : "Descrição do Atendimento"}</label>
         <textarea 
           rows={6}
-          value={formData.attendanceEvolution} 
-          onChange={(e) => setFormData({ ...formData, attendanceEvolution: e.target.value })}
+          value={formData.descricaoAtendimento || formData.attendanceEvolution || ''} 
+          onChange={(e) => setFormData({ ...formData, descricaoAtendimento: e.target.value })}
           className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
           required
         />
       </div>
 
-      {!isCandidate && (
-        <>
-          <div>
-            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Compartilhar no Mural <span className="text-[#004c99] lowercase">(opcional)</span></label>
-            <textarea 
-              rows={4}
-              value={formData.muralNotes} 
-              onChange={(e) => setFormData({ ...formData, muralNotes: e.target.value.slice(0, 150) })}
-              maxLength={150}
-              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
-              placeholder="Anotação que será visível para toda a equipe no mural..."
+      <div>
+        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Visibilidade do Atendimento</label>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={Array.isArray(formData.visibilidade) ? formData.visibilidade.includes('publico') : formData.visibilidade === 'publico'}
+              onChange={(e) => {
+                 let current = Array.isArray(formData.visibilidade) ? [...formData.visibilidade] : [formData.visibilidade];
+                 if (current.includes('privado')) current = [];
+                 if (e.target.checked) current.push('publico');
+                 else current = current.filter((v: string) => v !== 'publico');
+                 if (!current.includes('admin')) current.push('admin'); 
+                 setFormData({...formData, visibilidade: current});
+              }}
+              className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
             />
-            <div className="flex justify-between items-center mt-1 text-[10px] font-bold uppercase tracking-widest">
-              <span className="text-gray-400">
-                {formData.muralNotes?.length || 0}/150 caracteres
-              </span>
-              <span className="text-[#004c99]">
-                Limite de 150 caracteres para o mural e notificação familiar
-              </span>
-            </div>
-          </div>
-    
-          <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-            <div className="flex justify-between items-center mb-2">
-              <label className="block text-[10px] font-black text-gray-600 uppercase tracking-widest">Anotação Particular (Privada)</label>
-              {!isPrivateUnlocked && (
-                <button 
-                  type="button"
-                  onClick={handleUnlockPrivate}
-                  className="text-[10px] font-bold text-[#004c99] uppercase hover:underline"
-                >
-                  Desbloquear anotação privada
-                </button>
-              )}
-            </div>
-            
-            {isPrivateUnlocked ? (
-              <textarea 
-                rows={4}
-                value={formData.privateNotes} 
-                onChange={(e) => setFormData({ ...formData, privateNotes: e.target.value })}
-                className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm resize-none bg-white"
-                placeholder="Conteúdo sensível..."
-              />
-            ) : (
-              <div className="w-full p-3 border border-gray-200 rounded-xl bg-gray-100 text-gray-400 text-sm italic flex items-center justify-center h-[104px]">
-                Conteúdo bloqueado. Clique em "Desbloquear" para visualizar ou editar.
-              </div>
-            )}
-          </div>
-    
-          <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={formData.needsTeamReport}
-                onChange={(e) => setFormData({ ...formData, needsTeamReport: e.target.checked })}
-                className="w-5 h-5 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
-              />
-              <span className="text-sm font-bold text-gray-700 uppercase">Precisa de Repasse à Equipe?</span>
-            </label>
-          </div>
-        </>
-      )}
+            <span className="text-sm font-medium text-gray-700">Público (todos verão no mural)</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={Array.isArray(formData.visibilidade) ? formData.visibilidade.includes('admin') : formData.visibilidade === 'admin'}
+              onChange={(e) => {
+                 let current = Array.isArray(formData.visibilidade) ? [...formData.visibilidade] : [formData.visibilidade];
+                 if (current.includes('privado')) current = [];
+                 if (e.target.checked) {
+                   if (!current.includes('admin')) current.push('admin');
+                 } else {
+                   current = current.filter((v: string) => v !== 'admin');
+                 }
+                 setFormData({...formData, visibilidade: current});
+              }}
+              className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-600"
+            />
+            <span className="text-sm font-medium text-gray-700">Direção e coordenação</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={Array.isArray(formData.visibilidade) ? formData.visibilidade.includes('privado') : formData.visibilidade === 'privado'}
+              onChange={(e) => {
+                 setFormData({...formData, visibilidade: e.target.checked ? ['privado'] : ['admin']});
+              }}
+              className="w-4 h-4 text-gray-600 rounded border-gray-300 focus:ring-gray-600"
+            />
+            <span className="text-sm font-medium text-gray-700">Atendimento particular</span>
+          </label>
+        </div>
+      </div>
 
       <div>
         <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Assinatura do Profissional</label>
-        <input 
-          type="text" 
+        <textarea 
           value={formData.signature} 
           readOnly
-          className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-500 font-bold text-sm"
+          rows={3}
+          className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-500 font-bold text-sm resize-none whitespace-pre-wrap"
         />
       </div>
 

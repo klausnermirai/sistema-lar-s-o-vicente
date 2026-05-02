@@ -79,9 +79,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
           id: data.user.id,
           cnpj: data.cnpj, 
           username: data.user.username, 
+          fullName: data.user.fullName,
+          role: data.user.role,
+          professionalRegistration: data.user.professionalRegistration,
           accessLevel: data.user.accessLevel,
           institutionId: data.institutionId,
-          hierarchy: data.hierarchy
+          hierarchy: data.hierarchy,
+          signature: data.user.signature
         };
         localStorage.setItem('ssvp_session', JSON.stringify(session));
         onLoginSuccess(session);
