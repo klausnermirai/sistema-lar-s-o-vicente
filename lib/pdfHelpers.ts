@@ -391,7 +391,7 @@ export const printAttendanceHtmlPdf = async (
 
         <div class="signature-box" style="margin-top: 50px; text-align: center;">
           <div class="signature-line" style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold;">
-            ${(attendance.profissionalAssinaturaTexto || attendance.signature || "Assinatura do Profissional").replace(/\n/g, '<br/>')}
+            ${(attendance.profissionalAssinaturaTexto || attendance.signature || attendance.profissionalNome || "Profissional não identificado").replace(/\n/g, '<br/>')}
           </div>
           <div class="signature-role" style="font-size: 10px; color: #666; margin-top: 2px;">
             ${area}

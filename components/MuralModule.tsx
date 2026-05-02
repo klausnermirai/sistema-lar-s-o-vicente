@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MuralMessage, Resident } from '../types';
 import { setLastReadTimestamp, getLastReadTimestamp } from '../lib/muralStore';
-import { fetchResidents } from '../lib/api';
+import { fetchResidents, saveMuralMessage } from '../lib/api';
 import { Send, Search, Calendar as CalendarIcon, Download, Copy, MessageCircle, Edit2, Trash2, X, Check, ThumbsUp, Users, ChevronRight, Eye } from 'lucide-react';
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -140,13 +140,13 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
         authorName: fullName || '',
         authorRole: role || '',
         text: newMessage.trim(),
-        timestamp: serverTimestamp() as unknown as number,
+        timestamp: Date.now(),
         visibilidade: newVisibilidade,
         // Mantém isPublic para compatibilidade com versões antigas
         isPublic: newVisibilidade.includes('publico'),
       };
       
-      await addDoc(collection(db, 'muralMessages'), msgData);
+      await saveMuralMessage(msgData);
       setNewMessage('');
       setNewVisibilidade(['admin']);
     } catch (err) {

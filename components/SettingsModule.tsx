@@ -21,7 +21,7 @@ import {
   FileText
 } from 'lucide-react';
 import { User } from '../types';
-import { fetchUsers, saveUser, deleteUser, fetchSettings, saveSettings } from '../lib/api';
+import { fetchUsers, saveUser, deleteUser, fetchSettings, saveSettings, getAuthHeaders } from '../lib/api';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
 interface SettingsModuleProps {
@@ -132,6 +132,34 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
   const handleRemoveRole = (roleToRemove: string) => {
     const currentRoles = institution.roles || [];
     setInstitution({ ...institution, roles: currentRoles.filter((r: string) => r !== roleToRemove) });
+  };
+
+  const handleTestTelegram = async () => {
+    if (!institution.telegramBotToken || !institution.telegramChatId) {
+      showMessage('Token do Bot e ID do Chat são obrigatórios para o teste.', 'error');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/telegram/test', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          botToken: institution.telegramBotToken,
+          chatId: institution.telegramChatId
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Erro ao realizar o teste com Telegram');
+      }
+
+      showMessage('Mensagem de teste enviada com sucesso ao Telegram!', 'success');
+    } catch (err: any) {
+      console.error(err);
+      showMessage(err.message || 'Falha ao conectar com a API.', 'error');
+    }
   };
 
   const handleSaveInstitution = async (e: React.FormEvent) => {
@@ -486,6 +514,43 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                     className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
                   />
                   <p className="text-[9px] text-gray-400 mt-1 uppercase font-bold text-blue-600">Este número será usado para enviar as notificações e exportações do mural.</p>
+                </div>
+                <div className="md:col-span-2 space-y-4 pt-4 border-t border-dashed">
+                  <h4 className="text-[10px] font-black justify-between flex items-center text-gray-400 uppercase tracking-widest">
+                    <span>Configurações do Telegram</span>
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase">Token do Bot</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                        value={institution.telegramBotToken || ''}
+                        onChange={e => setInstitution({ ...institution, telegramBotToken: e.target.value })}
+                        className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase">ID do Chat / Grupo</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: -100123456789"
+                        value={institution.telegramChatId || ''}
+                        onChange={e => setInstitution({ ...institution, telegramChatId: e.target.value })}
+                        className="w-full p-4 border rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-2">
+                    <p className="text-[10px] text-gray-400">Configure o Token do Bot e o ID do Grupo para enviar mensagens do mural automaticamente para o Telegram.</p>
+                    <button
+                      type="button"
+                      onClick={handleTestTelegram}
+                      className="px-4 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-[10px] font-bold uppercase transition-colors shrink-0"
+                    >
+                      Realizar Teste de Conexão
+                    </button>
+                  </div>
                 </div>
 
                 <div className="md:col-span-2 space-y-4 pt-4 border-t border-dashed">

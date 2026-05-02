@@ -66,6 +66,8 @@ export interface InstitutionSettings {
   logoUrl?: string;
   roles?: string[];
   muralPhone?: string;
+  telegramBotToken?: string;
+  telegramChatId?: string;
 
   reportConfig?: {
     institutionName: string;

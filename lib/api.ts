@@ -69,11 +69,20 @@ export const getProfessionalSignature = () => {
         if (session.signature && session.signature.profissionalAssinaturaTexto) {
             return session.signature;
         }
+
+        let fullName = session.fullName;
+        if (!fullName || fullName.includes('@')) {
+            fullName = 'Profissional não identificado';
+        }
+
+        const role = session.role || 'Profissional';
+        const registration = session.professionalRegistration ? `\n${session.professionalRegistration}` : '';
+
         return {
              profissionalId: session.id,
-             profissionalNome: session.fullName || session.username || 'Usuário',
-             profissionalFuncao: session.role || 'Profissional',
-             profissionalAssinaturaTexto: `${session.fullName || session.username}\n${session.role || 'Profissional'}${session.professionalRegistration ? `\n${session.professionalRegistration}` : ''}`
+             profissionalNome: fullName,
+             profissionalFuncao: role,
+             profissionalAssinaturaTexto: `${fullName}\n${role}${registration}`
         };
     } catch (e) {
         return {};

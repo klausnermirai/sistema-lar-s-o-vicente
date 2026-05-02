@@ -331,14 +331,19 @@ async function startServer() {
           const empDoc = await db.collection('employees').doc(userData.funcionarioId).get();
           if (empDoc.exists) {
             const empData = empDoc.data();
+            const nomeStr = empData?.nomeExibicao || empData?.nomeCompleto || 'Profissional não identificado';
+            const funcaoStr = empData?.funcao ? `\n${empData.funcao}` : '';
+            const conselhoStr = (empData?.conselhoProfissional && empData?.numeroRegistro) 
+              ? `\n${empData.conselhoProfissional}${empData.ufRegistro ? `/${empData.ufRegistro}` : ''} ${empData.numeroRegistro}` : '';
+            
             signatureInfo = {
               profissionalId: userData.funcionarioId,
-              profissionalNome: empData?.nomeExibicao || empData?.nomeCompleto,
-              profissionalFuncao: empData?.funcao,
-              profissionalConselho: empData?.conselhoProfissional,
-              profissionalRegistro: empData?.numeroRegistro,
-              profissionalUfRegistro: empData?.ufRegistro,
-              profissionalAssinaturaTexto: `${empData?.nomeExibicao || empData?.nomeCompleto}\n${empData?.funcao}${empData?.conselhoProfissional && empData?.numeroRegistro ? ` — ${empData?.conselhoProfissional} ${empData?.numeroRegistro}` : ''}`,
+              profissionalNome: nomeStr,
+              profissionalFuncao: empData?.funcao || '',
+              profissionalConselho: empData?.conselhoProfissional || '',
+              profissionalRegistro: empData?.numeroRegistro || '',
+              profissionalUfRegistro: empData?.ufRegistro || '',
+              profissionalAssinaturaTexto: `${nomeStr}${funcaoStr}${conselhoStr}`.trim(),
             };
           }
         } catch (err) {
@@ -814,6 +819,37 @@ async function startServer() {
     res.json(settings);
   });
 
+  app.post('/api/telegram/test', requireRole(['administrador', 'gerencial']), async (req, res) => {
+    const { botToken, chatId } = req.body;
+    if (!botToken || !chatId) {
+      return res.status(400).json({ error: 'Token do Bot e ID do Chat são obrigatórios.' });
+    }
+
+    try {
+      const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: '🔄 *Teste de Conexão*\n\nIntegração com o Telegram estabelecida com sucesso pela plataforma SSVP!',
+          parse_mode: 'Markdown'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('Telegram API error:', errorData);
+        return res.status(response.status).json({ error: 'Falha ao enviar mensagem para o Telegram.', details: errorData });
+      }
+
+      res.json({ success: true, message: 'Mensagem de teste enviada com sucesso!' });
+    } catch (error) {
+      console.error('Telegram test network error:', error);
+      res.status(500).json({ error: 'Erro de conexão com a API do Telegram.' });
+    }
+  });
+
   app.post('/api/settings', requireRole(['administrador', 'gerencial']), async (req, res) => {
     const { institutionId, ...settings } = req.body;
     if (!institutionId) return res.status(400).json({ error: 'ID da instituição não informado' });
@@ -921,8 +957,45 @@ async function startServer() {
   app.post('/api/mural', async (req, res) => {
     const data = req.body;
     try {
+      if (!data.timestamp) {
+        data.timestamp = Date.now();
+      }
       const docRef = await db.collection('muralMessages').add(data);
       await logAudit('create', 'mural', docRef.id, req, data.institutionId, 'Nova mensagem no mural', { title: data.title });
+      
+      // Enviar notificação para o Telegram
+      if (data.institutionId) {
+        try {
+          const settingsDoc = await db.collection('institutions').doc(data.institutionId).get();
+          if (settingsDoc.exists) {
+            const settings = settingsDoc.data();
+            if (settings?.telegramBotToken && settings?.telegramChatId) {
+              const url = `https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`;
+              
+              const titlePart = data.title ? `*${data.title}*\n` : '';
+              const displayName = data.authorName || data.author || 'Usuário';
+              const authorPart = `👤 *${displayName}* ${data.authorRole ? `(${data.authorRole})` : ''}\n`;
+              const textPart = data.text ? `\n📄 ${data.text}` : '';
+              const detailsPart = data.detailedContent ? `\n\n📝 _Detalhes:_\n${data.detailedContent}` : '';
+
+              const message = `🔔 *NOVA MENSAGEM NO MURAL*\n\n${titlePart}${authorPart}${textPart}${detailsPart}`;
+
+              await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: settings.telegramChatId,
+                  text: message,
+                  parse_mode: 'Markdown'
+                })
+              });
+            }
+          }
+        } catch (telegramErr) {
+          console.error("Erro ao enviar notificação pro Telegram:", telegramErr);
+        }
+      }
+
       res.json({ ...data, id: docRef.id });
     } catch (error) {
       res.status(500).json({ error: 'Erro ao salvar mensagem no mural.' });
