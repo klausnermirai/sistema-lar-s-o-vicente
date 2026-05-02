@@ -307,6 +307,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
     return (
       <VitalSignsTab 
         resident={selectedResident}
+        isTabletMode={isTabletMode}
         onSave={(entry) => {
           const per = selectedResident.per || { 
             lastUpdated: new Date().toISOString(), 

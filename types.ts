@@ -847,16 +847,16 @@ export interface ShiftHandover {
 export interface VitalSignEntry {
   id: string;
   date: string;
-  paSystolic: number;
-  paDiastolic: number;
-  fc: number;
-  fr: number;
-  temperature: number;
-  spo2: number;
-  hgtValue: number;
-  hgtType: 'jejum' | 'pos-prandial';
-  weight: string;
-  height: string;
+  paSystolic?: number;
+  paDiastolic?: number;
+  fc?: number;
+  fr?: number;
+  temperature?: number;
+  spo2?: number;
+  hgtValue?: number;
+  hgtType?: 'jejum' | 'pos-prandial';
+  weight?: string;
+  height?: string;
   professionalName?: string;
 }
 

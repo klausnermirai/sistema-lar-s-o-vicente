@@ -144,21 +144,21 @@ const DependenciesTab: React.FC<DependenciesTabProps> = ({ residents, onBulkSave
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-6">
-        <div className="bg-white border text-gray-200 rounded-2xl shadow-sm overflow-hidden min-w-max">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest sticky left-0 bg-gray-50 z-10 w-64">
+      <div className="flex-1 overflow-hidden p-6 flex flex-col">
+        <div className="bg-white border text-gray-200 rounded-2xl shadow-sm overflow-auto flex-1 custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-max">
+            <thead className="sticky top-0 z-20">
+              <tr className="bg-gray-50">
+                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest sticky left-0 top-0 bg-gray-50 z-30 w-64 border-b border-r border-gray-100 shadow-[1px_0_0_0_#f3f4f6]">
                   Residente
                 </th>
-                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28">Banho</th>
-                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28">Higiéne Oral</th>
-                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28">Alimentação</th>
-                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28">Fralda</th>
-                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28">Decúbito</th>
-                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28">Barba/Trico</th>
-                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28">Unhas</th>
+                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28 bg-gray-50 border-b border-gray-100">Banho</th>
+                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28 bg-gray-50 border-b border-gray-100">Higiene Oral</th>
+                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28 bg-gray-50 border-b border-gray-100">Alimentação</th>
+                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28 bg-gray-50 border-b border-gray-100">Fralda</th>
+                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28 bg-gray-50 border-b border-gray-100">Decúbito</th>
+                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28 bg-gray-50 border-b border-gray-100">Barba/Trico</th>
+                <th className="p-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center w-28 bg-gray-50 border-b border-gray-100">Unhas</th>
               </tr>
             </thead>
             <tbody>
