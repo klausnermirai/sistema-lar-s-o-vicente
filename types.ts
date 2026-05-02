@@ -814,6 +814,9 @@ export interface Resident {
     diaperChangeAssistance?: boolean;
     decubitusChangeAssistance?: boolean;
     feedingAssistance?: boolean;
+    tricotomyAssistance?: boolean;
+    nailCareAssistance?: boolean;
+    observacoesAlimentacao?: string;
   };
   dailyRoutines?: DailyRoutineLog[];
   appointments?: Appointment[];
@@ -933,6 +936,15 @@ export interface MuralMessage {
   author: string;
   authorName?: string;
   authorRole?: string;
+  authorUserId?: string;
+  authorEmail?: string;
+  authorFuncionarioId?: string;
+  authorDisplayName?: string;
+  authorFunction?: string;
+  authorProfessionalCouncil?: string;
+  authorProfessionalRegistry?: string;
+  authorRegistryUf?: string;
+  authorSignatureText?: string;
   text: string;
   detailedContent?: string;
   visibilidade?: string[] | string; // Novo campo para controle padronizado
@@ -974,6 +986,76 @@ export enum AppRoute {
   GUIAS = 'guias',
   VISITANTES = 'visitantes',
   EMPLOYEES = 'employees'
+}
+
+export interface OperationalShift {
+  id: string;
+  institutionId: string;
+  nomeTurno: string;
+  horarioInicio: string; // HH:mm
+  horarioFim: string; // HH:mm
+  setor: string;
+  ordem: number;
+  status: 'ativo' | 'inativo';
+  defineInicioDoDiaOperacional: boolean;
+  observacoes?: string;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface MealConfiguration {
+  id?: string;
+  institutionId: string;
+  nomeRefeicao: string;
+  horarioAproximado: string;
+  turnoId: string;
+  turnoNome: string;
+  ordem: number;
+  status: 'ativo' | 'inativo';
+  observacoes?: string;
+  criadoEm?: string;
+  atualizadoEm?: string;
+}
+
+export interface ShiftProcedureLog {
+  id?: string;
+  institutionId: string;
+  tipoProcedimento: string; // 'banho', 'higiene_oral', 'alimentacao', etc.
+  dataOperacional: string;
+  turnoId: string;
+  turnoNome: string;
+  
+  // Specific fields for alimentacao
+  refeicaoId?: string;
+  refeicaoNome?: string;
+  horarioAproximado?: string;
+  registrosPorResidente?: Record<string, 'comeu' | 'comeu_pouco' | 'nao_comeu' | 'recusou'>;
+  residentesComAcompanhamento?: string[];
+  residentesAcompanhadosQueComeram?: string[];
+  residentesAcompanhadosQueComeramPouco?: string[];
+  residentesAcompanhadosQueNaoComeram?: string[];
+  residentesAcompanhadosQueRecusaram?: string[];
+  totalComeram?: number;
+  totalComeramPouco?: number;
+  totalNaoComeram?: number;
+  totalRecusaram?: number;
+  totalAcompanhamento?: number;
+  observacoesGerais?: string;
+
+  // General fields for other procedures
+  residentesSelecionados: string[]; // IDs
+  residentesDependentes: string[]; // IDs (those who need assistance)
+  residentesDependentesAtendidos: string[]; // IDs
+  residentesDependentesPendentes: string[]; // IDs
+  totalSelecionados: number;
+  totalDependentes: number;
+  totalDependentesAtendidos: number;
+  totalDependentesPendentes: number;
+  
+  responsavelUserId: string;
+  responsavelNome: string;
+  criadoEm: string;
+  observacoes?: string;
 }
 
 export interface Employee {

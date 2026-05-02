@@ -14,17 +14,20 @@ import {
   RotateCcw,
   Tablet,
   Monitor,
-  Users
+  Users,
+  Settings2
 } from 'lucide-react';
 import DailyRoutineTab from './DailyRoutineTab';
 import VitalSignsTab from './VitalSignsTab';
 import AppointmentTab from './AppointmentTab';
 import HandoverTab from './HandoverTab';
 import CompanionsTab from './CompanionsTab';
-import { fetchCompanions, saveCompanion, deleteCompanion } from '../lib/api';
+import DependenciesTab from './DependenciesTab';
+import { fetchCompanions, saveCompanion, deleteCompanion, fetchShifts } from '../lib/api';
+import { getCurrentShift, getOperationalDate } from '../lib/shiftUtils';
 import { Companion, InstitutionSettings } from '../types';
 
-interface HealthCareModuleProps {
+export interface HealthCareModuleProps {
   residents: Resident[];
   onSaveResident: (resident: Resident) => void;
   onBulkSaveResidents?: (residents: Resident[]) => void;
@@ -33,11 +36,33 @@ interface HealthCareModuleProps {
 }
 
 const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveResident, onBulkSaveResidents, onPostToMural, settings }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'sinais_vitais' | 'rotinas' | 'consultas' | 'plantao' | 'acompanhantes'>('rotinas');
+  const [activeSubTab, setActiveSubTab] = useState<'sinais_vitais' | 'rotinas' | 'consultas' | 'plantao' | 'acompanhantes' | 'dependencias'>('rotinas');
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isTabletMode, setIsTabletMode] = useState(false);
+  const [tabletMenuActive, setTabletMenuActive] = useState(true);
   const [companions, setCompanions] = useState<Companion[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
+
+  useEffect(() => {
+    const loadShiftsData = async () => {
+      try {
+        const saved = localStorage.getItem('ssvp_session');
+        if (saved) {
+          const session = JSON.parse(saved);
+          const data = await fetchShifts(session.institutionId || session.cnpj);
+          setShifts(data);
+        }
+      } catch (err) {}
+    };
+    loadShiftsData();
+  }, []);
+
+  useEffect(() => {
+    if (isTabletMode) {
+      setTabletMenuActive(true);
+    }
+  }, [isTabletMode]);
   const [handovers, setHandovers] = useState<ShiftHandover[]>(() => {
     try {
       const saved = localStorage.getItem('ssvp_handovers');
@@ -175,6 +200,8 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
         <DailyRoutineTab 
           residents={residents}
           onSaveLogs={handleCollectiveLogsSave}
+          isTabletMode={isTabletMode}
+          shifts={shifts}
         />
       );
     }
@@ -242,6 +269,16 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
       );
     }
 
+    if (activeSubTab === 'dependencias') {
+      return (
+        <DependenciesTab 
+          residents={residents}
+          onBulkSaveResidents={onBulkSaveResidents}
+          onSaveResident={onSaveResident}
+        />
+      );
+    }
+
     if (!selectedResident) {
       return (
         <div className="flex flex-col items-center justify-center p-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 h-full">
@@ -292,10 +329,53 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
     );
   };
 
+  if (isTabletMode && tabletMenuActive) {
+    return (
+      <div className="fixed inset-0 z-50 bg-gray-50 h-screen overflow-hidden flex flex-col p-6 animate-in fade-in zoom-in-95 duration-500">
+        <div className="flex justify-between items-center bg-white p-6 rounded-[32px] shadow-sm border border-gray-100 mb-8 shrink-0">
+          <div>
+            <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter">Saúde e Cuidados</h2>
+            <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mt-1">Modo Tablet - Selecione uma Operação</p>
+          </div>
+          <button
+            onClick={() => setIsTabletMode(false)}
+            className="px-6 py-4 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-3"
+          >
+            <Monitor size={20} />
+            Sair do Modo PC
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 flex-1 content-center px-4 max-w-6xl mx-auto w-full">
+          {[
+            { id: 'rotinas', title: 'Plano de Rotinas', desc: 'Controle de atividades e rotinas diárias', icon: CalendarDays, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100', shadow: 'shadow-blue-100/50' },
+            { id: 'plantao', title: 'Plantão e Intercorrências', desc: 'Registro de turno e eventos', icon: RotateCcw, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100', shadow: 'shadow-orange-100/50' },
+            { id: 'sinais_vitais', title: 'Mapa de Sinais Vitais', desc: 'Coleta de SV', icon: Activity, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100', shadow: 'shadow-emerald-100/50' }
+          ].map(module => (
+            <button
+              key={module.id}
+              onClick={() => {
+                setActiveSubTab(module.id as any);
+                setTabletMenuActive(false);
+              }}
+              className="flex flex-col items-center justify-center p-12 bg-white border-2 border-gray-100 rounded-[40px] hover:border-gray-300 hover:shadow-2xl transition-all duration-300 group hover:-translate-y-2 h-[400px]"
+            >
+              <div className={`w-32 h-32 rounded-[32px] flex items-center justify-center mb-8 ${module.bg} ${module.color} shadow-2xl ${module.shadow}`}>
+                <module.icon size={64} className="group-hover:scale-110 transition-transform duration-500" />
+              </div>
+              <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tighter mb-4 text-center">{module.title}</h3>
+              <p className="text-sm font-bold text-gray-400 text-center uppercase tracking-widest">{module.desc}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex flex-col gap-6 animate-in fade-in duration-500 p-2 ${isTabletMode ? 'fixed inset-0 z-50 bg-gray-50 h-screen overflow-hidden' : 'h-[calc(100vh-140px)]'}`}>
       {/* Top Search Bar - Hidden in Collective Modes */}
-      {activeSubTab !== 'rotinas' && activeSubTab !== 'plantao' && activeSubTab !== 'acompanhantes' && (
+      {activeSubTab !== 'rotinas' && activeSubTab !== 'plantao' && activeSubTab !== 'acompanhantes' && activeSubTab !== 'dependencias' && (
         <div className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-4">
              <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-[#004c99]">
@@ -367,75 +447,102 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col bg-white border border-gray-200 rounded-[40px] shadow-sm overflow-hidden min-h-0">
         {/* Module Sub-tabs */}
-        <div className="flex border-b px-8 bg-white shrink-0 justify-between items-center no-scrollbar overflow-x-auto">
-          <div className="flex">
+        {isTabletMode ? (
+          <div className="flex border-b px-8 bg-white shrink-0 justify-between items-center py-6 shadow-sm">
             <button
-              onClick={() => setActiveSubTab('rotinas')}
-            className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
-              activeSubTab === 'rotinas' 
-                ? 'border-[#004c99] text-[#004c99]' 
-                : 'border-transparent text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            <CalendarDays size={16} />
-            Plano de Rotinas
-          </button>
-          <button
-            onClick={() => setActiveSubTab('plantao')}
-            className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
-              activeSubTab === 'plantao' 
-                ? 'border-[#004c99] text-[#004c99]' 
-                : 'border-transparent text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            <RotateCcw size={16} />
-            Intercorrências / Plantão
-          </button>
-          <button
-            onClick={() => setActiveSubTab('sinais_vitais')}
-            className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
-              activeSubTab === 'sinais_vitais' 
-                ? 'border-[#004c99] text-[#004c99]' 
-                : 'border-transparent text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            <Activity size={16} />
-            Mapa de Sinais Vitais
-          </button>
-          <button
-            onClick={() => setActiveSubTab('consultas')}
-            className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
-              activeSubTab === 'consultas' 
-                ? 'border-[#004c99] text-[#004c99]' 
-                : 'border-transparent text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            <Stethoscope size={16} />
-            Consultas e Exames
-          </button>
-          <button
-            onClick={() => setActiveSubTab('acompanhantes')}
-            className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
-              activeSubTab === 'acompanhantes' 
-                ? 'border-[#004c99] text-[#004c99]' 
-                : 'border-transparent text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            <Users size={16} />
-            Acompanhantes
-          </button>
+              onClick={() => setTabletMenuActive(true)}
+              className="flex items-center gap-3 px-6 py-4 bg-gray-100 hover:bg-gray-200 rounded-2xl text-xs font-black uppercase text-gray-700 transition-all font-bold tracking-widest"
+            >
+              <ChevronRight className="rotate-180" size={24} />
+              Voltar ao Menu
+            </button>
+            <h2 className="text-2xl font-black uppercase text-gray-900 tracking-tighter">
+              {activeSubTab === 'rotinas' ? 'Plano de Rotinas' : activeSubTab === 'plantao' ? 'Plantão e Intercorrências' : activeSubTab === 'sinais_vitais' ? 'Sinais Vitais' : activeSubTab === 'consultas' ? 'Consultas e Exames' : 'Acompanhantes'}
+            </h2>
+            <div className="w-40"></div> {/* Spacer for centering */}
           </div>
-          <button
-            onClick={() => setIsTabletMode(!isTabletMode)}
-            className={`shrink-0 ml-4 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isTabletMode ? 'bg-[#004c99] text-white shadow-xl hover:bg-blue-800' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-          >
-            {isTabletMode ? <Monitor size={14} /> : <Tablet size={14} />}
-            {isTabletMode ? 'Modo PC' : 'Modo Tablet'}
-          </button>
-        </div>
+        ) : (
+          <div className="flex border-b px-8 bg-white shrink-0 justify-between items-center no-scrollbar overflow-x-auto">
+            <div className="flex">
+              <button
+                onClick={() => setActiveSubTab('rotinas')}
+              className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
+                activeSubTab === 'rotinas' 
+                  ? 'border-[#004c99] text-[#004c99]' 
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <CalendarDays size={16} />
+              Plano de Rotinas
+            </button>
+            <button
+              onClick={() => setActiveSubTab('plantao')}
+              className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
+                activeSubTab === 'plantao' 
+                  ? 'border-[#004c99] text-[#004c99]' 
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <RotateCcw size={16} />
+              Intercorrências / Plantão
+            </button>
+            <button
+              onClick={() => setActiveSubTab('sinais_vitais')}
+              className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
+                activeSubTab === 'sinais_vitais' 
+                  ? 'border-[#004c99] text-[#004c99]' 
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <Activity size={16} />
+              Mapa de Sinais Vitais
+            </button>
+            <button
+              onClick={() => setActiveSubTab('consultas')}
+              className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
+                activeSubTab === 'consultas' 
+                  ? 'border-[#004c99] text-[#004c99]' 
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <Stethoscope size={16} />
+              Consultas e Exames
+            </button>
+            <button
+              onClick={() => setActiveSubTab('acompanhantes')}
+              className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
+                activeSubTab === 'acompanhantes' 
+                  ? 'border-[#004c99] text-[#004c99]' 
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <Users size={16} />
+              Acompanhantes
+            </button>
+            <button
+              onClick={() => setActiveSubTab('dependencias')}
+              className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
+                activeSubTab === 'dependencias' 
+                  ? 'border-[#004c99] text-[#004c99]' 
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <Settings2 size={16} />
+              Dependências
+            </button>
+            </div>
+            <button
+              onClick={() => setIsTabletMode(!isTabletMode)}
+              className={`shrink-0 ml-4 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isTabletMode ? 'bg-[#004c99] text-white shadow-xl hover:bg-blue-800' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+            >
+              {isTabletMode ? <Monitor size={14} /> : <Tablet size={14} />}
+              {isTabletMode ? 'Modo PC' : 'Modo Tablet'}
+            </button>
+          </div>
+        )}
 
         {/* Dynamic Content */}
-        <div className={`flex-1 ${activeSubTab === 'rotinas' || activeSubTab === 'plantao' || activeSubTab === 'acompanhantes' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'} custom-scrollbar bg-gray-50/10`}>
+        <div className={`flex-1 ${activeSubTab === 'rotinas' || activeSubTab === 'plantao' || activeSubTab === 'acompanhantes' || activeSubTab === 'dependencias' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'} custom-scrollbar bg-gray-50/10`}>
           {renderContent()}
         </div>
       </div>

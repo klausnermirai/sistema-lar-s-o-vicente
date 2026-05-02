@@ -340,3 +340,56 @@ export const deleteCompanion = async (id: string) => {
   if (!response.ok) throw new Error('Erro ao excluir acompanhante');
   return response.json();
 };
+
+export const fetchShifts = async (institutionId: string) => {
+  const response = await fetch(`/api/shifts?institutionId=${institutionId}`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar turnos');
+  return response.json();
+};
+
+export const saveShift = async (shift: any) => {
+  const response = await fetch('/api/shifts', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(shift)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar turno');
+  return response.json();
+};
+
+export const deleteShift = async (shiftId: string) => {
+  const response = await fetch(`/api/shifts/${shiftId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao inativar turno');
+  return response.json();
+};
+
+export const fetchProcedureLogs = async (institutionId: string, dataOperacional?: string) => {
+  let url = `/api/procedures/logs?institutionId=${institutionId}`;
+  if (dataOperacional) {
+    url += `&dataOperacional=${dataOperacional}`;
+  }
+  const response = await fetch(url, { headers: getAuthHeaders() });
+  if (!response.ok) throw new Error('Erro ao buscar procedimentos');
+  return response.json();
+};
+
+export const fetchMeals = async (institutionId: string) => {
+  const response = await fetch(`/api/meals?institutionId=${institutionId}`, { headers: getAuthHeaders() });
+  if (!response.ok) throw new Error('Erro ao buscar refeições');
+  return response.json();
+};
+
+export const saveProcedureLog = async (log: any) => {
+  const response = await fetch('/api/procedures/log', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(log)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar procedimento');
+  return response.json();
+};

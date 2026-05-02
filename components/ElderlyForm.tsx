@@ -705,9 +705,21 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
                       onChange={(e) => setFormData({ ...formData, careNeeds: { ...(formData.careNeeds || {}), feedingAssistance: e.target.checked } })}
                       className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
                     />
-                    <label htmlFor="feedingAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">Alimentação</label>
+                    <label htmlFor="feedingAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">Necessita acompanhamento na alimentação?</label>
                   </div>
-                  <div className="flex items-center gap-2">
+                  {formData.careNeeds?.feedingAssistance && (
+                    <div className="mt-2 ml-6">
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Observações de alimentação</label>
+                      <input 
+                        type="text"
+                        value={formData.careNeeds?.observacoesAlimentacao || ''}
+                        onChange={(e) => setFormData({ ...formData, careNeeds: { ...(formData.careNeeds || {}), observacoesAlimentacao: e.target.value } })}
+                        placeholder="Ex: Precisa de dieta pastosa, recusa carne..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 mt-2">
                     <input
                       type="checkbox" id="diaperChangeAssistance"
                       checked={formData.careNeeds?.diaperChangeAssistance || false}
@@ -724,6 +736,24 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
                       className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
                     />
                     <label htmlFor="decubitusChangeAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">M. de Decúbito</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox" id="tricotomyAssistance"
+                      checked={formData.careNeeds?.tricotomyAssistance || false}
+                      onChange={(e) => setFormData({ ...formData, careNeeds: { ...(formData.careNeeds || {}), tricotomyAssistance: e.target.checked } })}
+                      className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                    />
+                    <label htmlFor="tricotomyAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">Tricotomia / Barba</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox" id="nailCareAssistance"
+                      checked={formData.careNeeds?.nailCareAssistance || false}
+                      onChange={(e) => setFormData({ ...formData, careNeeds: { ...(formData.careNeeds || {}), nailCareAssistance: e.target.checked } })}
+                      className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                    />
+                    <label htmlFor="nailCareAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">Corte de Unhas</label>
                   </div>
                 </div>
               </div>

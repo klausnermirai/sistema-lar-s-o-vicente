@@ -169,10 +169,19 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
     return true;
   });
 
+  const getAuthorDisplay = (msg: MuralMessage) => {
+    return msg.authorSignatureText 
+      || (msg.authorDisplayName && msg.authorFunction ? `${msg.authorDisplayName} — ${msg.authorFunction}` : null)
+      || (msg.authorName && msg.authorRole ? `${msg.authorName} — ${msg.authorRole}` : null)
+      || msg.authorDisplayName 
+      || msg.authorName 
+      || msg.author;
+  };
+
   const formatMessageForExport = (msg: MuralMessage) => {
     const date = new Date(msg.timestamp).toLocaleDateString('pt-BR');
     const time = new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    const authorDisplay = (msg.authorName && msg.authorRole) ? `${msg.authorName} - ${msg.authorRole}` : (msg.authorName || msg.author);
+    const authorDisplay = getAuthorDisplay(msg);
     return `[${date}] [${time}] - ${authorDisplay}: ${msg.text}`;
   };
 
@@ -320,7 +329,7 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
                   <div className="flex flex-col bg-white border border-gray-100 shadow-sm rounded-2xl p-5 w-full relative group">
                     <div className="flex items-center gap-3 mb-3">
                       <span className="text-[11px] font-black text-gray-800">
-                        {msg.authorName && msg.authorRole ? `${msg.authorName} - ${msg.authorRole}` : (msg.authorName || msg.author)}
+                        {getAuthorDisplay(msg)}
                       </span>
                       <span className="text-[10px] font-bold text-gray-400">{date} às {time}</span>
                     </div>

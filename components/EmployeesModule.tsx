@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Users, Plus, Upload, Search, Edit2, Archive, CheckCircle2, AlertCircle, FileSpreadsheet } from 'lucide-react';
-import { Employee, User } from '../types';
+import { Users, Plus, Upload, Search, Edit2, Archive, CheckCircle2, AlertCircle, FileSpreadsheet, Clock } from 'lucide-react';
+import { Employee, User, OperationalShift } from '../types';
 import Papa from 'papaparse';
 
 interface EmployeesModuleProps {
@@ -9,12 +9,16 @@ interface EmployeesModuleProps {
 }
 
 export const EmployeesModule: React.FC<EmployeesModuleProps> = ({ session, settings }) => {
+  const [activeTab, setActiveTab] = useState<'funcionarios' | 'turnos'>('funcionarios');
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [shifts, setShifts] = useState<OperationalShift[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isShiftFormOpen, setIsShiftFormOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [editingShift, setEditingShift] = useState<OperationalShift | null>(null);
 
   // CSV Import State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -38,8 +42,23 @@ export const EmployeesModule: React.FC<EmployeesModuleProps> = ({ session, setti
     setIsLoading(false);
   };
 
+  const loadShifts = async () => {
+    try {
+      const response = await fetch(`/api/shifts?institutionId=${session.institutionId || session.cnpj}`, {
+        headers: { 'Authorization': `Bearer ${session.id}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setShifts(data);
+      }
+    } catch (err) {
+      console.error('Error fetching shifts', err);
+    }
+  };
+
   useEffect(() => {
     fetchEmployees();
+    loadShifts();
   }, []);
 
   const handleSave = async (emp: Partial<Employee>) => {
@@ -143,38 +162,78 @@ export const EmployeesModule: React.FC<EmployeesModuleProps> = ({ session, setti
           <p className="text-sm text-gray-500 mt-1">Gestão institucional de profissionais</p>
         </div>
         <div className="flex gap-3">
-          <input 
-            type="file" 
-            accept=".csv" 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-            className="hidden" 
-          />
-          <button 
-            onClick={() => {
-              setImportData([]);
-              setImportStep('upload');
-              setIsImportModalOpen(true);
-            }}
-            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all text-sm font-bold flex items-center gap-2 shadow-sm"
-          >
-            <Upload size={16} /> Importar CSV
-          </button>
-          <button 
-            onClick={() => {
-              setEditingEmployee(null);
-              setIsFormOpen(true);
-            }}
-            className="px-4 py-2 bg-[#004c99] text-white rounded-xl hover:bg-blue-800 transition-all text-sm font-bold flex items-center gap-2 shadow-md"
-          >
-            <Plus size={16} /> Novo Funcionário
-          </button>
+          {activeTab === 'funcionarios' && (
+            <>
+              <input 
+                type="file" 
+                accept=".csv" 
+                ref={fileInputRef} 
+                onChange={handleFileUpload} 
+                className="hidden" 
+              />
+              <button 
+                onClick={() => {
+                  setImportData([]);
+                  setImportStep('upload');
+                  setIsImportModalOpen(true);
+                }}
+                className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all text-sm font-bold flex items-center gap-2 shadow-sm"
+              >
+                <Upload size={16} /> Importar CSV
+              </button>
+              <button 
+                onClick={() => {
+                  setEditingEmployee(null);
+                  setIsFormOpen(true);
+                }}
+                className="px-4 py-2 bg-[#004c99] text-white rounded-xl hover:bg-blue-800 transition-all text-sm font-bold flex items-center gap-2 shadow-md"
+              >
+                <Plus size={16} /> Novo Funcionário
+              </button>
+            </>
+          )}
+
+          {activeTab === 'turnos' && (
+            <button 
+              onClick={() => {
+                setEditingShift(null);
+                setIsShiftFormOpen(true);
+              }}
+              className="px-4 py-2 bg-[#004c99] text-white rounded-xl hover:bg-blue-800 transition-all text-sm font-bold flex items-center gap-2 shadow-md"
+            >
+              <Plus size={16} /> Configurar Turno
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-blue-100 overflow-hidden">
-        <div className="p-4 border-b bg-gray-50 flex items-center gap-4">
-          <div className="relative flex-1 max-w-md">
+      <div className="flex gap-4 mb-6 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab('funcionarios')}
+          className={`pb-4 px-2 text-sm font-bold uppercase tracking-widest transition-all ${
+            activeTab === 'funcionarios' 
+            ? 'border-b-4 border-[#004c99] text-[#004c99]' 
+            : 'text-gray-400 hover:text-gray-600 border-b-4 border-transparent'
+          }`}
+        >
+          <div className="flex items-center gap-2"><Users size={16} /> Quadro de Funcionários</div>
+        </button>
+        <button
+          onClick={() => setActiveTab('turnos')}
+          className={`pb-4 px-2 text-sm font-bold uppercase tracking-widest transition-all ${
+            activeTab === 'turnos' 
+            ? 'border-b-4 border-[#004c99] text-[#004c99]' 
+            : 'text-gray-400 hover:text-gray-600 border-b-4 border-transparent'
+          }`}
+        >
+          <div className="flex items-center gap-2"><Clock size={16} /> Horários e Turnos</div>
+        </button>
+      </div>
+
+      {activeTab === 'funcionarios' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-blue-100 overflow-hidden">
+          <div className="p-4 border-b bg-gray-50 flex items-center gap-4">
+            <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
               type="text"
@@ -256,13 +315,110 @@ export const EmployeesModule: React.FC<EmployeesModuleProps> = ({ session, setti
             </table>
           </div>
         )}
-      </div>
+        </div>
+      )}
+
+      {activeTab === 'turnos' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {shifts.map(shift => (
+              <div key={shift.id} className={`bg-white p-6 rounded-2xl shadow-sm border ${shift.defineInicioDoDiaOperacional ? 'border-[#004c99] ring-2 ring-[#004c99]/20' : 'border-gray-200'}`}>
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">{shift.nomeTurno}</h3>
+                    <p className="text-sm font-bold text-gray-500 uppercase tracking-widest">{shift.setor}</p>
+                  </div>
+                  <span className={`px-2 py-1 text-xs font-bold uppercase rounded ${shift.status === 'ativo' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {shift.status}
+                  </span>
+                </div>
+                
+                <div className="flex gap-4 mb-4">
+                  <div className="flex-1 bg-gray-50 p-3 rounded-xl border border-gray-100 flex flex-col items-center">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Início</span>
+                    <span className="text-lg font-black text-[#004c99]">{shift.horarioInicio}</span>
+                  </div>
+                  <div className="flex-1 bg-gray-50 p-3 rounded-xl border border-gray-100 flex flex-col items-center">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Fim</span>
+                    <span className="text-lg font-black text-[#004c99]">{shift.horarioFim}</span>
+                  </div>
+                </div>
+
+                {shift.defineInicioDoDiaOperacional && (
+                  <div className="bg-blue-50 text-[#004c99] text-xs font-bold uppercase tracking-widest p-2 rounded-lg text-center mb-4">
+                    Inicia o Dia Operacional
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-gray-100">
+                  <button 
+                    onClick={() => {
+                      setEditingShift(shift);
+                      setIsShiftFormOpen(true);
+                    }}
+                    className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors font-bold uppercase text-[10px] tracking-widest flex items-center gap-1"
+                  >
+                    <Edit2 size={14} /> Editar
+                  </button>
+                  <button 
+                    onClick={async () => {
+                      if(window.confirm('Tem certeza que deseja inativar este turno?')) {
+                        try {
+                          await fetch(`/api/shifts/${shift.id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${session.id}` }});
+                          loadShifts();
+                        } catch(e) { alert('Erro ao inativar'); }
+                      }
+                    }}
+                    className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors font-bold uppercase text-[10px] tracking-widest flex items-center gap-1"
+                  >
+                    <Archive size={14} /> Inativar
+                  </button>
+                </div>
+              </div>
+            ))}
+            
+            {shifts.length === 0 && (
+              <div className="col-span-full bg-white p-12 rounded-2xl border-2 border-dashed border-gray-200 text-center flex flex-col items-center justify-center text-gray-500">
+                <Clock size={48} className="mb-4 text-gray-300" />
+                <p className="text-lg font-bold">Nenhum turno configurado</p>
+                <p className="text-sm mt-1 mb-6">Configure os turnos operacionais para uso no modo tablet.</p>
+                <button 
+                  onClick={() => setIsShiftFormOpen(true)}
+                  className="px-6 py-3 bg-[#004c99] text-white rounded-xl hover:bg-blue-800 transition-all text-sm font-bold shadow-md flex items-center gap-2 uppercase tracking-widest"
+                >
+                  <Plus size={16} /> Criar Primeiro Turno
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {isFormOpen && (
         <EmployeeFormModal 
           employee={editingEmployee}
           onClose={() => setIsFormOpen(false)}
           onSave={handleSave}
+        />
+      )}
+
+      {isShiftFormOpen && (
+        <ShiftFormModal 
+          shift={editingShift}
+          onClose={() => setIsShiftFormOpen(false)}
+          onSave={async (shiftData) => {
+            try {
+              await fetch('/api/shifts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.id}` },
+                body: JSON.stringify({ ...shiftData, institutionId: session.institutionId || session.cnpj })
+              });
+              loadShifts();
+              setIsShiftFormOpen(false);
+            } catch(e) {
+              alert('Erro ao salvar turno');
+            }
+          }}
         />
       )}
 
@@ -499,6 +655,96 @@ const EmployeeFormModal = ({ employee, onClose, onSave }: { employee: Employee |
           <button type="button" onClick={onClose} className="px-6 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-all">Cancelar</button>
           <button onClick={handleSubmit} className="px-6 py-2.5 bg-[#004c99] text-white rounded-xl hover:bg-blue-800 transition-all text-sm font-bold shadow-md flex items-center gap-2">
             <CheckCircle2 size={18} /> Salvar Funcionário
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ShiftFormModal = ({ shift, onClose, onSave }: { shift: OperationalShift | null, onClose: () => void, onSave: (s: Partial<OperationalShift>) => void }) => {
+  const [formData, setFormData] = useState<Partial<OperationalShift>>({
+    nomeTurno: '',
+    horarioInicio: '',
+    horarioFim: '',
+    setor: 'Saúde e Cuidados',
+    ordem: 1,
+    status: 'ativo',
+    defineInicioDoDiaOperacional: false,
+    observacoes: ''
+  });
+
+  useEffect(() => {
+    if (shift) setFormData(shift);
+  }, [shift]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.nomeTurno || !formData.horarioInicio || !formData.horarioFim) {
+      alert('Preencha os campos obrigatórios (Nome e Horários).');
+      return;
+    }
+    onSave(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="p-6 border-b bg-gray-50 flex items-center justify-between">
+          <h2 className="text-xl font-black text-[#004c99] tracking-tighter uppercase">{shift ? 'Editar Turno' : 'Novo Turno'}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">✕</button>
+        </div>
+
+        <form className="p-6 overflow-y-auto flex-1 space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="col-span-1 sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Nome do Turno *</label>
+              <input type="text" value={formData.nomeTurno} onChange={e => setFormData({...formData, nomeTurno: e.target.value})} className="w-full p-3 border rounded-xl text-sm focus:ring-[#004c99] focus:border-[#004c99] bg-gray-50 uppercase font-black" placeholder="Ex: Turno da Manhã" />
+            </div>
+            
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Horário Início *</label>
+              <input type="time" value={formData.horarioInicio as string | undefined} onChange={e => setFormData({...formData, horarioInicio: e.target.value})} className="w-full p-3 border rounded-xl text-lg font-bold text-[#004c99] bg-blue-50 focus:ring-[#004c99] focus:border-[#004c99]" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Horário Fim *</label>
+              <input type="time" value={formData.horarioFim as string | undefined} onChange={e => setFormData({...formData, horarioFim: e.target.value})} className="w-full p-3 border rounded-xl text-lg font-bold text-[#004c99] bg-blue-50 focus:ring-[#004c99] focus:border-[#004c99]" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Setor</label>
+              <input type="text" value={formData.setor as string | undefined} onChange={e => setFormData({...formData, setor: e.target.value})} className="w-full p-3 border rounded-xl text-sm bg-gray-50 focus:ring-[#004c99] focus:border-[#004c99]" placeholder="Ex: Saúde e Cuidados" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Ordem (Exibição)</label>
+              <input type="number" value={formData.ordem as number | undefined} onChange={e => setFormData({...formData, ordem: parseInt(e.target.value) || 1})} className="w-full p-3 border rounded-xl text-sm bg-gray-50 focus:ring-[#004c99] focus:border-[#004c99]" />
+            </div>
+
+            <div className="col-span-1 sm:col-span-2">
+              <label className="flex items-center gap-3 p-4 border rounded-xl bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors">
+                <input type="checkbox" checked={formData.defineInicioDoDiaOperacional as boolean | undefined} onChange={e => setFormData({...formData, defineInicioDoDiaOperacional: e.target.checked})} className="w-5 h-5 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]" />
+                <div>
+                  <span className="block text-sm font-bold text-gray-900 uppercase tracking-tight">Define o Início do Dia Operacional</span>
+                  <span className="block text-xs text-gray-500">Marque se este turno é o primeiro do dia para relatórios (Ex: 05:40)</span>
+                </div>
+              </label>
+            </div>
+            <div className="col-span-1 sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Status</label>
+              <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value as 'ativo'|'inativo'})} className="w-full p-3 border rounded-xl text-sm bg-gray-50 focus:ring-[#004c99] focus:border-[#004c99]">
+                <option value="ativo">Ativo</option>
+                <option value="inativo">Inativo</option>
+              </select>
+            </div>
+          </div>
+        </form>
+
+        <div className="p-4 border-t bg-gray-50 flex justify-end gap-3 shrink-0">
+          <button type="button" onClick={onClose} className="px-6 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-all">Cancelar</button>
+          <button onClick={handleSubmit} className="px-6 py-2.5 bg-[#004c99] text-white rounded-xl hover:bg-blue-800 transition-all text-sm font-bold shadow-md flex items-center gap-2">
+            <CheckCircle2 size={18} /> Salvar Turno
           </button>
         </div>
       </div>

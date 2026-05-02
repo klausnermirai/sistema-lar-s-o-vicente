@@ -766,7 +766,7 @@ async function startServer() {
     const { institutionId } = req.query;
     if (!institutionId) return res.status(400).json({ error: 'ID da instituição não informado' });
     
-    const settings = await safeQuery(async () => {
+    try {
       const demoData = {
         id: 'demo-institution-id',
         name: 'Lar São Vicente de Paulo (Unidade de Demonstração)',
@@ -802,21 +802,20 @@ async function startServer() {
       }
 
       if (!doc || !doc.exists) {
-        if (institutionId === 'demo-institution-id' || institutionId === '00.111.222/0001-33') return demoData;
-        return null; // Tratar no res.status(404)
+        if (institutionId === 'demo-institution-id' || institutionId === '00.111.222/0001-33') return res.json(demoData);
+        return res.status(404).json({ error: 'Instituição não encontrada' });
       }
 
       const dbData = doc.data() || {};
       if (institutionId === 'demo-institution-id' || institutionId === '00.111.222/0001-33') {
-        return { ...demoData, ...dbData, id: doc.id };
+        return res.json({ ...demoData, ...dbData, id: doc.id });
       }
-      return { ...dbData, id: doc.id };
-    }, null);
-
-    if (!settings) {
-      return res.status(404).json({ error: 'Instituição não encontrada' });
+      return res.json({ ...dbData, id: doc.id });
+      
+    } catch (error: any) {
+      console.error('API Settings Error:', error);
+      return res.status(500).json({ error: 'Erro de conexão no banco de dados' });
     }
-    res.json(settings);
   });
 
   app.post('/api/telegram/test', requireRole(['administrador', 'gerencial']), async (req, res) => {
@@ -954,12 +953,58 @@ async function startServer() {
     }
   });
 
-  app.post('/api/mural', async (req, res) => {
+  app.post('/api/mural', async (req: any, res) => {
     const data = req.body;
     try {
       if (!data.timestamp) {
         data.timestamp = Date.now();
       }
+      
+      // Auto-identify author from session
+      if (req.user) {
+        data.authorUserId = req.user.id;
+        data.authorEmail = req.user.username;
+        
+        let sigTextFallback = req.user.fullName || req.user.username;
+        if (req.user.role) {
+          sigTextFallback = `${sigTextFallback} — ${req.user.role}`;
+        }
+        
+        data.authorDisplayName = req.user.fullName || req.user.username;
+        data.authorFunction = req.user.role || '';
+        data.authorSignatureText = sigTextFallback;
+
+        if (req.user.funcionarioId) {
+          try {
+            const empDoc = await db.collection('employees').doc(req.user.funcionarioId).get();
+            if (empDoc.exists) {
+              const empData = empDoc.data();
+              const noNameFallback = req.user.fullName || req.user.username;
+              const nomeStr = empData?.nomeExibicao || empData?.nomeCompleto || noNameFallback;
+              const funcaoStr = empData?.funcao || '';
+              const conselhoStr = empData?.conselhoProfissional || '';
+              const registroStr = empData?.numeroRegistro || '';
+              
+              const sigText = funcaoStr ? `${nomeStr} — ${funcaoStr}` : nomeStr;
+
+              data.authorFuncionarioId = req.user.funcionarioId;
+              data.authorDisplayName = nomeStr;
+              data.authorFunction = funcaoStr;
+              data.authorProfessionalCouncil = conselhoStr;
+              data.authorProfessionalRegistry = registroStr;
+              data.authorRegistryUf = empData?.ufRegistro || '';
+              data.authorSignatureText = sigText;
+              
+              // Override legacy fields just in case
+              data.authorName = nomeStr;
+              data.authorRole = funcaoStr;
+            }
+          } catch (e) {
+            console.error("Erro ao enriquecer autor da mensagem do mural:", e);
+          }
+        }
+      }
+
       const docRef = await db.collection('muralMessages').add(data);
       await logAudit('create', 'mural', docRef.id, req, data.institutionId, 'Nova mensagem no mural', { title: data.title });
       
@@ -973,8 +1018,14 @@ async function startServer() {
               const url = `https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`;
               
               const titlePart = data.title ? `*${data.title}*\n` : '';
-              const displayName = data.authorName || data.author || 'Usuário';
-              const authorPart = `👤 *${displayName}* ${data.authorRole ? `(${data.authorRole})` : ''}\n`;
+              
+              let displayName = data.authorName || data.author || 'Usuário';
+              let authorLine = `👤 *${displayName}* ${data.authorRole ? `(${data.authorRole})` : ''}\n`;
+              if (data.authorSignatureText) {
+                authorLine = `👤 *${data.authorSignatureText}*\n`;
+              }
+              const authorPart = authorLine;
+              
               const textPart = data.text ? `\n📄 ${data.text}` : '';
               const detailsPart = data.detailedContent ? `\n\n📝 _Detalhes:_\n${data.detailedContent}` : '';
 
@@ -1093,6 +1144,146 @@ async function startServer() {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Erro ao arquivar funcionário' });
+    }
+  });
+
+  // ========== SHIFTS ==========
+  app.get('/api/shifts', requireAuth, async (req, res) => {
+    const { institutionId } = req.query;
+    if (!institutionId) return res.json([]);
+    try {
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('shifts')
+        .where('institutionId', '==', realId)
+        .where('status', '==', 'ativo')
+        .get();
+      const shifts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as any);
+      shifts.sort((a: any, b: any) => (a.ordem || 0) - (b.ordem || 0));
+      res.json(shifts);
+    } catch (e: any) {
+      res.status(500).json({ error: 'Erro ao buscar turnos' });
+    }
+  });
+
+  app.post('/api/shifts', requireRole(['administrador', 'gerencial']), async (req, res) => {
+    const payload = req.body;
+    try {
+      if (!payload.institutionId) return res.status(400).json({ error: 'Falta institutionId' });
+      const realId = await getRealInstitutionId(payload.institutionId);
+
+      const dataToSave = {
+        ...payload,
+        institutionId: realId,
+        atualizadoEm: new Date().toISOString()
+      };
+
+      if (!dataToSave.criadoEm) {
+        dataToSave.criadoEm = new Date().toISOString();
+      }
+
+      if (dataToSave.id && dataToSave.id.length > 10) {
+        // Edit existing
+        const { id, ...saveData } = dataToSave;
+        await db.collection('shifts').doc(id).set(saveData, { merge: true });
+        res.json(dataToSave);
+      } else {
+        // Create new
+        const { id, ...saveData } = dataToSave;
+        const docRef = await db.collection('shifts').add(saveData);
+        res.json({ ...saveData, id: docRef.id });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: 'Erro ao salvar turno' });
+    }
+  });
+
+  app.delete('/api/shifts/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
+    try {
+      await db.collection('shifts').doc(req.params.id).update({
+        status: 'inativo',
+        atualizadoEm: new Date().toISOString()
+      });
+      res.json({ success: true });
+    } catch (error) {
+       res.status(500).json({ error: 'Erro ao inativar turno' });
+    }
+  });
+
+  // ========== PROCEDURES LOGS ==========
+  app.post('/api/procedures/log', requireAuth, async (req, res) => {
+    const payload = req.body;
+    try {
+      if (!payload.institutionId) return res.status(400).json({ error: 'Falta institutionId' });
+      const realId = await getRealInstitutionId(payload.institutionId);
+
+      const dataToSave = {
+        ...payload,
+        institutionId: realId,
+      };
+
+      const docRef = await db.collection('procedure_logs').add(dataToSave);
+      res.json({ ...dataToSave, id: docRef.id });
+    } catch (e: any) {
+      res.status(500).json({ error: 'Erro ao salvar procedimento' });
+    }
+  });
+
+  app.get('/api/procedures/logs', requireAuth, async (req, res) => {
+    const { institutionId, dataOperacional } = req.query;
+    if (!institutionId) return res.json([]);
+    try {
+      const realId = await getRealInstitutionId(institutionId as string);
+      let query = db.collection('procedure_logs').where('institutionId', '==', realId);
+      
+      if (dataOperacional) {
+        query = query.where('dataOperacional', '==', dataOperacional);
+      }
+      
+      const snapshot = await query.orderBy('criadoEm', 'desc').get();
+      const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      res.json(logs);
+    } catch (e: any) {
+      res.status(500).json({ error: 'Erro ao buscar procedimentos' });
+    }
+  });
+
+  // ========== MEALS ==========
+  app.get('/api/meals', requireAuth, async (req, res) => {
+    const { institutionId } = req.query;
+    if (!institutionId) return res.json([]);
+    try {
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('meals').where('institutionId', '==', realId).get();
+      if (snapshot.empty) {
+        // Seed default meals for this institution
+        const defaultMeals = [
+          { nomeRefeicao: 'Café da manhã', horarioAproximado: '08:00', turnoNome: 'Manhã', ordem: 1 },
+          { nomeRefeicao: 'Lanche da manhã', horarioAproximado: '10:00', turnoNome: 'Manhã', ordem: 2 },
+          { nomeRefeicao: 'Almoço', horarioAproximado: '11:30', turnoNome: 'Manhã', ordem: 3 },
+          { nomeRefeicao: 'Lanche da tarde', horarioAproximado: '14:00', turnoNome: 'Tarde', ordem: 4 },
+          { nomeRefeicao: 'Jantar', horarioAproximado: '17:30', turnoNome: 'Tarde', ordem: 5 },
+          { nomeRefeicao: 'Lanche da noite', horarioAproximado: '20:00', turnoNome: 'Tarde', ordem: 6 },
+        ];
+        
+        for (const meal of defaultMeals) {
+          await db.collection('meals').add({
+            ...meal,
+            institutionId: realId,
+            turnoId: 'default',
+            status: 'ativo',
+            criadoEm: new Date().toISOString(),
+            atualizadoEm: new Date().toISOString()
+          });
+        }
+        
+        const newSnapshot = await db.collection('meals').where('institutionId', '==', realId).get();
+        const meals = newSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        return res.json(meals.sort((a: any, b: any) => a.ordem - b.ordem));
+      }
+      const meals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      res.json(meals.sort((a: any, b: any) => a.ordem - b.ordem));
+    } catch (e: any) {
+      res.status(500).json({ error: 'Erro ao buscar refeições' });
     }
   });
 

@@ -95,16 +95,16 @@ const App: React.FC = () => {
         }),
         fetchSettings(idToFetch).catch((err) => {
           console.error("Settings fetch error:", err);
-          return null;
+          return undefined;
         }),
       ]);
 
       setResidents(residentsData || []);
       setCandidates(candidatesData || []);
-      setSettings(settingsData);
+      setSettings(settingsData || null);
 
-      // Se não há configurações e não estamos em bypass, ir para setup
-      if (!settingsData && !DEV_BYPASS_AUTH) {
+      // Se respondeu estritamente null (404), a instituição precisa de setup
+      if (settingsData === null && !DEV_BYPASS_AUTH) {
         setView("setup");
       }
 
