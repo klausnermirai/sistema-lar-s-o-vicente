@@ -203,9 +203,22 @@ export interface Medication {
   type: 'continuo' | 'temporario';
   durationDays?: number;
   startDate: string;
+  endDate?: string;
   observation?: string;
   stock?: number;
   lastUpdate?: string;
+  
+  route?: string; // via
+  shiftIdCalculated?: string;
+  shiftNameCalculated?: string;
+  originalShiftFile?: string;
+  originalResidentNameFile?: string;
+  importOrigin?: string;
+  originPage?: string;
+  importObservations?: string;
+  reviewed?: boolean;
+  reviewedBy?: string;
+  reviewedAt?: string;
 }
 
 export type CandidateStage = 
@@ -395,6 +408,14 @@ export interface Candidate {
   repKinship: string;
   repPhone: string;
   repAddress: string;
+
+  // Assinatura do Serviço Social
+  assistenteSocialResponsavelId?: string;
+  assistenteSocialAssinaturaSnapshot?: {
+    nome: string;
+    funcao: string;
+    registro: string;
+  };
 
   // Campos para compatibilidade legada
   admissionReason: string;
@@ -816,8 +837,14 @@ export interface Resident {
     feedingAssistance?: boolean;
     tricotomyAssistance?: boolean;
     nailCareAssistance?: boolean;
+    woundCareAssistance?: boolean;
     observacoesAlimentacao?: string;
   };
+  grauDependenciaCalculado?: number;
+  grauDependenciaManual?: number | null;
+  grauDependenciaFinal?: number;
+  grauDependenciaAtualizadoEm?: string;
+  grauDependenciaAtualizadoPor?: string;
   dailyRoutines?: DailyRoutineLog[];
   appointments?: Appointment[];
   incidents?: IncidentReport[];
@@ -987,6 +1014,7 @@ export enum AppRoute {
   RESIDENTS = 'residents',
   SCREENING = 'screening',
   SAUDE_CUIDADOS = 'saude-cuidados',
+  ENFERMAGEM = 'enfermagem',
   ATENDIMENTOS_MULTIDISCIPLINARES = 'atendimentos-multidisciplinares',
   CONSULTAS_MEDICAS = 'consultas-medicas',
   SETTINGS = 'settings',
@@ -1120,19 +1148,45 @@ export interface MedicationStockEntry {
   note?: string;
 }
 
+export interface ResidentMedicationStockMovement {
+  id: string;
+  institutionId: string;
+  ownerType?: 'resident' | 'institution';
+  ownerId?: string;
+  residentId?: string; // Legacy/fallback
+  prescriptionId?: string;
+  medicamentoPrescritoTexto: string;
+  tipoMovimentacao: 'entrada' | 'saida' | 'ajuste_positivo' | 'ajuste_negativo';
+  quantidade: number;
+  motivo: string;
+  dataHora: string;
+  responsavelUserId?: string;
+  responsavelNome: string;
+  observacoes?: string;
+  nivelCritico?: number;
+}
+
 export interface MedicationAdministrationLog {
   id: string;
+  institutionId?: string;
   residentId: string;
-  medicationId: string; // Refers to Resident's Medication ID in their prescription
-  medicationName: string;
-  dose: string;
-  plannedTime: string;
-  administeredTime?: string;
-  date: string;
-  status: 'administrado' | 'nao_administrado' | 'recusado' | 'pendente';
-  professionalName?: string;
-  observation?: string;
-  shift: 'Manhã' | 'Tarde' | 'Noite';
+  prescriptionId: string; // Refers to Resident's Medication ID
+  medicamentoPrescritoTexto: string;
+  horarioPrevisto: string;
+  dataOperacional: string;
+  turnoId?: string;
+  turnoNome?: string;
+  statusAdministracao: 'administrado' | 'recusado' | 'nao_administrado' | 'suspenso' | 'em_falta' | 'outro' | 'pendente';
+  dataHoraRegistro: string;
+  responsavelUserId?: string;
+  responsavelNome: string;
+  observacoes?: string;
+  
+  profissionalId?: string;
+  profissionalNome?: string;
+  profissionalFuncao?: string;
+  profissionalRegistro?: string;
+  profissionalAssinaturaTexto?: string;
 }
 
 export interface MedicationSeparationLog {

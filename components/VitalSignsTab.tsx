@@ -631,7 +631,7 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
               />
             </div>
           </div>
-          <div className="flex-1 divide-y divide-gray-50 max-h-[600px] overflow-y-auto no-scrollbar">
+          <div className="flex-1 divide-y divide-gray-50 max-h-[600px] overflow-y-auto custom-scrollbar">
             {filteredHistory.map((entry) => (
               <div key={entry.id} className="p-5 hover:bg-blue-50/10 cursor-default transition-all group">
                 <div className="flex justify-between items-start mb-3">

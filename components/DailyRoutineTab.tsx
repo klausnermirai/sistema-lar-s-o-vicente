@@ -22,7 +22,8 @@ import {
   AlertTriangle,
   ChevronLeft,
   Loader2,
-  Clock
+  Clock,
+  Bandage
 } from 'lucide-react';
 
 interface DailyRoutineTabProps {
@@ -40,6 +41,7 @@ const ROUTINE_TASKS = [
   { id: 'decubito', name: 'Mudança de Decúbito', icon: AlertTriangle, careNeedKey: 'decubitusChangeAssistance' as const, isMandatory: true, category: 'Preventivo', careLabelName: 'Necessita decúbito', occurrenceType: 'recurrent' },
   { id: 'barba', name: 'Tricotomia / Barba', icon: Scissors, careNeedKey: 'tricotomyAssistance' as const, isMandatory: false, category: 'Higiene', careLabelName: 'Acompanhamento', occurrenceType: 'daily' },
   { id: 'unhas', name: 'Corte de Unhas', icon: Scissors, careNeedKey: 'nailCareAssistance' as const, isMandatory: false, category: 'Higiene', careLabelName: 'Acompanhamento', occurrenceType: 'daily' },
+  { id: 'curativos', name: 'Curativos', icon: Bandage, careNeedKey: 'woundCareAssistance' as const, isMandatory: false, category: 'Cuidado', careLabelName: 'Necessita curativo', occurrenceType: 'recurrent' },
 ];
 
 const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs, isTabletMode, shifts = [] }) => {
@@ -189,7 +191,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
       <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in zoom-in-95 duration-500">
         <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-2 text-center">Plano de Rotinas</h2>
         <p className="text-sm font-bold text-gray-400 uppercase tracking-widest text-center mb-8">Selecione o procedimento a ser realizado</p>
-        <div className="flex-1 w-full max-w-5xl mx-auto overflow-y-auto no-scrollbar pb-8">
+        <div className="flex-1 w-full max-w-5xl mx-auto overflow-y-auto custom-scrollbar pb-8 pr-2">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {ROUTINE_TASKS.map(task => (
               <button
@@ -565,7 +567,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                     key={r.id}
                     disabled={!isSelectable}
                     onClick={() => handleToggleSelect(r.id)}
-                    className={`flex flex-col w-full items-start p-5 rounded-3xl transition-all border-2 text-left relative overflow-hidden ${
+                    className={`border-2 rounded-2xl p-4 flex flex-col gap-4 text-left hover:border-gray-200 transition-all relative ${
                       isSelected
                         ? 'border-[#004c99] bg-blue-50/50'
                         : isCompletedDaily
@@ -573,51 +575,54 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                         : 'border-gray-100 bg-white hover:border-gray-300'
                     } ${needsAssistance && !isSelected && !isCompletedDaily ? 'ring-2 ring-orange-100' : ''}`}
                   >
-                    <div className="flex w-full items-start justify-between mb-4">
+                    {/* Badge de acompanhamento (se precisar e não estiver selecionado/concluído) */}
+                    {needsAssistance && !isCompletedDaily && !isSelected && (
+                      <span className="absolute -top-3 right-4 px-3 py-1 bg-orange-100 text-orange-700 text-[9px] font-black uppercase tracking-widest rounded-lg border border-orange-200 shadow-sm z-10">
+                        {(selectedTask as any).careLabelName || 'Precisa de Auxílio'}
+                      </span>
+                    )}
+
+                    {/* Badge Realizado */}
+                    {isCompletedDaily && (
+                      <span className="absolute -top-3 right-4 px-3 py-1 bg-green-100 text-green-700 text-[9px] font-black uppercase tracking-widest rounded-lg border border-green-200 shadow-sm z-10 flex items-center gap-1">
+                        <CheckCircle2 size={12} /> Realizado
+                      </span>
+                    )}
+
+                    <div className="flex items-center gap-4 w-full">
+                      {/* Ícone */}
                       <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
                         isSelected ? 'bg-[#004c99] text-white shadow-md' : isCompletedDaily ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
                       }`}>
                         {isSelected || isCompletedDaily ? <CheckCircle2 size={24} /> : <UserCircle2 size={24} />}
                       </div>
-                      {needsAssistance && !isCompletedDaily && (
-                        <div className="shrink-0 max-w-[50%]">
-                           <span className="px-2 py-1.5 bg-orange-100 text-orange-700 text-[9px] font-black uppercase tracking-widest rounded-lg break-words text-center flex">
-                             {(selectedTask as any).careLabelName || 'Precisa de Auxílio'}
-                           </span>
-                        </div>
-                      )}
-                      {isCompletedDaily && (
-                        <div className="shrink-0">
-                          <span className="px-3 py-1.5 bg-green-100 text-green-700 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
-                            <CheckCircle2 size={12} /> Realizado
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="w-full flex-1 overflow-hidden">
-                      <p className={`text-lg font-black uppercase tracking-tighter truncate leading-tight w-full ${
-                        isSelected ? 'text-[#004c99]' : isCompletedDaily ? 'text-green-700' : 'text-gray-900'
-                      }`}>{r.name}</p>
-                      
-                      {!hasCompletedToday ? (
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 truncate">
-                          Quarto {r.room || '--'} • Leito {r.bedNumber || '--'}
+
+                      {/* Dados (Nome + Info) */}
+                      <div className="flex-1 min-w-0">
+                        <p className={`font-black uppercase tracking-tighter leading-tight break-words ${
+                          isSelected ? 'text-[#004c99]' : isCompletedDaily ? 'text-green-700' : 'text-gray-800'
+                        }`}>
+                          {r.name}
                         </p>
-                      ) : (
-                        <div className="mt-3 space-y-1 bg-white/50 rounded-xl p-3 border border-gray-100 w-full overflow-hidden">
-                          {isDaily ? (
-                            <>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-[#004c99] truncate">Turno: {lastLog.turnoNome}</p>
-                              <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 truncate">Por: {lastLog.responsavelNome}</p>
-                            </>
-                          ) : (
-                            <>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-[#004c99] truncate">Registros hoje: {residentLogs.length}</p>
-                              <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 truncate">Último: {new Date(lastLog.criadoEm).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {lastLog.turnoNome}</p>
-                            </>
-                          )}
-                        </div>
-                      )}
+
+                        {!hasCompletedToday ? (
+                          <p className="text-[10px] uppercase font-bold text-gray-400 tracking-widest mt-1">Qt. {r.room || '-'} • Lt. {r.bedNumber || '-'}</p>
+                        ) : (
+                          <div className="mt-2 space-y-1 bg-white/60 rounded-xl p-2 border border-gray-100 text-left">
+                            {isDaily ? (
+                              <>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-[#004c99] truncate">Turno: {lastLog.turnoNome}</p>
+                                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 truncate">Por: {lastLog.responsavelNome}</p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-[#004c99] truncate">Registros hoje: {residentLogs.length}</p>
+                                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 truncate">Último: {new Date(lastLog.criadoEm).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {lastLog.turnoNome}</p>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </button>
                 );

@@ -160,7 +160,8 @@ async function startServer() {
     contentSecurityPolicy: false, // Disable for Vite dev
   }));
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   app.get("/api/health", async (req, res) => {
     let dbStatus = "unknown";
@@ -632,23 +633,28 @@ async function startServer() {
     if (!Array.isArray(residents)) return res.status(400).json({ error: 'Lista de residentes inválida' });
     
     try {
-      const batch = db.batch();
-      for (const resi of residents) {
-        if (resi.institutionId) {
-          resi.institutionId = await getRealInstitutionId(resi.institutionId);
-        }
+      const MAX_BATCH_SIZE = 400;
+      for (let i = 0; i < residents.length; i += MAX_BATCH_SIZE) {
+        const chunk = residents.slice(i, i + MAX_BATCH_SIZE);
+        const batch = db.batch();
         
-        let docRef;
-        if (resi.id && !resi.id.startsWith('MOCK-') && resi.id.length > 5) {
-          docRef = db.collection('residents').doc(resi.id);
-          const { id, ...updateData } = resi;
-          batch.set(docRef, updateData, { merge: true });
-        } else {
-          docRef = db.collection('residents').doc();
-          batch.set(docRef, resi);
+        for (const resi of chunk) {
+          if (resi.institutionId) {
+            resi.institutionId = await getRealInstitutionId(resi.institutionId);
+          }
+          
+          let docRef;
+          if (resi.id && !resi.id.startsWith('MOCK-') && resi.id.length > 5) {
+            docRef = db.collection('residents').doc(resi.id);
+            const { id, ...updateData } = resi;
+            batch.set(docRef, updateData, { merge: true });
+          } else {
+            docRef = db.collection('residents').doc();
+            batch.set(docRef, resi);
+          }
         }
+        await batch.commit();
       }
-      await batch.commit();
       res.json({ success: true, count: residents.length });
     } catch (error) {
       console.error('Error in bulk resident save:', error);
@@ -1771,6 +1777,81 @@ async function startServer() {
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
       res.status(500).json({ error: 'Erro ao arquivar atividade.' });
+    }
+  });
+
+  // --- Medication Stock Movements API ---
+  app.get('/api/medication_stock_movements', async (req, res) => {
+    try {
+      const { institutionId, residentId } = req.query;
+      const realId = await getRealInstitutionId(String(institutionId));
+      let query = db.collection('medication_stock_movements').where('institutionId', '==', realId);
+      
+      if (residentId) {
+        query = query.where('residentId', '==', String(residentId));
+      }
+      
+      const snapshot = await query.get();
+      const movements = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      res.json(movements);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Erro ao buscar movimentações de estoque' });
+    }
+  });
+
+  app.post('/api/medication_stock_movements', async (req, res) => {
+    try {
+      const { ...data } = req.body;
+      data.institutionId = await getRealInstitutionId(data.institutionId);
+      const docRef = db.collection('medication_stock_movements').doc();
+      await docRef.set({ ...data, id: docRef.id });
+      res.json({ success: true, id: docRef.id });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Erro ao salvar movimentação de estoque' });
+    }
+  });
+
+  // --- Medication Administration Logs API ---
+  app.get('/api/medication_administration_logs', async (req, res) => {
+    try {
+      const { institutionId, residentId, date } = req.query;
+      const realId = await getRealInstitutionId(String(institutionId));
+      let query = db.collection('medication_administration_logs').where('institutionId', '==', realId);
+      
+      if (residentId) {
+        query = query.where('residentId', '==', String(residentId));
+      }
+      if (date) {
+        query = query.where('dataOperacional', '==', String(date));
+      }
+      
+      const snapshot = await query.get();
+      const logs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      res.json(logs);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Erro ao buscar logs de ministração' });
+    }
+  });
+
+  app.post('/api/medication_administration_logs', async (req, res) => {
+    try {
+      const { ...data } = req.body;
+      data.institutionId = await getRealInstitutionId(data.institutionId);
+      let docRef;
+      if (data.id && !data.id.startsWith('new_')) {
+         docRef = db.collection('medication_administration_logs').doc(data.id);
+      } else {
+         docRef = db.collection('medication_administration_logs').doc();
+         data.id = docRef.id;
+      }
+      await docRef.set({ ...data }, { merge: true });
+      res.json({ success: true, id: docRef.id });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Erro ao salvar log de ministração' });
     }
   });
 

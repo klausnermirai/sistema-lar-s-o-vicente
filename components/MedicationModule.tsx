@@ -7,6 +7,9 @@ import 'jspdf-autotable';
 import { Pill, Package, Clock, Users, CheckCircle2, AlertCircle, Plus, Search, Calendar, ChevronRight } from 'lucide-react';
 import { Resident, MedicationProduct, MedicationSeparationLog, MedicationAdministrationLog, Medication } from '../types';
 import MedicationTab from './MedicationTab';
+import { ImportPrescriptionsModal } from './ImportPrescriptionsModal';
+import { IndividualInventoryTab } from './IndividualInventoryTab';
+import { IndividualAdministrationTab } from './IndividualAdministrationTab';
 import { fetchInventory, bulkSaveInventory } from '../lib/api';
 import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 import { InstitutionSettings } from '../types';
@@ -15,6 +18,7 @@ interface MedicationModuleProps {
   residents: Resident[];
   session: any;
   onSaveResident?: (resident: Resident) => void;
+  onBulkSaveResidents?: (residents: Resident[]) => Promise<void>;
   settings?: InstitutionSettings | null;
   onPostToMural?: any;
 }
@@ -26,31 +30,8 @@ const MODULES = [
   { id: 'ministracao', label: 'Ministração', icon: CheckCircle2 }
 ] as const;
 
-export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, session, onSaveResident, settings, onPostToMural }) => {
+export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, session, onSaveResident, onBulkSaveResidents, settings, onPostToMural }) => {
   const [activeTab, setActiveTab] = useState<typeof MODULES[number]['id']>('prescricao');
-  const [inventory, setInventory] = useState<MedicationProduct[]>([]);
-  
-  // Fake state for logs, in real app, fetch from database.
-  const [separatedLogs, setSeparatedLogs] = useState<Record<string, MedicationSeparationLog>>({});
-  const [administeredLogs, setAdministeredLogs] = useState<Record<string, MedicationAdministrationLog[]>>({});
-
-  useEffect(() => {
-    if (session?.institutionId) {
-      fetchInventory(session.institutionId).then(setInventory).catch(console.error);
-    }
-  }, [session?.institutionId]);
-
-  const handleUpdateInventory = async (newInventory: MedicationProduct[]) => {
-    setInventory(newInventory);
-    if (session?.institutionId) {
-      try {
-         const saved = await bulkSaveInventory(session.institutionId, newInventory);
-         setInventory(saved);
-      } catch(err) {
-         console.error('Erro ao salvar estoque:', err);
-      }
-    }
-  };
 
   return (
     <div className="h-full flex flex-col bg-gray-50/50">
@@ -61,13 +42,13 @@ export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, s
           </div>
           <div>
             <h1 className="text-xl font-black text-gray-800 uppercase tracking-tight">Controle de Medicação</h1>
-            <p className="text-xs text-gray-500 font-medium">Gestão de estoque, separação e administração</p>
+            <p className="text-xs text-gray-500 font-medium">Gestão individual, estoque por prescrição e prontuário de ministração</p>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="px-8 pt-4 bg-white border-b shrink-0 flex gap-6">
+      <div className="px-8 pt-4 bg-white border-b shrink-0 flex gap-6 overflow-x-auto">
         {MODULES.map(m => {
           const Icon = m.icon;
           const isActive = activeTab === m.id;
@@ -75,7 +56,7 @@ export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, s
             <button
               key={m.id}
               onClick={() => setActiveTab(m.id)}
-              className={`pb-4 px-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all border-b-2 ${
+              className={`pb-4 px-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 whitespace-nowrap ${
                 isActive ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}
             >
@@ -85,18 +66,15 @@ export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, s
         })}
       </div>
 
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1 overflow-auto p-4 md:p-8">
         {activeTab === 'prescricao' && (
-          <PrescriptionListTab residents={residents} onSaveResident={onSaveResident!} onPostToMural={onPostToMural} />
+          <PrescriptionListTab residents={residents} onSaveResident={onSaveResident!} onPostToMural={onPostToMural} session={session} onBulkSaveResidents={onBulkSaveResidents} />
         )}
         {activeTab === 'estoque' && (
-          <InventoryTab inventory={inventory} setInventory={handleUpdateInventory} residents={residents} settings={settings} />
-        )}
-        {activeTab === 'separacao' && (
-          <SeparationTab residents={residents} session={session} logs={separatedLogs} setLogs={setSeparatedLogs} inventory={inventory} setInventory={handleUpdateInventory} settings={settings} />
+          <IndividualInventoryTab residents={residents} session={session} />
         )}
         {activeTab === 'ministracao' && (
-          <AdministrationTab residents={residents} session={session} separatedLogs={separatedLogs} administeredLogs={administeredLogs} setAdministeredLogs={setAdministeredLogs} settings={settings} />
+          <IndividualAdministrationTab residents={residents} session={session} />
         )}
       </div>
     </div>
@@ -930,16 +908,61 @@ const AdministrationTab: React.FC<{
   );
 };
 
-const PrescriptionListTab: React.FC<{ residents: Resident[], onSaveResident: (r: Resident) => void, onPostToMural?: any }> = ({ residents, onSaveResident, onPostToMural }) => {
+const PrescriptionListTab: React.FC<{ residents: Resident[], onSaveResident: (r: Resident) => void, onBulkSaveResidents?: (rs: Resident[]) => Promise<void>, onPostToMural?: any, session: any }> = ({ residents, onSaveResident, onBulkSaveResidents, onPostToMural, session }) => {
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   
   const selectedResident = residents.find(r => r.id === selectedResidentId);
   const filteredResidents = residents.filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
+  const handleConfirmImport = async (updatesByResident: Record<string, Medication[]>) => {
+    if (onBulkSaveResidents) {
+       const toSave = Object.keys(updatesByResident).map(resId => {
+          const res = residents.find(r => r.id === resId);
+          if (res) return { ...res, medications: updatesByResident[resId] };
+          return null;
+       }).filter(Boolean) as Resident[];
+       
+       if (toSave.length > 0) {
+          await onBulkSaveResidents(toSave);
+       }
+    } else {
+      // Process one by one if bulk is not available.
+      for (const resId of Object.keys(updatesByResident)) {
+         const resident = residents.find(r => r.id === resId);
+         if (resident && onSaveResident) {
+            onSaveResident({ ...resident, medications: updatesByResident[resId] });
+         }
+      }
+    }
+    alert("Importação concluída com sucesso. Por favor, revise as prescrições importadas.");
+  };
+
+  const canImport = ['administrador', 'gerencial', 'enfermagem'].includes(session?.accessLevel?.toLowerCase());
+
   return (
     <div className="flex flex-col gap-8 max-w-5xl mx-auto h-full">
+      {canImport && (
+        <div className="flex justify-end">
+          <button 
+             onClick={() => setIsImportModalOpen(true)}
+             className="px-6 py-3 rounded-2xl bg-[#004c99] text-white text-xs font-black uppercase tracking-widest hover:bg-blue-700 transition-colors shadow-sm"
+          >
+             Importar Prescrições
+          </button>
+        </div>
+      )}
+      
+      <ImportPrescriptionsModal 
+         isOpen={isImportModalOpen} 
+         onClose={() => setIsImportModalOpen(false)} 
+         residents={residents} 
+         institutionId={session?.institutionId} 
+         onConfirmImport={handleConfirmImport} 
+      />
+
       <div className="bg-white rounded-[40px] shadow-sm border p-6 flex flex-col relative z-10">
         <h3 className="text-sm font-black uppercase tracking-widest text-[#004c99] mb-4 flex items-center gap-2">
            <Users size={18} />

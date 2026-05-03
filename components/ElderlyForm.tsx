@@ -543,6 +543,28 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
               
               <div className="flex-1">
                 <SectionHeader title="Informações Pessoais" icon={Users} />
+                
+                {/* Grau de Dependência Banner */}
+                {formData.grauDependenciaFinal !== undefined && (
+                  <div className="mb-6 p-4 rounded-xl border flex items-center gap-4 bg-blue-50 border-blue-100">
+                    <div className="flex-1">
+                      <h3 className="text-xs font-black uppercase text-[#004c99] tracking-tighter mb-1">
+                        Grau de Dependência: {formData.grauDependenciaFinal}
+                      </h3>
+                      <p className="text-[10px] uppercase font-bold text-blue-600/70 tracking-widest leading-relaxed">
+                        Origem: {formData.grauDependenciaManual !== undefined && formData.grauDependenciaManual !== null
+                          ? "Ajustado manualmente pela equipe técnica"
+                          : "Calculado automaticamente (Mapeamento de Dependências)"}
+                      </p>
+                      {formData.grauDependenciaAtualizadoEm && (
+                        <p className="text-[9px] uppercase font-bold text-blue-600/50 tracking-widest mt-1">
+                          Atualizado em {new Date(formData.grauDependenciaAtualizadoEm).toLocaleDateString("pt-BR", {hour: '2-digit', minute:'2-digit'})} por {formData.grauDependenciaAtualizadoPor || 'Sistema'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
                   <FormField label="Nome" name="name" value={formData.name} onChange={handleChange} required className="md:col-span-1" />
                   <FormField label="Gênero" name="gender" type="select" options={['Masculino', 'Feminino', 'Outro']} value={formData.gender} onChange={handleChange} />
@@ -754,6 +776,15 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
                       className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
                     />
                     <label htmlFor="nailCareAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">Corte de Unhas</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox" id="woundCareAssistance"
+                      checked={formData.careNeeds?.woundCareAssistance || false}
+                      onChange={(e) => setFormData({ ...formData, careNeeds: { ...(formData.careNeeds || {}), woundCareAssistance: e.target.checked } })}
+                      className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
+                    />
+                    <label htmlFor="woundCareAssistance" className="text-xs font-bold text-gray-700 cursor-pointer">Curativos</label>
                   </div>
                 </div>
               </div>

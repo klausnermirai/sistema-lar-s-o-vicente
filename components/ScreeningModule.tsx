@@ -469,6 +469,11 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
     ? Math.max(0, capFemale - femaleCount) 
     : (capGeneral > 0 ? Math.max(0, Math.ceil((capGeneral - residents.length) / 2)) : 0);
 
+  // Cálculos de Grau de Dependência
+  const grau1Count = residents.filter(r => r.grauDependenciaFinal === 1).length;
+  const grau2Count = residents.filter(r => r.grauDependenciaFinal === 2).length;
+  const grau3Count = residents.filter(r => r.grauDependenciaFinal === 3).length;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       {/* Header Superior */}
@@ -573,6 +578,45 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
             <h4 className={`text-2xl font-black tracking-tighter ${femaleVacancies > 0 ? 'text-green-600' : 'text-red-600'}`}>
               {femaleVacancies}
             </h4>
+          </div>
+        </div>
+      </div>
+
+      {/* Cards de Graus de Dependência */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:hidden">
+        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-green-50 text-green-600 rounded-xl group-hover:scale-110 transition-transform">
+              <ClipboardList size={20} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Acolhidos - Grau 1</p>
+              <h4 className="text-xl font-black text-gray-900 tracking-tighter">{grau1Count} residentes</h4>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-yellow-50 text-yellow-600 rounded-xl group-hover:scale-110 transition-transform">
+              <ClipboardList size={20} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Acolhidos - Grau 2</p>
+              <h4 className="text-xl font-black text-gray-900 tracking-tighter">{grau2Count} residentes</h4>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-red-50 text-red-600 rounded-xl group-hover:scale-110 transition-transform">
+              <ClipboardList size={20} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Acolhidos - Grau 3</p>
+              <h4 className="text-xl font-black text-gray-900 tracking-tighter">{grau3Count} residentes</h4>
+            </div>
           </div>
         </div>
       </div>
@@ -1818,7 +1862,40 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
     if (!printWindow) return;
 
     const printDate = new Date().toLocaleDateString('pt-BR');
-    const sigDetails = getProfessionalSignature();
+    
+    // Resolve Assistente Social Signature
+    let socialWorkerSnapshot = data.assistenteSocialAssinaturaSnapshot;
+    
+    if (!socialWorkerSnapshot) {
+       let emp = null;
+       if (data.assistenteSocialResponsavelId) {
+          emp = settings?.employees?.find((e: any) => e.id === data.assistenteSocialResponsavelId);
+       }
+       if (!emp) {
+          emp = settings?.employees?.find((e: any) => e.funcao?.toLowerCase().includes('social') || e.areaProfissional?.toLowerCase().includes('social'));
+       }
+       
+       if (emp) {
+           socialWorkerSnapshot = {
+               nome: emp.nomeExibicao || emp.nomeCompleto || '',
+               funcao: emp.funcao || 'Assistente Social',
+               registro: emp.conselhoProfissional && emp.numeroRegistro 
+                   ? `${emp.conselhoProfissional}${emp.ufRegistro ? `/${emp.ufRegistro}` : ''} nº ${emp.numeroRegistro}`
+                   : ''
+           };
+       }
+    }
+    
+    let signatureHtml = '';
+    if (socialWorkerSnapshot) {
+       signatureHtml = `
+          ${socialWorkerSnapshot.nome}<br/>
+          ${socialWorkerSnapshot.funcao}<br/>
+          ${socialWorkerSnapshot.registro ? socialWorkerSnapshot.registro : ''}
+       `;
+    } else {
+       signatureHtml = `Assistente Social Responsável<br/>`;
+    }
     
     const renderMulti = (val: any) => {
       if (Array.isArray(val)) return val.join(', ');
@@ -1972,11 +2049,11 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
           <div class="paragraph">${data.interview?.socialAnalysis || ''}</div>
 
           <div class="signature-box" style="margin-top: 40px; text-align: center;">
-            <div class="signature-line" style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold;">
-              ${(sigDetails.profissionalAssinaturaTexto || sigDetails.profissionalNome || 'Assistente Social').replace(/\n/g, '<br/>')}
+            <div class="signature-line" style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold; line-height: 1.4;">
+              ${signatureHtml}
             </div>
-            <div class="signature-role" style="font-size: 10px; color: #666; margin-top: 2px;">
-              ${printDate}
+            <div class="signature-role" style="font-size: 10px; color: #666; margin-top: 5px;">
+              Documento gerado em: ${printDate}
             </div>
           </div>
 
@@ -2697,6 +2774,48 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
           placeholder="Parecer técnico da Assistente Social..."
           className="w-full p-8 border-l-8 border-l-[#004c99] border-y border-r border-gray-100 rounded-2xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all h-60 outline-none leading-relaxed"
         />
+        <div className="mt-8 border-t border-gray-100 pt-6">
+          <FormLabel>Assistente Social Responsável</FormLabel>
+          <select
+            value={data.assistenteSocialResponsavelId || ''}
+            onChange={(e) => {
+               const empId = e.target.value;
+               const emp = settings?.employees?.find((em: any) => em.id === empId);
+               if (empId === '') {
+                 setData(prev => ({ 
+                   ...prev, 
+                   assistenteSocialResponsavelId: '', 
+                   assistenteSocialAssinaturaSnapshot: undefined 
+                 }));
+               } else if (emp) {
+                 setData(prev => ({
+                   ...prev,
+                   assistenteSocialResponsavelId: empId,
+                   assistenteSocialAssinaturaSnapshot: {
+                     nome: emp.nomeExibicao || emp.nomeCompleto || '',
+                     funcao: emp.funcao || 'Assistente Social',
+                     registro: emp.conselhoProfissional && emp.numeroRegistro 
+                       ? `${emp.conselhoProfissional}${emp.ufRegistro ? `/${emp.ufRegistro}` : ''} nº ${emp.numeroRegistro}`
+                       : ''
+                   }
+                 }));
+               }
+            }}
+            className="w-full mt-2 p-3 border border-gray-200 rounded-xl bg-gray-50 text-xs font-black uppercase focus:bg-white focus:border-blue-300 outline-none transition-all"
+          >
+            <option value="">Selecione a Assistente Social (Ou use a Padrão Automática)</option>
+            {settings?.employees
+              ?.filter((e: any) => e.funcao?.toLowerCase().includes('social') || e.areaProfissional?.toLowerCase().includes('social'))
+              .map((e: any) => (
+              <option key={e.id} value={e.id}>{e.nomeExibicao || e.nomeCompleto} - {e.funcao}</option>
+            ))}
+          </select>
+          {!data.assistenteSocialResponsavelId && (
+             <p className="text-[10px] text-gray-400 mt-2 italic font-bold">
+               Se não selecionada, será usada a profissional configurada automaticamente pelo cargo.
+             </p>
+          )}
+        </div>
       </FormSection>
     </div>
     </div>

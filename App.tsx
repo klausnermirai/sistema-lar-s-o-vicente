@@ -8,6 +8,7 @@ import SettingsModule from './components/SettingsModule';
 import { EmployeesModule } from './components/EmployeesModule';
 import MultidisciplinaryModule from './components/MultidisciplinaryModule';
 import HealthCareModule from './components/HealthCareModule';
+import NursingModule from './components/NursingModule';
 import { PlanningEmendasModule } from './components/PlanningEmendasModule';
 import MuralModule from './components/MuralModule';
 import MedicalModule from './components/MedicalModule';
@@ -286,23 +287,29 @@ const App: React.FC = () => {
   const handleBulkSaveResidents = async (residentsToSave: Resident[]) => {
     try {
       setIsLoading(true);
-      const enriched = residentsToSave.map(r => ({
-        ...r,
-        institutionId: session?.institutionId,
-        nacionalId: session?.hierarchy?.nacionalId,
-        metropolitanoId: session?.hierarchy?.metropolitanoId,
-        centralId: session?.hierarchy?.centralId,
-        particularId: session?.hierarchy?.particularId,
-        conferenciaId: session?.hierarchy?.conferenciaId
-      }));
-      await apiBulkSaveResidents(enriched);
+      const CHUNK_SIZE = 10; // 10 residents per request to avoid payload limits
+      for (let i = 0; i < residentsToSave.length; i += CHUNK_SIZE) {
+        const chunk = residentsToSave.slice(i, i + CHUNK_SIZE);
+        const enriched = chunk.map(r => ({
+          ...r,
+          institutionId: session?.institutionId,
+          nacionalId: session?.hierarchy?.nacionalId,
+          metropolitanoId: session?.hierarchy?.metropolitanoId,
+          centralId: session?.hierarchy?.centralId,
+          particularId: session?.hierarchy?.particularId,
+          conferenciaId: session?.hierarchy?.conferenciaId
+        }));
+        await apiBulkSaveResidents(enriched);
+      }
+      
       const idToFetch = session?.institutionId || session?.cnpj;
       if (idToFetch) {
         const residentsData = await fetchResidents(idToFetch, session?.hierarchy?.type);
         setResidents(residentsData || []);
       }
     } catch (error) {
-      alert('Erro ao importar residentes em massa');
+      console.error('Error in handleBulkSaveResidents:', error);
+      alert('Erro ao salvar dados em massa: ' + (error as any).message);
     } finally {
       setIsLoading(false);
     }
@@ -539,6 +546,16 @@ const App: React.FC = () => {
         />
       )}
 
+      {activeRoute === AppRoute.ENFERMAGEM && (
+        <NursingModule 
+          residents={residents} 
+          onSaveResident={handleSaveResident} 
+          onBulkSaveResidents={handleBulkSaveResidents}
+          onPostToMural={handlePostToMural}
+          settings={settings}
+        />
+      )}
+
       {activeRoute === AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES && (
         <MultidisciplinaryModule 
           residents={residents} 
@@ -577,6 +594,7 @@ const App: React.FC = () => {
           residents={residents} 
           session={session}
           onSaveResident={handleSaveResident}
+          onBulkSaveResidents={handleBulkSaveResidents}
           settings={settings}
           onPostToMural={handlePostToMural}
         />

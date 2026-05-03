@@ -147,24 +147,53 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
                               <span className={`px-2 py-0.5 text-[8px] font-black uppercase tracking-widest rounded-full ${med.type === 'continuo' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
                                 {med.type === 'continuo' ? 'Contínuo' : `${med.durationDays} dias`}
                               </span>
+                              {med.reviewed === false && (
+                                <span className="px-2 py-0.5 text-[8px] font-black uppercase tracking-widest rounded-full bg-red-100 text-red-700 flex items-center gap-1 border border-red-200">
+                                  <AlertCircle size={10} /> REVISAR
+                                </span>
+                              )}
                             </div>
                             <p className="text-xs font-bold text-gray-500 uppercase mt-0.5">
-                              {med.concentration} • <span className="text-[#004c99]">{med.dose}</span>
+                              {med.concentration} {med.concentration && '•'} <span className="text-[#004c99]">{med.dose || `Via: ${med.route || 'Não informada'}`}</span>
                             </p>
-                            {med.observation && (
-                              <p className="text-[10px] text-gray-400 italic mt-1 bg-white px-2 py-1 rounded border inline-block">
-                                Obs: {med.observation}
-                              </p>
+                            {(med.observation || med.importOrigin || med.importObservations) && (
+                              <div className="flex flex-col gap-1 mt-1">
+                                {med.observation && (
+                                  <p className="text-[10px] text-gray-400 italic bg-white px-2 py-1 rounded border inline-block fit-content self-start">
+                                    Obs: {med.observation}
+                                  </p>
+                                )}
+                                {(med.importOrigin || med.importObservations) && (
+                                  <p className="text-[9px] text-[#004c99]/70 font-bold uppercase tracking-widest bg-blue-50/50 px-2 py-1 rounded border border-blue-100 inline-block self-start">
+                                    Origem: {med.importOrigin} {med.originPage ? `(Pág: ${med.originPage})` : ''} | {med.importObservations || ''}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 sm:opacity-0 group-hover:opacity-100 transition-opacity ml-14 sm:ml-0">
-                          <button onClick={() => handleOpenModal(med)} className="p-2.5 bg-white shadow-sm hover:bg-blue-50 text-blue-600 rounded-xl transition-colors border">
-                            <Edit2 size={14} />
-                          </button>
-                          <button onClick={() => handleDelete(med.id)} className="p-2.5 bg-white shadow-sm hover:bg-red-50 text-red-600 rounded-xl transition-colors border">
-                            <Trash2 size={14} />
-                          </button>
+                        <div className="flex items-center gap-2 ml-14 sm:ml-0">
+                          {med.reviewed === false && (
+                            <button 
+                              onClick={() => {
+                                const newMeds = (resident.medications || []).map(m => 
+                                  m.id === med.id ? { ...m, reviewed: true, reviewedAt: new Date().toISOString() } : m
+                                );
+                                onUpdateMedications(newMeds);
+                              }}
+                              className="px-3 py-2 bg-green-50 text-green-700 font-bold text-[10px] uppercase rounded-xl hover:bg-green-100 transition-colors border border-green-200 shadow-sm flex items-center gap-1"
+                            >
+                              <CheckCircle2 size={12} /> Ok
+                            </button>
+                          )}
+                          <div className={`flex items-center gap-2 transition-opacity ${med.reviewed === false ? 'opacity-100' : 'sm:opacity-0 group-hover:opacity-100'}`}>
+                            <button onClick={() => handleOpenModal(med)} className="p-2.5 bg-white shadow-sm hover:bg-blue-50 text-blue-600 rounded-xl transition-colors border">
+                              <Edit2 size={14} />
+                            </button>
+                            <button onClick={() => handleDelete(med.id)} className="p-2.5 bg-white shadow-sm hover:bg-red-50 text-red-600 rounded-xl transition-colors border">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}

@@ -296,6 +296,42 @@ export const bulkSaveInventory = async (institutionId: string, items: any[]) => 
   return response.json();
 };
 
+export const fetchMedicationStockMovements = async (institutionId: string, residentId?: string) => {
+  const url = residentId ? `/api/medication_stock_movements?institutionId=${institutionId}&residentId=${residentId}` : `/api/medication_stock_movements?institutionId=${institutionId}`;
+  const response = await fetch(url, { headers: getAuthHeaders() });
+  if (!response.ok) throw new Error('Erro ao buscar movimentações de estoque');
+  return response.json();
+};
+
+export const saveMedicationStockMovement = async (data: any) => {
+  const response = await fetch('/api/medication_stock_movements', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar movimentação');
+  return response.json();
+};
+
+export const fetchMedicationAdministrationLogs = async (institutionId: string, residentId?: string, date?: string) => {
+  let url = `/api/medication_administration_logs?institutionId=${institutionId}`;
+  if (residentId) url += `&residentId=${residentId}`;
+  if (date) url += `&date=${date}`;
+  const response = await fetch(url, { headers: getAuthHeaders() });
+  if (!response.ok) throw new Error('Erro ao buscar logs');
+  return response.json();
+};
+
+export const saveMedicationAdministrationLog = async (data: any) => {
+  const response = await fetch('/api/medication_administration_logs', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar log de ministração');
+  return response.json();
+};
+
 export const fetchGlobalVisits = async (institutionId: string) => {
   const response = await fetch(`/api/global-visits?institutionId=${institutionId}`, {
     headers: getAuthHeaders()
