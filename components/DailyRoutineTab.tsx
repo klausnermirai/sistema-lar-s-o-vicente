@@ -565,7 +565,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                     key={r.id}
                     disabled={!isSelectable}
                     onClick={() => handleToggleSelect(r.id)}
-                    className={`flex flex-col items-start p-5 rounded-3xl transition-all border-2 text-left relative overflow-hidden ${
+                    className={`flex flex-col w-full items-start p-5 rounded-3xl transition-all border-2 text-left relative overflow-hidden ${
                       isSelected
                         ? 'border-[#004c99] bg-blue-50/50'
                         : isCompletedDaily
@@ -580,36 +580,40 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                         {isSelected || isCompletedDaily ? <CheckCircle2 size={24} /> : <UserCircle2 size={24} />}
                       </div>
                       {needsAssistance && !isCompletedDaily && (
-                        <span className="px-3 py-1.5 bg-orange-100 text-orange-700 text-[10px] font-black uppercase tracking-widest rounded-lg">
-                          {(selectedTask as any).careLabelName || 'Precisa de Auxílio'}
-                        </span>
+                        <div className="shrink-0 max-w-[50%]">
+                           <span className="px-2 py-1.5 bg-orange-100 text-orange-700 text-[9px] font-black uppercase tracking-widest rounded-lg break-words text-center flex">
+                             {(selectedTask as any).careLabelName || 'Precisa de Auxílio'}
+                           </span>
+                        </div>
                       )}
                       {isCompletedDaily && (
-                        <span className="px-3 py-1.5 bg-green-100 text-green-700 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
-                          <CheckCircle2 size={12} /> Realizado
-                        </span>
+                        <div className="shrink-0">
+                          <span className="px-3 py-1.5 bg-green-100 text-green-700 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
+                            <CheckCircle2 size={12} /> Realizado
+                          </span>
+                        </div>
                       )}
                     </div>
-                    <div className="w-full">
-                      <p className={`text-lg font-black uppercase tracking-tighter truncate leading-tight ${
+                    <div className="w-full flex-1 overflow-hidden">
+                      <p className={`text-lg font-black uppercase tracking-tighter truncate leading-tight w-full ${
                         isSelected ? 'text-[#004c99]' : isCompletedDaily ? 'text-green-700' : 'text-gray-900'
                       }`}>{r.name}</p>
                       
                       {!hasCompletedToday ? (
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 truncate">
                           Quarto {r.room || '--'} • Leito {r.bedNumber || '--'}
                         </p>
                       ) : (
-                        <div className="mt-3 space-y-1 bg-white/50 rounded-xl p-3 border border-gray-100">
+                        <div className="mt-3 space-y-1 bg-white/50 rounded-xl p-3 border border-gray-100 w-full overflow-hidden">
                           {isDaily ? (
                             <>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-[#004c99]">Turno: {lastLog.turnoNome}</p>
-                              <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Por: {lastLog.responsavelNome}</p>
+                              <p className="text-[9px] font-black uppercase tracking-widest text-[#004c99] truncate">Turno: {lastLog.turnoNome}</p>
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 truncate">Por: {lastLog.responsavelNome}</p>
                             </>
                           ) : (
                             <>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-[#004c99]">Registros hoje: {residentLogs.length}</p>
-                              <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Último: {new Date(lastLog.criadoEm).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {lastLog.turnoNome}</p>
+                              <p className="text-[9px] font-black uppercase tracking-widest text-[#004c99] truncate">Registros hoje: {residentLogs.length}</p>
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 truncate">Último: {new Date(lastLog.criadoEm).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {lastLog.turnoNome}</p>
                             </>
                           )}
                         </div>
