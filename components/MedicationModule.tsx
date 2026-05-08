@@ -10,6 +10,7 @@ import MedicationTab from './MedicationTab';
 import { ImportPrescriptionsModal } from './ImportPrescriptionsModal';
 import { IndividualInventoryTab } from './IndividualInventoryTab';
 import { IndividualAdministrationTab } from './IndividualAdministrationTab';
+import { IndividualSeparationTab } from './IndividualSeparationTab';
 import { fetchInventory, bulkSaveInventory } from '../lib/api';
 import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 import { InstitutionSettings } from '../types';
@@ -71,7 +72,10 @@ export const MedicationModule: React.FC<MedicationModuleProps> = ({ residents, s
           <PrescriptionListTab residents={residents} onSaveResident={onSaveResident!} onPostToMural={onPostToMural} session={session} onBulkSaveResidents={onBulkSaveResidents} />
         )}
         {activeTab === 'estoque' && (
-          <IndividualInventoryTab residents={residents} session={session} />
+          <IndividualInventoryTab residents={residents} session={session} settings={settings} />
+        )}
+        {activeTab === 'separacao' && (
+          <IndividualSeparationTab residents={residents} session={session} settings={settings} />
         )}
         {activeTab === 'ministracao' && (
           <IndividualAdministrationTab residents={residents} session={session} />

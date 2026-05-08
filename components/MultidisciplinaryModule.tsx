@@ -1,3 +1,4 @@
+import { PsychologyFullHistory } from './PsychologyFullHistory';
 import React, { useState, useEffect } from 'react';
 import { Resident, Candidate, NutritionalEvolution, NutritionalAttendance, PsychologicalEvolution, PsychologicalAttendance, MuralMessage } from '../types';
 import { Search, Save, AlertTriangle, Plus, ChevronRight, ChevronDown, ArrowLeft, HeartPulse, Users, Activity, FileSearch, X, User, Printer, FileSpreadsheet, Eye, Clock } from 'lucide-react';
@@ -16,6 +17,8 @@ import BirthdaySection from './BirthdaySection';
 
 import { auth } from '../lib/firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { StandardEvolutionForm } from './StandardEvolutionForm';
+import { StandardEvolutionHistory } from './StandardEvolutionHistory';
 
 export interface MultidisciplinaryModuleProps {
   residents: Resident[];
@@ -41,7 +44,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
   const isFisioterapeuta = accessLevel === 'fisioterapeuta';
   const isNutricionista = accessLevel === 'nutricionista';
 
-  const [activeTab, setActiveTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos' | 'anamnese'>('avaliacao');
+  const [activeTab, setActiveTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos' | 'anamnese' | 'historico'>('avaliacao');
   const [fullResident, setFullResident] = useState<Resident | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -51,6 +54,10 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
   useEffect(() => {
     if (targetType === 'candidate' && activeCompetence === 'psicologia') {
       setActiveTab('atendimentos');
+    } else if (activeCompetence === 'psicologia') {
+      setActiveTab('historico');
+    } else {
+      setActiveTab('avaliacao');
     }
   }, [targetType, activeCompetence]);
 
@@ -592,8 +599,8 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
 
                 <div className="space-y-4">
                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Detalhamento do Registro</p>
-                   <div className="p-6 bg-gray-50 rounded-3xl text-sm leading-relaxed text-gray-700 font-medium border border-gray-100 italic">
-                      "{selectedHistoryItem.attendanceEvolution || selectedHistoryItem.notes || selectedHistoryItem.moodBehaviorEvolution || selectedHistoryItem.treatmentResponse || 'Sem descrição adicional'}"
+                   <div className="p-6 bg-gray-50 rounded-3xl text-sm leading-relaxed text-gray-700 font-medium border border-gray-100 italic whitespace-pre-wrap">
+                      "{selectedHistoryItem.descricaoAtendimento || selectedHistoryItem.attendanceEvolution || selectedHistoryItem.notes || selectedHistoryItem.moodBehaviorEvolution || selectedHistoryItem.treatmentResponse || selectedHistoryItem.history || selectedHistoryItem.evaluation || selectedHistoryItem.conduct || 'Sem descrição adicional'}"
                    </div>
                 </div>
 
@@ -633,7 +640,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                         ...selectedHistoryItem,
                         dateTime: selectedHistoryItem.timestamp || selectedHistoryItem.date,
                         attendanceType: selectedHistoryItem.interventionType || selectedHistoryItem.attendanceType,
-                        descricaoAtendimento: selectedHistoryItem.attendanceEvolution || selectedHistoryItem.notes || selectedHistoryItem.moodBehaviorEvolution || selectedHistoryItem.treatmentResponse
+                        descricaoAtendimento: selectedHistoryItem.descricaoAtendimento || selectedHistoryItem.attendanceEvolution || selectedHistoryItem.notes || selectedHistoryItem.moodBehaviorEvolution || selectedHistoryItem.treatmentResponse || selectedHistoryItem.history || selectedHistoryItem.evaluation || selectedHistoryItem.conduct || 'Sem descrição adicional'
                       };
                       await printAttendanceHtmlPdf(payload, targetResident, settings, area);
                     } else {
@@ -767,6 +774,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                 {(targetType === 'candidate' ? [
                   { id: 'atendimentos', label: 'Atendimentos' }
                 ] : [
+                  { id: 'historico', label: 'Histórico Completo' },
                   { id: 'anamnese', label: 'Anamnese (Primeira Avaliação)' },
                   { id: 'evolucao', label: 'Evolução Psicológica' },
                   { id: 'atendimentos', label: 'Atendimentos' }
@@ -786,7 +794,14 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
               </div>
 
               <div className="p-10">
-                {(activeTab === 'anamnese' || activeTab === 'avaliacao') && (
+                
+                {activeTab === 'historico' && (
+                  <PsychologyFullHistory 
+                    resident={selectedResident} 
+                    settings={settings}
+                  />
+                )}
+{(activeTab === 'anamnese' || activeTab === 'avaliacao') && (
                   <PsychologicalAssessmentForm 
                     resident={selectedResident} 
                     isAnamnese={true}
@@ -1119,25 +1134,23 @@ const NutritionalAssessmentForm: React.FC<NutritionalAssessmentFormProps> = ({ r
   const bodyFat = calculateBodyFat();
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave({
-      ...formData,
-      weight: formData.weight ? parseFloat(formData.weight) : undefined,
-      height: formData.height ? parseFloat(formData.height) : undefined,
-      calfCircumference: formData.calfCircumference ? parseFloat(formData.calfCircumference) : undefined,
-      armCircumference: formData.armCircumference ? parseFloat(formData.armCircumference) : undefined,
-      waistCircumference: formData.waistCircumference ? parseFloat(formData.waistCircumference) : undefined,
-      abdomenCircumference: formData.abdomenCircumference ? parseFloat(formData.abdomenCircumference) : undefined,
-      hipCircumference: formData.hipCircumference ? parseFloat(formData.hipCircumference) : undefined,
-      thighCircumference: formData.thighCircumference ? parseFloat(formData.thighCircumference) : undefined,
-      age: formData.age ? parseInt(formData.age, 10) : undefined,
-      screeningScore: screeningScore,
-      screeningClassification: formData.screeningClassification || autoClassification,
-      tricepsSkinfold: formData.tricepsSkinfold ? parseFloat(formData.tricepsSkinfold) : undefined,
-      bicepsSkinfold: formData.bicepsSkinfold ? parseFloat(formData.bicepsSkinfold) : undefined,
-      subscapularSkinfold: formData.subscapularSkinfold ? parseFloat(formData.subscapularSkinfold) : undefined,
-      suprailiacSkinfold: formData.suprailiacSkinfold ? parseFloat(formData.suprailiacSkinfold) : undefined,
-    });
+    try {
+      e.preventDefault();
+      onSave({
+        ...formData,
+        weight: formData.weight ? parseFloat(formData.weight) : undefined,
+        height: formData.height ? parseFloat(formData.height) : undefined,
+        calfCircumference: formData.calfCircumference ? parseFloat(formData.calfCircumference) : undefined,
+        skinfoldsNotTakenDueToLimitation: formData.skinfoldsNotTakenDueToLimitation,
+        tricepsSkinfold: formData.tricepsSkinfold ? parseFloat(formData.tricepsSkinfold) : undefined,
+        subscapularSkinfold: formData.subscapularSkinfold ? parseFloat(formData.subscapularSkinfold) : undefined,
+        bicepsSkinfold: formData.bicepsSkinfold ? parseFloat(formData.bicepsSkinfold) : undefined,
+        suprailiacSkinfold: formData.suprailiacSkinfold ? parseFloat(formData.suprailiacSkinfold) : undefined,
+      });
+      alert('Avaliação salva com sucesso!');
+    } catch(err) {
+      alert('Erro ao salvar avaliação.');
+    }
   };
 
   return (
@@ -1803,87 +1816,40 @@ interface NutritionalEvolutionSectionProps {
 }
 
 const NutritionalEvolutionSection: React.FC<NutritionalEvolutionSectionProps> = ({ resident, onSave }) => {
-  const [editingEvolution, setEditingEvolution] = useState<NutritionalEvolution | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const evolutions = resident.nutrition?.evolutions || [];
 
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text('Histórico de Evoluções Nutricionais', pageWidth / 2, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
-    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
-
-    const tableData = evolutions.map(ev => [
-      new Date(ev.date).toLocaleDateString('pt-BR'),
-      `${ev.weight} kg`,
-      ev.foodAcceptance || 'N/A',
-      ev.piaGoalStatus || 'N/A',
-      ev.newConduct || 'N/A'
-    ]);
-
-    (doc as any).autoTable({
-      startY: 45,
-      head: [['Data', 'Peso', 'Aceitação', 'Meta PIA', 'Conduta']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillStyle: '#004c99', textColor: 255 },
-      styles: { fontSize: 8 }
-    });
-
-    addPdfSignatureNode(doc);
-    doc.save(`Evolucoes_Nutricionais_${resident.name.replace(/\s+/g, '_')}.pdf`);
-  };
-
-
-  const handleSave = (evolution: NutritionalEvolution) => {
-    let newEvolutions;
-    if (isCreating) {
-      newEvolutions = [evolution, ...evolutions];
-    } else {
-      newEvolutions = evolutions.map(e => e.id === evolution.id ? evolution : e);
-    }
-    
-    // Sort by date descending
-    newEvolutions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
-    onSave(newEvolutions);
-    setEditingEvolution(null);
-    setIsCreating(false);
-  };
-
-  if (isCreating || editingEvolution) {
+  if (isCreating) {
     return (
-      <NutritionalEvolutionForm 
-        resident={resident}
-        evolution={editingEvolution}
-        onSave={handleSave}
-        onCancel={() => {
-          setEditingEvolution(null);
+      <StandardEvolutionForm 
+        areaLabel="Nutricional"
+        onSave={(data) => {
+          const newEvolutions = [{ id: Date.now().toString(), ...data }, ...evolutions];
+          onSave(newEvolutions as any);
           setIsCreating(false);
         }}
+        onCancel={() => setIsCreating(false)}
       />
     );
   }
+
+  const renderLegacyDetails = (ev: any) => {
+    if (!ev.weight && !ev.foodAcceptance && !ev.piaGoalStatus) return null;
+    return (
+      <div className="mt-3 bg-gray-50 p-3 rounded-lg border text-xs text-gray-600">
+          {ev.weight && <p><strong>Peso:</strong> {ev.weight}kg</p>}
+          {ev.foodAcceptance && <p><strong>Aceitação:</strong> {ev.foodAcceptance}</p>}
+          {ev.piaGoalStatus && <p><strong>Status PIA:</strong> {ev.piaGoalStatus}</p>}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Histórico de Evoluções</h2>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={handleExportPDF}
-            className="flex items-center gap-2 text-[10px] font-black text-gray-700 bg-gray-100 hover:bg-gray-200 px-4 py-3 rounded-xl shadow-sm uppercase transition-all"
-          >
-            <Printer size={16} /> Exportar PDF
-          </button>
           <button 
             onClick={() => setIsCreating(true)}
             className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase transition-all"
@@ -1892,304 +1858,13 @@ const NutritionalEvolutionSection: React.FC<NutritionalEvolutionSectionProps> = 
           </button>
         </div>
       </div>
-
-      {evolutions.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-2xl border border-gray-100">
-          <p className="text-gray-500 font-bold uppercase text-sm">Nenhuma evolução registrada.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {evolutions.map(evolution => (
-            <div key={evolution.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between hover:border-[#004c99] transition-colors group">
-              <div>
-                <div className="font-black text-gray-800 text-sm">{new Date(evolution.date).toLocaleDateString('pt-BR')}</div>
-                <div className="text-xs text-gray-500 font-bold uppercase mt-1">
-                  Peso: {evolution.weight} kg 
-                  {evolution.weightVariationPercent !== undefined && (
-                    <span className={`ml-2 ${evolution.weightVariationPercent <= -5 ? 'text-red-600' : 'text-gray-400'}`}>
-                      ({evolution.weightVariationPercent > 0 ? '+' : ''}{evolution.weightVariationPercent}%)
-                    </span>
-                  )}
-                </div>
-              </div>
-              <button 
-                onClick={() => setEditingEvolution(evolution)}
-                className="p-2 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
-              >
-                <ChevronRight size={20} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      
+      <StandardEvolutionHistory 
+        evolutions={evolutions as any} 
+        areaLabel="Nutricional" 
+        renderLegacyDetails={renderLegacyDetails}
+      />
     </div>
-  );
-};
-
-interface NutritionalEvolutionFormProps {
-  resident: Resident;
-  evolution: NutritionalEvolution | null;
-  onSave: (evolution: NutritionalEvolution) => void;
-  onCancel: () => void;
-}
-
-const NutritionalEvolutionForm: React.FC<NutritionalEvolutionFormProps> = ({ resident, evolution, onSave, onCancel }) => {
-  const [formData, setFormData] = useState<any>(evolution || {
-    id: Date.now().toString(), ...getProfessionalSignature(),
-    date: new Date().toISOString().split('T')[0],
-    weight: '',
-    foodAcceptance: '',
-    changedConsistencyOrRoute: false,
-    changeJustification: '',
-    piaGoalStatus: '',
-    newConduct: ''
-  });
-
-  const getReferenceWeight = () => {
-    if (evolution && evolution.weightVariationPercent !== undefined) {
-      // If editing an existing evolution, we don't recalculate unless weight changes, 
-      // but for simplicity, let's find the previous weight.
-      // Actually, we should find the most recent weight *before* this evolution's date.
-    }
-    
-    const evolutions = resident.nutrition?.evolutions || [];
-    // Sort ascending by date
-    const sortedEvolutions = [...evolutions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-    let refWeight: number | undefined;
-    
-    if (evolution) {
-      // Find the evolution just before this one
-      const currentIndex = sortedEvolutions.findIndex(e => e.id === evolution.id);
-      if (currentIndex > 0) {
-        refWeight = sortedEvolutions[currentIndex - 1].weight;
-      }
-    } else {
-      // Creating new: get the last evolution's weight
-      if (sortedEvolutions.length > 0) {
-        refWeight = sortedEvolutions[sortedEvolutions.length - 1].weight;
-      }
-    }
-
-    // If no previous evolution, fallback to initial assessment
-    if (refWeight === undefined) {
-      refWeight = resident.nutrition?.initialAssessment?.weight;
-    }
-
-    return refWeight;
-  };
-
-  const calculateVariation = (currentWeight: string | number) => {
-    const w = typeof currentWeight === 'string' ? parseFloat(currentWeight) : currentWeight;
-    if (isNaN(w) || w <= 0) return undefined;
-
-    const refWeight = getReferenceWeight();
-    if (refWeight && refWeight > 0) {
-      return Number((((w - refWeight) / refWeight) * 100).toFixed(1));
-    }
-    return undefined;
-  };
-
-  const variation = calculateVariation(formData.weight);
-  const isAlert = variation !== undefined && variation <= -5.0;
-
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text('Evolução Nutricional', pageWidth / 2, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
-    doc.text(`Data: ${formData.date}`, 14, 35);
-
-    const tableData = [
-      ['Peso Atual', `${formData.weight || 'N/A'} kg`, 'Variação', variation !== undefined ? `${variation > 0 ? '+' : ''}${variation}%` : 'N/A'],
-      ['Aceitação Alimentar', { content: formData.foodAcceptance || 'N/A', colSpan: 3 }],
-      ['Status Meta PIA', { content: formData.piaGoalStatus || 'N/A', colSpan: 3 }],
-      ['Mudança na Dieta?', { content: formData.changedConsistencyOrRoute ? `Sim - ${formData.changeJustification}` : 'Não', colSpan: 3 }],
-      ['Nova Conduta', { content: formData.newConduct || 'N/A', colSpan: 3 }]
-    ];
-
-    (doc as any).autoTable({
-      startY: 45,
-      body: tableData,
-      theme: 'grid',
-      styles: { fontSize: 9 }
-    });
-
-    addPdfSignatureNode(doc);
-    doc.save(`Evolucao_Nutricional_${resident.name.replace(/\s+/g, '_')}_${formData.date}.pdf`);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave({
-      ...formData,
-      weight: formData.weight ? parseFloat(formData.weight) : undefined,
-      weightVariationPercent: variation,
-    });
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in duration-300">
-      <div className="flex items-center gap-4 border-b pb-4">
-        <button 
-          type="button" 
-          onClick={onCancel}
-          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-all"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter">
-          {evolution ? 'Editar Evolução Nutricional' : 'Nova Evolução Nutricional'}
-        </h2>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Data da Avaliação</label>
-          <input 
-            type="date" 
-            value={formData.date} 
-            onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
-            required
-          />
-        </div>
-        
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Peso Atual (kg)</label>
-          <div className="flex items-center gap-4">
-            <input 
-              type="number" 
-              step="0.1"
-              value={formData.weight} 
-              onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
-              required
-            />
-            {variation !== undefined && (
-              <div className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap ${isAlert ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
-                {variation > 0 ? '+' : ''}{variation}%
-              </div>
-            )}
-          </div>
-          {isAlert && (
-            <div className="mt-2 flex items-center gap-2 text-red-600 text-xs font-bold uppercase">
-              <AlertTriangle size={14} />
-              ALERTA: Perda de peso &gt; 5%
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Aceitação Alimentar no Período</label>
-          <select 
-            value={formData.foodAcceptance} 
-            onChange={(e) => setFormData({ ...formData, foodAcceptance: e.target.value })}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
-            required
-          >
-            <option value="">Selecione...</option>
-            <option value="Excelente">Excelente</option>
-            <option value="Boa">Boa</option>
-            <option value="Regular">Regular</option>
-            <option value="Ruim/Recusa">Ruim/Recusa</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Status da Meta do PIA</label>
-          <select 
-            value={formData.piaGoalStatus} 
-            onChange={(e) => setFormData({ ...formData, piaGoalStatus: e.target.value })}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
-            required
-          >
-            <option value="">Selecione...</option>
-            <option value="Atingida">Atingida</option>
-            <option value="Em andamento">Em andamento</option>
-            <option value="Não atingida">Não atingida</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Houve mudança na consistência ou via de alimentação?</label>
-        <div className="flex items-center gap-6 mb-3">
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
-            <input 
-              type="radio" 
-              checked={formData.changedConsistencyOrRoute === true}
-              onChange={() => setFormData({ ...formData, changedConsistencyOrRoute: true })}
-              className="w-4 h-4 text-[#004c99] focus:ring-[#004c99]"
-            />
-            Sim
-          </label>
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
-            <input 
-              type="radio" 
-              checked={formData.changedConsistencyOrRoute === false}
-              onChange={() => setFormData({ ...formData, changedConsistencyOrRoute: false, changeJustification: '' })}
-              className="w-4 h-4 text-[#004c99] focus:ring-[#004c99]"
-            />
-            Não
-          </label>
-        </div>
-        {formData.changedConsistencyOrRoute && (
-          <input 
-            type="text" 
-            placeholder="Qual a justificativa da mudança?"
-            value={formData.changeJustification} 
-            onChange={(e) => setFormData({ ...formData, changeJustification: e.target.value })}
-            className="w-full p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
-            required
-          />
-        )}
-      </div>
-
-      <div>
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nova Conduta / Ajuste de Plano</label>
-        <textarea 
-          rows={4}
-          value={formData.newConduct} 
-          onChange={(e) => setFormData({ ...formData, newConduct: e.target.value })}
-          className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
-          required
-        />
-      </div>
-
-      <div className="flex justify-end gap-3 pt-6 border-t">
-        <button 
-          type="button" 
-          onClick={onCancel}
-          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50 transition-all"
-        >
-          Cancelar
-        </button>
-        <button 
-          type="button" 
-          onClick={handleExportPDF}
-          className="px-6 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg flex items-center gap-2 shadow-sm transition-all font-bold text-xs uppercase border"
-        >
-          <Printer size={16} />
-          <span>Exportar PDF</span>
-        </button>
-        <button 
-          type="submit" 
-          className="bg-[#004c99] hover:bg-blue-800 text-white px-8 py-2 rounded-lg flex items-center gap-2 shadow-lg transition-all font-bold text-xs uppercase"
-        >
-          <Save size={18} />
-          <span>Salvar Evolução</span>
-        </button>
-      </div>
-    </form>
   );
 };
 
@@ -2607,11 +2282,16 @@ const PsychologicalAssessmentForm: React.FC<PsychologicalAssessmentFormProps> = 
   };
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave({
-      ...formData,
-      cognitiveScreeningMMSE: formData.cognitiveScreeningMMSE ? parseFloat(formData.cognitiveScreeningMMSE) : undefined,
-    });
+    try {
+      e.preventDefault();
+      onSave({
+        ...formData,
+        cognitiveScreeningMMSE: formData.cognitiveScreeningMMSE ? parseFloat(formData.cognitiveScreeningMMSE) : undefined,
+      });
+      alert('Avaliação Psicológica salva com sucesso!');
+    } catch(err) {
+      alert('Erro ao salvar avaliação.');
+    }
   };
 
   return (
@@ -2833,85 +2513,40 @@ interface PsychologicalEvolutionSectionProps {
 }
 
 const PsychologicalEvolutionSection: React.FC<PsychologicalEvolutionSectionProps> = ({ resident, onSave }) => {
-  const [editingEvolution, setEditingEvolution] = useState<PsychologicalEvolution | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const evolutions = resident.psychology?.evolutions || [];
 
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text('Histórico de Evoluções Psicológicas', pageWidth / 2, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
-    doc.text(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 14, 35);
-
-    const tableData = evolutions.map(ev => [
-      new Date(ev.date).toLocaleDateString('pt-BR'),
-      ev.evolutionStatus || 'N/A',
-      ev.newConduct || 'N/A'
-    ]);
-
-    (doc as any).autoTable({
-      startY: 45,
-      head: [['Data', 'Status', 'Conduta']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillStyle: '#004c99', textColor: 255 },
-      styles: { fontSize: 9 }
-    });
-
-    addPdfSignatureNode(doc);
-    doc.save(`Evolucoes_Psicologicas_${resident.name.replace(/\s+/g, '_')}.pdf`);
-  };
-
-
-  const handleSave = (evolution: PsychologicalEvolution) => {
-    let newEvolutions;
-    if (isCreating) {
-      newEvolutions = [evolution, ...evolutions];
-    } else {
-      newEvolutions = evolutions.map(e => e.id === evolution.id ? evolution : e);
-    }
-    
-    // Sort by date descending
-    newEvolutions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
-    onSave(newEvolutions);
-    setEditingEvolution(null);
-    setIsCreating(false);
-  };
-
-  if (isCreating || editingEvolution) {
+  if (isCreating) {
     return (
-      <PsychologicalEvolutionForm 
-        resident={resident}
-        evolution={editingEvolution}
-        onSave={handleSave}
-        onCancel={() => {
-          setEditingEvolution(null);
+      <StandardEvolutionForm 
+        areaLabel="Psicológica"
+        onSave={(data) => {
+          const newEvolutions = [{ id: Date.now().toString(), ...data }, ...evolutions];
+          onSave(newEvolutions as any);
           setIsCreating(false);
         }}
+        onCancel={() => setIsCreating(false)}
       />
     );
   }
+
+  const renderLegacyDetails = (ev: any) => {
+    if (!ev.institutionalAdaptationStatus && !ev.moodBehaviorEvolution && !ev.piaGoalStatus) return null;
+    return (
+      <div className="mt-3 bg-gray-50 p-3 rounded-lg border text-xs text-gray-600">
+          {ev.institutionalAdaptationStatus && <p><strong>Adaptação:</strong> {ev.institutionalAdaptationStatus}</p>}
+          {ev.moodBehaviorEvolution && <p><strong>Humor/Comportamento:</strong> {ev.moodBehaviorEvolution}</p>}
+          {ev.piaGoalStatus && <p><strong>Status PIA:</strong> {ev.piaGoalStatus}</p>}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Histórico de Evoluções</h2>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={handleExportPDF}
-            className="flex items-center gap-2 text-[10px] font-black text-gray-700 bg-gray-100 hover:bg-gray-200 px-4 py-3 rounded-xl shadow-sm uppercase transition-all"
-          >
-            <Printer size={16} /> Exportar PDF
-          </button>
           <button 
             onClick={() => setIsCreating(true)}
             className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase transition-all"
@@ -2920,232 +2555,13 @@ const PsychologicalEvolutionSection: React.FC<PsychologicalEvolutionSectionProps
           </button>
         </div>
       </div>
-
-      {evolutions.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-2xl border border-gray-100">
-          <p className="text-gray-500 font-bold uppercase text-sm">Nenhuma evolução registrada.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {evolutions.map(evolution => (
-            <div key={evolution.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between hover:border-[#004c99] transition-colors group">
-              <div>
-                <div className="font-black text-gray-800 text-sm">{new Date(evolution.date).toLocaleDateString('pt-BR')}</div>
-                <div className="text-xs text-gray-500 font-bold uppercase mt-1">
-                  Adaptação: <span className="text-gray-700">{evolution.institutionalAdaptationStatus || 'N/D'}</span>
-                </div>
-                <div className="text-[10px] text-gray-400 font-bold uppercase mt-1">
-                  Meta PIA: {evolution.piaGoalStatus || 'N/D'}
-                </div>
-              </div>
-              <button 
-                onClick={() => setEditingEvolution(evolution)}
-                className="p-2 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-xl transition-all"
-              >
-                <ChevronRight size={20} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      
+      <StandardEvolutionHistory 
+        evolutions={evolutions as any} 
+        areaLabel="Psicológica" 
+        renderLegacyDetails={renderLegacyDetails}
+      />
     </div>
-  );
-};
-
-interface PsychologicalEvolutionFormProps {
-  resident: Resident;
-  evolution: PsychologicalEvolution | null;
-  onSave: (evolution: PsychologicalEvolution) => void;
-  onCancel: () => void;
-}
-
-const PsychologicalEvolutionForm: React.FC<PsychologicalEvolutionFormProps> = ({ resident, evolution, onSave, onCancel }) => {
-  const [formData, setFormData] = useState<any>(evolution || {
-    id: Date.now().toString(), ...getProfessionalSignature(),
-    date: new Date().toISOString().split('T')[0],
-    institutionalAdaptationStatus: '',
-    moodBehaviorEvolution: '',
-    currentSocializationQuality: [],
-    piaGoalStatus: '',
-    newConduct: ''
-  });
-
-  const handleCheckboxChange = (field: string, value: string) => {
-    const currentList = formData[field] as string[];
-    if (currentList.includes(value)) {
-      setFormData({ ...formData, [field]: currentList.filter(item => item !== value) });
-    } else {
-      setFormData({ ...formData, [field]: [...currentList, value] });
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave(formData as PsychologicalEvolution);
-  };
-
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text('Evolução Psicológica', pageWidth / 2, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Residente/Candidato: ${resident.name}`, 14, 30);
-    doc.text(`Data: ${formData.date}`, 14, 35);
-
-    const tableData = [
-      ['Status Adaptação', { content: formData.institutionalAdaptationStatus || 'N/A', colSpan: 3 }],
-      ['Evolução Humor/Comp.', { content: formData.moodBehaviorEvolution || 'N/A', colSpan: 3 }],
-      ['Qualidade Socialização', { content: formData.currentSocializationQuality.join(', ') || 'N/A', colSpan: 3 }],
-      ['Status Meta PIA', { content: formData.piaGoalStatus || 'N/A', colSpan: 3 }],
-      ['Nova Conduta', { content: formData.newConduct || 'N/A', colSpan: 3 }]
-    ];
-
-    (doc as any).autoTable({
-      startY: 45,
-      body: tableData,
-      theme: 'grid',
-      styles: { fontSize: 9 }
-    });
-
-    addPdfSignatureNode(doc);
-    doc.save(`Evolucao_Psicologica_${resident.name.replace(/\s+/g, '_')}_${formData.date}.pdf`);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in duration-300">
-      <div className="flex items-center gap-4 border-b pb-4">
-        <button 
-          type="button" 
-          onClick={onCancel}
-          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-all"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter">
-          {evolution ? 'Editar Evolução Psicológica' : 'Nova Evolução Psicológica'}
-        </h2>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Data da Avaliação</label>
-          <input 
-            type="date" 
-            value={formData.date} 
-            onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
-            required
-          />
-        </div>
-        
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Status de Adaptação Institucional</label>
-          <select 
-            value={formData.institutionalAdaptationStatus} 
-            onChange={(e) => setFormData({ ...formData, institutionalAdaptationStatus: e.target.value })}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
-            required
-          >
-            <option value="">Selecione...</option>
-            <option value="Totalmente adaptado">Totalmente adaptado</option>
-            <option value="Em adaptação">Em adaptação</option>
-            <option value="Não adaptado/Resistente">Não adaptado/Resistente</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Evolução do Humor e Comportamento</label>
-          <select 
-            value={formData.moodBehaviorEvolution} 
-            onChange={(e) => setFormData({ ...formData, moodBehaviorEvolution: e.target.value })}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
-            required
-          >
-            <option value="">Selecione...</option>
-            <option value="Estável">Estável</option>
-            <option value="Melhora progressiva">Melhora progressiva</option>
-            <option value="Declínio cognitivo notado">Declínio cognitivo notado</option>
-            <option value="Piora no humor/Apatia">Piora no humor/Apatia</option>
-            <option value="Aumento de agitação">Aumento de agitação</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Status da Meta do PIA</label>
-          <select 
-            value={formData.piaGoalStatus} 
-            onChange={(e) => setFormData({ ...formData, piaGoalStatus: e.target.value })}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm bg-white"
-            required
-          >
-            <option value="">Selecione...</option>
-            <option value="Atingida">Atingida</option>
-            <option value="Em andamento">Em andamento</option>
-            <option value="Não atingida">Não atingida</option>
-          </select>
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Qualidade da Socialização Atual</label>
-        <div className="flex flex-wrap gap-4">
-          {['Participa das atividades propostas', 'Interage com colegas', 'Tende ao isolamento', 'Fica restrito ao leito'].map(item => (
-            <label key={item} className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={formData.currentSocializationQuality.includes(item)}
-                onChange={() => handleCheckboxChange('currentSocializationQuality', item)}
-                className="w-4 h-4 text-[#004c99] rounded border-gray-300 focus:ring-[#004c99]"
-              />
-              {item}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nova Conduta / Ajuste de Plano</label>
-        <textarea 
-          rows={4}
-          value={formData.newConduct} 
-          onChange={(e) => setFormData({ ...formData, newConduct: e.target.value })}
-          className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm resize-none"
-          required
-        />
-      </div>
-
-      <div className="flex justify-end gap-3 pt-6 border-t">
-        <button 
-          type="button" 
-          onClick={onCancel}
-          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50 transition-all"
-        >
-          Cancelar
-        </button>
-        <button 
-          type="button" 
-          onClick={handleExportPDF}
-          className="px-6 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg flex items-center gap-2 shadow-sm transition-all font-bold text-xs uppercase border"
-        >
-          <Printer size={16} />
-          <span>Exportar PDF</span>
-        </button>
-        <button 
-          type="submit" 
-          className="bg-[#004c99] hover:bg-blue-800 text-white px-8 py-2 rounded-lg flex items-center gap-2 shadow-lg transition-all font-bold text-xs uppercase"
-        >
-          <Save size={18} />
-          <span>Salvar Evolução</span>
-        </button>
-      </div>
-    </form>
   );
 };
 

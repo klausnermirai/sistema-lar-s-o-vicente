@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+const fs = require('fs');
+
+const replacement = `import React, { useState } from 'react';
 import { Resident, InstitutionSettings } from '../types';
-import { Printer, FileText, User, HeartPulse, Clock, Activity, Settings, UserCheck, SlidersHorizontal } from 'lucide-react';
+import { Printer, FileText, User, HeartPulse, Clock, Activity, Settings, UserCheck } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { addPdfSignatureNode } from '../lib/pdfUtils';
 import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
@@ -106,8 +108,8 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, settings }) => {
       if (label) {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
-        doc.text(`${label}:`, 14, yPos);
-        const labelWidth = doc.getTextWidth(`${label}: `);
+        doc.text(\`\${label}:\`, 14, yPos);
+        const labelWidth = doc.getTextWidth(\`\${label}: \`);
         
         doc.setFont('helvetica', 'normal');
         const contentWidth = (pageWidth - 28) - labelWidth;
@@ -134,10 +136,10 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, settings }) => {
     // --- 1. Identificação ---
     addSectionTitle('1. Identificação do Residente');
     addText('Nome', resident.name || '-');
-    addText('Data de Nascimento', `${resident.birthDate || '-'} (${calculateAge(resident.birthDate)})`);
+    addText('Data de Nascimento', \`\${resident.birthDate || '-'} (\${calculateAge(resident.birthDate)})\`);
     addText('Sexo', resident.gender || '-');
     addText('Estado Civil', resident.maritalStatus || '-');
-    addText('Acomodação', `${resident.room || '-'} ${resident.bedNumber ? '(Leito '+resident.bedNumber+')' : ''}`);
+    addText('Acomodação', \`\${resident.room || '-'} \${resident.bedNumber ? '(Leito '+resident.bedNumber+')' : ''}\`);
     addText('Data de Admissão', resident.admissionDate || '-');
     addText('CPF', resident.cpf || '-');
     addText('RG', resident.rg || '-');
@@ -201,7 +203,7 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, settings }) => {
     doc.text('Nutrição', 14, yPos); yPos += 5;
     if (nutInitial) {
       addText('Diagnóstico Inicial', nutInitial.initialDiagnosis || '-');
-      addText('Suplementação', nutInitial.needsSupplementation ? `Sim - ${nutInitial.supplementationDetails}` : 'Não');
+      addText('Suplementação', nutInitial.needsSupplementation ? \`Sim - \${nutInitial.supplementationDetails}\` : 'Não');
       addText('Metas', nutInitial.piaGoals || '-');
     } else {
       addText('', 'Primeira avaliação não registrada.');
@@ -238,9 +240,9 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, settings }) => {
           
           let profName = e.professionalName || '';
           let profRole = e.professionalRole || '';
-          let profSignature = profName ? ` (${profName}${profRole ? ' - '+profRole : ''})` : '';
+          let profSignature = profName ? \` (\${profName}\${profRole ? ' - '+profRole : ''})\` : '';
 
-          addText('', `${dtStr}${profSignature} — ${txt}`);
+          addText('', \`\${dtStr}\${profSignature} — \${txt}\`);
         });
         yPos += 3;
       });
@@ -250,61 +252,9 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, settings }) => {
     await addPdfHeaderAndFooter(doc, settings, 'Plano Individual de Atendimento (PIA)');
 
     // 6. Assinaturas
-    const uniqueSignatures = new Set<string>();
+    addPdfSignatureNode(doc);
 
-    [psyInitial, ptInitial, nutInitial, otInitial].forEach((assess: any) => {
-      if (assess && assess.profissionalAssinaturaTexto) {
-        uniqueSignatures.add(assess.profissionalAssinaturaTexto);
-      }
-    });
-
-    filteredEvolutions.forEach(group => {
-      group.evs.forEach((e: any) => {
-        if (e.profissionalAssinaturaTexto) {
-          uniqueSignatures.add(e.profissionalAssinaturaTexto);
-        } else if (e.professionalName) {
-           const role = e.professionalRole || '';
-           uniqueSignatures.add(`${e.professionalName}\n${role}`);
-        }
-      });
-    });
-
-    if (uniqueSignatures.size === 0) {
-      addPdfSignatureNode(doc);
-    } else {
-      let currentY = yPos + 20;
-      doc.addPage();
-      currentY = 40;
-      const colWidth = pageWidth / 2;
-      const signs = Array.from(uniqueSignatures);
-      
-      signs.forEach((signStr, idx) => {
-        if (idx > 0 && idx % 2 === 0) {
-          currentY += 35;
-          if (currentY > 260) {
-             doc.addPage();
-             currentY = 40;
-          }
-        }
-        
-        const xPos = (idx % 2 === 0) ? (colWidth / 2) : (colWidth + colWidth / 2);
-        
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.setTextColor(0, 0, 0);
-        
-        doc.line(xPos - 35, currentY, xPos + 35, currentY);
-        
-        const lines = (signStr as string).split('\n');
-        let lineY = currentY + 5;
-        lines.forEach(line => {
-           doc.text(line, xPos, lineY, { align: 'center' });
-           lineY += 5;
-        });
-      });
-    }
-
-    doc.save(`PIA_${resident.name.replace(/\s+/g, '_')}.pdf`);
+    doc.save(\`PIA_\${resident.name.replace(/\\s+/g, '_')}.pdf\`);
   };
 
   return (
@@ -376,7 +326,7 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, settings }) => {
               </div>
               <div>
                 <div className="text-[10px] font-black text-gray-400 uppercase">Acomodação</div>
-                <div className="font-bold text-sm text-gray-800">{resident.room || '-'} {resident.bedNumber ? ` (Leito ${resident.bedNumber})` : ''}</div>
+                <div className="font-bold text-sm text-gray-800">{resident.room || '-'} {resident.bedNumber ? \` (Leito \${resident.bedNumber})\` : ''}</div>
               </div>
             </div>
           </div>
@@ -542,7 +492,7 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, settings }) => {
                          <span className="text-[10px] uppercase font-black text-[#004c99] tracking-widest shrink-0 mt-0.5 bg-blue-50 px-2 py-1 rounded-md border border-blue-100">{dtStr}</span>
                          <div>
                            <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{txt}</p>
-                           {profName && <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">Profissional: {profName} {profRole ? `(${profRole})` : ''}</p>}
+                           {profName && <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">Profissional: {profName} {profRole ? \`(\${profRole})\` : ''}</p>}
                          </div>
                        </div>
                      )
@@ -559,3 +509,7 @@ const PiaTab: React.FC<PiaTabProps> = ({ resident, settings }) => {
 };
 
 export default PiaTab;
+`
+
+fs.writeFileSync('components/PiaTab.tsx', replacement);
+console.log("Rewrote PiaTab!");

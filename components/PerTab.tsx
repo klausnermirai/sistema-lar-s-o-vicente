@@ -1,6 +1,6 @@
-import { getProfessionalSignature } from '../lib/api';
-import React, { useState } from 'react';
-import { Resident, PerData, ClinicalProgressEntry } from '../types';
+import { getProfessionalSignature, fetchSosProtocols } from '../lib/api';
+import React, { useState, useEffect } from 'react';
+import { Resident, PerData, ClinicalProgressEntry, SosProtocol } from '../types';
 import { 
   Heart, 
   Activity, 
@@ -29,6 +29,22 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
   const [newProgressNote, setNewProgressNote] = useState('');
   const [professionalName, setProfessionalName] = useState('');
   const [professionalCRM, setProfessionalCRM] = useState('');
+  const [sosProtocols, setSosProtocols] = useState<SosProtocol[]>([]);
+
+  useEffect(() => {
+    const loadProtocols = async () => {
+      try {
+         const session = JSON.parse(localStorage.getItem('ssvp_session') || '{}');
+         if (session.institutionId && resident.id) {
+           const protocols = await fetchSosProtocols(session.institutionId, resident.id);
+           setSosProtocols(protocols.filter((p: SosProtocol) => p.status === 'ativo'));
+         }
+      } catch (err) {
+         console.error('Error loading SOS protocols', err);
+      }
+    };
+    loadProtocols();
+  }, [resident.id]);
 
   if (!per) {
     return (
@@ -215,6 +231,56 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
                 <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Histórico Clínico Detalhado</h5>
                 <p className="text-sm text-gray-700 leading-relaxed">{per.clinicalHistory || 'Nenhum detalhe adicional relatado.'}</p>
               </div>
+            </div>
+          </div>
+
+          {/* Condutas SOS */}
+          <div className="bg-white border rounded-3xl p-6 shadow-sm overflow-hidden relative">
+            <h4 className="text-sm font-black text-gray-800 uppercase tracking-tight mb-6 flex items-center gap-2 border-b pb-4">
+              <Pill size={18} className="text-purple-600" />
+              Condutas SOS / Medicações Eventuais Autorizadas
+            </h4>
+            
+            {sosProtocols.length === 0 ? (
+              <p className="text-xs text-gray-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma conduta SOS ativa para este residente.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                 {sosProtocols.map(p => (
+                   <div key={p.id} className="p-4 bg-purple-50/50 border border-purple-100 rounded-2xl flex flex-col gap-2">
+                      <div className="flex justify-between items-start">
+                         <span className="text-sm font-black text-purple-900 uppercase leading-none">{p.sintomaOuQueixa}</span>
+                      </div>
+                      <div>
+                         <p className="text-[10px] font-black uppercase text-purple-500 tracking-widest leading-none mt-1">Autorizado:</p>
+                         <p className="text-sm font-bold text-gray-800 mt-0.5">{p.medicamentoAutorizado} <span className="text-xs text-gray-500 ml-1">{p.dosagem} {p.quantidade}</span></p>
+                      </div>
+                      <div className="flex gap-4 mt-2">
+                         <div className="flex flex-col">
+                            <span className="text-[9px] font-bold text-gray-400 uppercase">Via</span>
+                            <span className="text-xs font-black text-gray-700 uppercase">{p.via || 'N/A'}</span>
+                         </div>
+                         {p.intervaloMinimoHoras && (
+                           <div className="flex flex-col">
+                              <span className="text-[9px] font-bold text-gray-400 uppercase">Intervalo</span>
+                              <span className="text-xs font-black text-gray-700 uppercase">{p.intervaloMinimoHoras}h</span>
+                           </div>
+                         )}
+                      </div>
+                      {p.observacoes && (
+                        <p className="text-[10px] text-gray-600 bg-white p-2 rounded-lg border mt-2 leading-tight">
+                           <span className="font-bold uppercase tracking-widest text-gray-400 block mb-1">Obs:</span>
+                           {p.observacoes}
+                        </p>
+                      )}
+                      <p className="text-[8px] font-bold text-gray-400 uppercase text-right mt-2">Por {p.autorizadoPorNome}</p>
+                   </div>
+                 ))}
+              </div>
+            )}
+            <div className="mt-4 p-3 bg-gray-50 border border-gray-100 rounded-xl">
+               <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">
+                 O gerenciamento de novas condutas SOS está disponível na aba "Condutas SOS" (Módulo Gestão na Enfermagem).
+               </p>
             </div>
           </div>
 

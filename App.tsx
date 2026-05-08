@@ -59,8 +59,6 @@ const App: React.FC = () => {
   React.useEffect(() => {
     if (session?.accessLevel === 'medico' && activeRoute !== AppRoute.CONSULTAS_MEDICAS) {
       setActiveRoute(AppRoute.CONSULTAS_MEDICAS);
-    } else if (session?.accessLevel === 'cuidados' && activeRoute === AppRoute.RESIDENTS) {
-      setActiveRoute(AppRoute.SAUDE_CUIDADOS);
     } else if (session?.accessLevel === 'visitante' && (activeRoute === AppRoute.RESIDENTS || activeRoute === AppRoute.HOME)) {
       setActiveRoute(AppRoute.VISITANTES);
     }

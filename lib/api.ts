@@ -429,3 +429,24 @@ export const saveProcedureLog = async (log: any) => {
   if (!response.ok) throw new Error('Erro ao salvar procedimento');
   return response.json();
 };
+
+export const fetchSosProtocols = async (institutionId: string, residentId?: string) => {
+  let url = `/api/sos-protocols?institutionId=${institutionId}`;
+  if (residentId) {
+    url += `&residentId=${residentId}`;
+  }
+  const response = await fetch(url, { headers: getAuthHeaders() });
+  if (!response.ok) throw new Error('Erro ao buscar condutas SOS');
+  return response.json();
+};
+
+export const saveSosProtocol = async (protocol: any) => {
+  const response = await fetch('/api/sos-protocols', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(protocol)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar conduta SOS');
+  return response.json();
+};
+

@@ -183,8 +183,10 @@ const Layout: React.FC<LayoutProps> = ({
   } else if (isCuidados) {
     atendimentoItems = [
       { id: AppRoute.HOME, label: 'Página Inicial', icon: Home },
+      { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
       { id: AppRoute.AGENDA, label: 'Agenda', icon: Calendar },
       { id: AppRoute.SAUDE_CUIDADOS, label: 'Saúde e Cuidados', icon: HeartPulse },
+      { id: AppRoute.ENFERMAGEM, label: 'Enfermagem', icon: Stethoscope },
       { id: AppRoute.MEDICAMENTOS, label: 'Medicamentos', icon: Pill },
       { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     ];

@@ -7,11 +7,13 @@ import {
   ChevronDown,
   Stethoscope,
   Users,
-  Settings2
+  Settings2,
+  Syringe
 } from 'lucide-react';
 import AppointmentTab from './AppointmentTab';
 import CompanionsTab from './CompanionsTab';
 import DependenciesTab from './DependenciesTab';
+import { SosProtocolsTab } from './SosProtocolsTab';
 import { fetchCompanions, saveCompanion, deleteCompanion } from '../lib/api';
 import { Companion, InstitutionSettings } from '../types';
 
@@ -24,7 +26,7 @@ export interface NursingModuleProps {
 }
 
 const NursingModule: React.FC<NursingModuleProps> = ({ residents, onSaveResident, onBulkSaveResidents, onPostToMural, settings }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'consultas' | 'acompanhantes' | 'dependencias'>('consultas');
+  const [activeSubTab, setActiveSubTab] = useState<'consultas' | 'acompanhantes' | 'dependencias' | 'condutas_sos'>('consultas');
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [companions, setCompanions] = useState<Companion[]>([]);
@@ -118,6 +120,14 @@ const NursingModule: React.FC<NursingModuleProps> = ({ residents, onSaveResident
           onBulkSaveResidents={onBulkSaveResidents}
           onSaveResident={onSaveResident}
         />
+      );
+    }
+
+    if (activeSubTab === 'condutas_sos') {
+      const savedItem = localStorage.getItem('ssvp_session');
+      const session = savedItem ? JSON.parse(savedItem) : null;
+      return (
+        <SosProtocolsTab residents={residents} session={session} />
       );
     }
 
@@ -257,6 +267,17 @@ const NursingModule: React.FC<NursingModuleProps> = ({ residents, onSaveResident
             >
               <Users size={16} />
               Acompanhantes
+            </button>
+            <button
+              onClick={() => setActiveSubTab('condutas_sos')}
+              className={`px-8 py-5 text-[10px] font-black uppercase transition-all border-b-4 flex items-center gap-3 h-16 ${
+                activeSubTab === 'condutas_sos' 
+                  ? 'border-[#004c99] text-[#004c99]' 
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <Syringe size={16} />
+              Condutas SOS
             </button>
           </div>
         </div>

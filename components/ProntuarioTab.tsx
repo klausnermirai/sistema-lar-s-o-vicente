@@ -66,19 +66,19 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
     resident.nutrition?.evolutions?.forEach(ev => {
       allEvents.push({
         id: `nutri-evo-${ev.id}`,
-        date: ev.date,
+        date: (ev.dataEvolucao || ev.date),
         competence: 'Nutrição',
         type: 'Evolução',
         professional: 'Nutricionista',
-        summary: ev.newConduct ? ev.newConduct.substring(0, 100) + '...' : 'Evolução nutricional registrada.',
+        summary: (ev.descricaoEvolucao || ev.newConduct) ? (ev.descricaoEvolucao || ev.newConduct).substring(0, 100) + '...' : 'Evolução nutricional registrada.',
         fullContent: (
           <div className="space-y-2 text-sm">
-            <p><strong>Conduta:</strong> {ev.newConduct}</p>
+            {ev.descricaoEvolucao && <p><strong>Evolução:</strong> {ev.descricaoEvolucao}</p>}<p><strong>Conduta:</strong> {ev.novaConduta || ev.newConduct || 'N/A'}</p>
             <p><strong>Aceitação Alimentar:</strong> {ev.foodAcceptance || 'N/A'}</p>
             <p><strong>Status Meta PIA:</strong> {ev.piaGoalStatus || 'N/A'}</p>
           </div>
         ),
-        timestamp: new Date(ev.date).getTime()
+        timestamp: new Date((ev.dataEvolucao || ev.date)).getTime()
       });
     });
 
@@ -150,11 +150,11 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
     resident.psychology?.evolutions?.forEach(ev => {
       allEvents.push({
         id: `psico-evo-${ev.id}`,
-        date: ev.date,
+        date: (ev.dataEvolucao || ev.date),
         competence: 'Psicologia',
         type: 'Evolução',
         professional: 'Psicólogo(a)',
-        summary: ev.newConduct ? ev.newConduct.substring(0, 100) + '...' : 'Evolução psicológica registrada.',
+        summary: (ev.descricaoEvolucao || ev.newConduct) ? (ev.descricaoEvolucao || ev.newConduct).substring(0, 100) + '...' : 'Evolução psicológica registrada.',
         fullContent: (
           <div className="space-y-2 text-sm">
             <p><strong>Conduta:</strong> {ev.newConduct}</p>
@@ -162,7 +162,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
             <p><strong>Evolução Humor/Comportamento:</strong> {ev.moodBehaviorEvolution}</p>
           </div>
         ),
-        timestamp: new Date(ev.date).getTime()
+        timestamp: new Date((ev.dataEvolucao || ev.date)).getTime()
       });
     });
 
@@ -237,11 +237,11 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
     resident.occupationalTherapy?.evolutions?.forEach(ev => {
       allEvents.push({
         id: `to-evo-${ev.id}`,
-        date: ev.date,
+        date: (ev.dataEvolucao || ev.date),
         competence: 'Terapeuta Ocupacional',
         type: 'Evolução',
         professional: 'Terapeuta Ocupacional',
-        summary: ev.newConduct ? ev.newConduct.substring(0, 100) + '...' : 'Evolução ocupacional registrada.',
+        summary: (ev.descricaoEvolucao || ev.newConduct) ? (ev.descricaoEvolucao || ev.newConduct).substring(0, 100) + '...' : 'Evolução ocupacional registrada.',
         fullContent: (
           <div className="space-y-2 text-sm">
             <p><strong>Conduta:</strong> {ev.newConduct}</p>
@@ -249,7 +249,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
             <p><strong>Participação:</strong> {ev.participationEvolution}</p>
           </div>
         ),
-        timestamp: new Date(ev.date).getTime()
+        timestamp: new Date((ev.dataEvolucao || ev.date)).getTime()
       });
     });
 
@@ -429,8 +429,8 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
   const filteredEvents = events.filter(ev => {
     if (filterCompetence && ev.competence !== filterCompetence) return false;
     if (filterSharedOnly && !ev.isShared) return false;
-    if (filterStartDate && ev.date < filterStartDate) return false;
-    if (filterEndDate && ev.date > filterEndDate) return false;
+    if (filterStartDate && (ev.dataEvolucao || ev.date) < filterStartDate) return false;
+    if (filterEndDate && (ev.dataEvolucao || ev.date) > filterEndDate) return false;
     return true;
   });
 
@@ -455,7 +455,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
       doc.setTextColor(0, 76, 153); // Blue
-      doc.text(`${ev.date} ${ev.time ? `- ${ev.time}` : ''} | ${ev.competence} - ${ev.type}`, 14, yPos);
+      doc.text(`${(ev.dataEvolucao || ev.date)} ${ev.time ? `- ${ev.time}` : ''} | ${ev.competence} - ${ev.type}`, 14, yPos);
       yPos += 6;
 
       doc.setFont('helvetica', 'normal');
@@ -488,22 +488,22 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
            const assess = resident.nutrition?.initialAssessment;
            if(assess) contentText = `Diagnóstico: ${assess.initialDiagnosis || 'N/A'}\nMetas PIA: ${assess.piaGoals || 'N/A'}\nVia de Alimentação: ${assess.feedingRoute || 'N/A'}\nConsistência: ${assess.dietConsistency || 'N/A'}${assess.needsSupplementation ? `\nSuplementação: ${assess.supplementationDetails}` : ''}`;
         } else if (ev.type === 'Evolução' && ev.competence === 'Nutrição') {
-           const evo = resident.nutrition?.evolutions?.find(e => e.date === ev.date);
+           const evo = resident.nutrition?.evolutions?.find(e => e.date === (ev.dataEvolucao || ev.date));
            if(evo) contentText = `Conduta: ${evo.newConduct}\nAceitação Alimentar: ${evo.foodAcceptance || 'N/A'}\nStatus Meta PIA: ${evo.piaGoalStatus || 'N/A'}`;
         } else if (ev.type === 'Atendimento' && ev.competence === 'Nutrição') {
-           const att = resident.nutrition?.attendances?.find(a => a.dateTime.startsWith(ev.date));
+           const att = resident.nutrition?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
            if(att) contentText = `Motivo: ${att.reason}\nAnotação: ${att.notes}`;
         } else if (ev.type.startsWith('Atividade em grupo') && ev.competence === 'Nutrição') {
-           const ga = resident.nutrition?.groupActivities?.find(a => a.date === ev.date);
+           const ga = resident.nutrition?.groupActivities?.find(a => a.date === (ev.dataEvolucao || ev.date));
            if(ga) contentText = `Descrição: ${ga.description}\nResultado: ${ga.result}\nObservações: ${ga.observations}`;
         } else if (ev.type === 'Anamnese' && ev.competence === 'Psicologia') {
            const anamnesis = resident.psychology?.anamnese;
            if(anamnesis) contentText = `Síntese Inicial: ${anamnesis.initialPsychologicalSynthesis}\nMetas PIA: ${anamnesis.piaPsychologicalGoals}`;
         } else if (ev.type === 'Evolução' && ev.competence === 'Psicologia') {
-           const evo = resident.psychology?.evolutions?.find(e => e.date === ev.date);
+           const evo = resident.psychology?.evolutions?.find(e => e.date === (ev.dataEvolucao || ev.date));
            if(evo) contentText = `Conduta: ${evo.newConduct}\nStatus Adaptação: ${evo.institutionalAdaptationStatus}\nEvolução Humor/Comportamento: ${evo.moodBehaviorEvolution}`;
         } else if (ev.type === 'Atendimento' && ev.competence === 'Psicologia') {
-           const att = resident.psychology?.attendances?.find(a => a.dateTime.startsWith(ev.date));
+           const att = resident.psychology?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
            if(att) {
              contentText = `Tipo de Intervenção: ${att.interventionType}\nEvolução: ${att.attendanceEvolution}`;
              if(att.privateNotes && hasPermission) {
@@ -511,19 +511,19 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
              }
            }
         } else if (ev.type.startsWith('Atividade em grupo') && ev.competence === 'Psicologia') {
-           const ga = resident.psychology?.groupActivities?.find(a => a.date === ev.date);
+           const ga = resident.psychology?.groupActivities?.find(a => a.date === (ev.dataEvolucao || ev.date));
            if(ga) contentText = `Descrição: ${ga.description}\nResultado: ${ga.result}\nObservações: ${ga.observations}`;
         } else if (ev.type === 'Primeira Avaliação' && ev.competence === 'Terapeuta Ocupacional') {
            const assess = resident.occupationalTherapy?.initialAssessment;
            if(assess) contentText = `Nível de Independência: ${assess.independenceLevel}\nMobilidade: ${assess.mobility}\nMetas PIA: ${assess.piaGoals}`;
         } else if (ev.type === 'Evolução' && ev.competence === 'Terapeuta Ocupacional') {
-           const evo = resident.occupationalTherapy?.evolutions?.find(e => e.date === ev.date);
+           const evo = resident.occupationalTherapy?.evolutions?.find(e => e.date === (ev.dataEvolucao || ev.date));
            if(evo) contentText = `Conduta: ${evo.newConduct}\nStatus Meta PIA: ${evo.piaGoalStatus}`;
         } else if (ev.type === 'Atendimento' && ev.competence === 'Terapeuta Ocupacional') {
-           const att = resident.occupationalTherapy?.attendances?.find(a => a.dateTime.startsWith(ev.date));
+           const att = resident.occupationalTherapy?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
            if(att) contentText = `Tipo: ${att.attendanceType}\nEvolução: ${att.attendanceEvolution}`;
         } else if (ev.type.startsWith('Atividade em grupo') && ev.competence === 'Terapeuta Ocupacional') {
-           const ga = resident.occupationalTherapy?.groupActivities?.find(a => a.date === ev.date);
+           const ga = resident.occupationalTherapy?.groupActivities?.find(a => a.date === (ev.dataEvolucao || ev.date));
            if(ga) contentText = `Descrição: ${ga.description}\nResultado: ${ga.result}\nObservações: ${ga.observations}`;
         } else if (ev.type === 'Parecer de Integração') {
            contentText = resident.integrationReport || '';
@@ -541,13 +541,13 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
           // Find mural notes
           let muralNotes = '';
           if (ev.competence === 'Nutrição') {
-             const att = resident.nutrition?.attendances?.find(a => a.dateTime.startsWith(ev.date));
+             const att = resident.nutrition?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
              if(att) muralNotes = att.muralNotes || '';
           } else if (ev.competence === 'Psicologia') {
-             const att = resident.psychology?.attendances?.find(a => a.dateTime.startsWith(ev.date));
+             const att = resident.psychology?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
              if(att) muralNotes = att.muralNotes || '';
           } else if (ev.competence === 'Terapeuta Ocupacional') {
-             const att = resident.occupationalTherapy?.attendances?.find(a => a.dateTime.startsWith(ev.date));
+             const att = resident.occupationalTherapy?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
              if(att) muralNotes = att.muralNotes || '';
           }
 
@@ -668,7 +668,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
                         )}
                       </div>
                       <div className="flex items-center gap-4 text-xs text-gray-500 font-medium mt-2">
-                        <div className="flex items-center gap-1"><Calendar size={14} /> {new Date(ev.date).toLocaleDateString('pt-BR')}</div>
+                        <div className="flex items-center gap-1"><Calendar size={14} /> {new Date((ev.dataEvolucao || ev.date)).toLocaleDateString('pt-BR')}</div>
                         {ev.time && <div className="flex items-center gap-1"><Clock size={14} /> {ev.time}</div>}
                         <div className="flex items-center gap-1"><User size={14} /> {ev.professional}</div>
                       </div>

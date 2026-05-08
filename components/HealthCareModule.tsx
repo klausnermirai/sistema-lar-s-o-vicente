@@ -20,6 +20,7 @@ import {
 import DailyRoutineTab from './DailyRoutineTab';
 import VitalSignsTab from './VitalSignsTab';
 import HandoverTab from './HandoverTab';
+import { OperationalAdministrationTab } from './OperationalAdministrationTab';
 import { fetchShifts } from '../lib/api';
 import { getCurrentShift, getOperationalDate } from '../lib/shiftUtils';
 import { InstitutionSettings } from '../types';
@@ -33,7 +34,7 @@ export interface HealthCareModuleProps {
 }
 
 const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveResident, onBulkSaveResidents, onPostToMural, settings }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'sinais_vitais' | 'rotinas' | 'plantao'>('rotinas');
+  const [activeSubTab, setActiveSubTab] = useState<'sinais_vitais' | 'rotinas' | 'plantao' | 'ministracao'>('rotinas');
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isTabletMode, setIsTabletMode] = useState(false);
@@ -208,6 +209,16 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
       );
     }
 
+    if (activeSubTab === 'ministracao') {
+      const savedItem = localStorage.getItem('ssvp_session');
+      const session = savedItem ? JSON.parse(savedItem) : null;
+      return (
+        <div className="bg-gray-50 h-full w-full p-2">
+          <OperationalAdministrationTab residents={residents} session={session} />
+        </div>
+      );
+    }
+
     if (!selectedResident) {
       return (
         <div className="flex flex-col items-center justify-center p-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 h-full">
@@ -265,11 +276,12 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 flex-1 content-center px-4 max-w-6xl mx-auto w-full">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 flex-1 content-start px-4 max-w-7xl mx-auto w-full pt-4">
           {[
             { id: 'rotinas', title: 'Plano de Rotinas', desc: 'Controle de atividades e rotinas diárias', icon: CalendarDays, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100', shadow: 'shadow-blue-100/50' },
             { id: 'plantao', title: 'Plantão e Intercorrências', desc: 'Registro de turno e eventos', icon: RotateCcw, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100', shadow: 'shadow-orange-100/50' },
-            { id: 'sinais_vitais', title: 'Mapa de Sinais Vitais', desc: 'Coleta de SV', icon: Activity, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100', shadow: 'shadow-emerald-100/50' }
+            { id: 'sinais_vitais', title: 'Mapa de Sinais Vitais', desc: 'Coleta de SV', icon: Activity, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100', shadow: 'shadow-emerald-100/50' },
+            { id: 'ministracao', title: 'Ministração de Medicamentos', desc: 'Checagem de medicações do turno', icon: Pill, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100', shadow: 'shadow-purple-100/50' }
           ].map(module => (
             <button
               key={module.id}
@@ -277,13 +289,13 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
                 setActiveSubTab(module.id as any);
                 setTabletMenuActive(false);
               }}
-              className="flex flex-col items-center justify-center p-12 bg-white border-2 border-gray-100 rounded-[40px] hover:border-gray-300 hover:shadow-2xl transition-all duration-300 group hover:-translate-y-2 h-[400px]"
+              className="flex flex-col items-center justify-center p-8 bg-white border-2 border-gray-100 rounded-[40px] hover:border-gray-300 hover:shadow-2xl transition-all duration-300 group hover:-translate-y-2 h-[340px]"
             >
-              <div className={`w-32 h-32 rounded-[32px] flex items-center justify-center mb-8 ${module.bg} ${module.color} shadow-2xl ${module.shadow}`}>
-                <module.icon size={64} className="group-hover:scale-110 transition-transform duration-500" />
+              <div className={`w-24 h-24 rounded-[32px] flex items-center justify-center mb-6 ${module.bg} ${module.color} shadow-2xl ${module.shadow}`}>
+                <module.icon size={48} className="group-hover:scale-110 transition-transform duration-500" />
               </div>
-              <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tighter mb-4 text-center">{module.title}</h3>
-              <p className="text-sm font-bold text-gray-400 text-center uppercase tracking-widest">{module.desc}</p>
+              <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter mb-3 text-center">{module.title}</h3>
+              <p className="text-[10px] font-bold text-gray-400 text-center uppercase tracking-widest">{module.desc}</p>
             </button>
           ))}
         </div>
@@ -374,7 +386,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
             Voltar ao Menu
           </button>
           <h2 className="text-2xl font-black uppercase text-gray-900 tracking-tighter">
-            {activeSubTab === 'rotinas' ? 'Plano de Rotinas' : activeSubTab === 'plantao' ? 'Plantão e Intercorrências' : 'Sinais Vitais'}
+            {activeSubTab === 'rotinas' ? 'Plano de Rotinas' : activeSubTab === 'plantao' ? 'Plantão e Intercorrências' : activeSubTab === 'ministracao' ? 'Ministração de Medicamentos' : 'Sinais Vitais'}
           </h2>
           <button
             onClick={() => setIsTabletMode(!isTabletMode)}
@@ -386,7 +398,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
         </div>
 
         {/* Dynamic Content */}
-        <div className={`flex-1 ${activeSubTab === 'rotinas' || activeSubTab === 'plantao' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'} custom-scrollbar bg-gray-50/10`}>
+        <div className={`flex-1 ${activeSubTab === 'rotinas' || activeSubTab === 'plantao' || activeSubTab === 'ministracao' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'} custom-scrollbar bg-gray-50/10`}>
           {renderContent()}
         </div>
       </div>

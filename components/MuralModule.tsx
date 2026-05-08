@@ -155,7 +155,26 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
     }
   };
 
+  const isAdminUser = accessLevel === 'administrador' || accessLevel?.toLowerCase().includes('admin') || accessLevel === 'gerencial' || accessLevel === 'assistente_social';
+
   const filteredMessages = messages.filter(msg => {
+    let isPublic = true;
+    if (msg.visibilidade && Array.isArray(msg.visibilidade)) {
+      if (msg.visibilidade.length > 0 && !msg.visibilidade.includes('publico')) {
+        isPublic = false;
+      }
+    } else if (msg.visibilidade === 'admin') {
+      isPublic = false;
+    } else if (msg.isPublic === false) {
+      isPublic = false;
+    }
+
+    const isAuthor = msg.author === username;
+
+    if (!isPublic && !isAuthor && !isAdminUser) {
+      return false;
+    }
+
     if (filterDate) {
       const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
       if (msgDate !== filterDate) return false;
@@ -327,11 +346,27 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
                     </div>
                   )}
                   <div className="flex flex-col bg-white border border-gray-100 shadow-sm rounded-2xl p-5 w-full relative group">
-                    <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center gap-3 mb-3 flex-wrap">
                       <span className="text-[11px] font-black text-gray-800">
                         {getAuthorDisplay(msg)}
                       </span>
                       <span className="text-[10px] font-bold text-gray-400">{date} às {time}</span>
+                      {(()=>{
+                        let isMsgPublic = true;
+                        if (msg.visibilidade && Array.isArray(msg.visibilidade)) {
+                          if (msg.visibilidade.length > 0 && !msg.visibilidade.includes('publico')) isMsgPublic = false;
+                        } else if (msg.visibilidade === 'admin' || msg.isPublic === false) {
+                          isMsgPublic = false;
+                        }
+                        if (!isMsgPublic) {
+                          return (
+                            <span className="flex items-center gap-1 text-[9px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                              🔒 Direção e Coordenação
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                     <div className="text-gray-800">
                       {editingMsgId === msg.id ? (

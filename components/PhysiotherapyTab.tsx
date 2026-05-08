@@ -1,4 +1,6 @@
 import { getProfessionalSignature } from '../lib/api';
+import { StandardEvolutionForm } from './StandardEvolutionForm';
+import { StandardEvolutionHistory } from './StandardEvolutionHistory';
 import React, { useState } from 'react';
 import { Resident, PhysiotherapyData, PhysiotherapyAssessment, PhysiotherapyEvolution, PhysiotherapyAttendance, MuralMessage } from '../types';
 import { Plus, Save, Edit2, CheckCircle, Clock, Printer, FileSpreadsheet } from 'lucide-react';
@@ -62,36 +64,109 @@ interface PhysiotherapyTabProps {
 const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings, onChange, residents, onSaveResident, onPostToMural }) => {
   const [activeSubTab, setActiveSubTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos'>('avaliacao');
   
-  const handleExportAssessmentPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
+  const handleExportAssessmentPDF = async () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const title = 'PRIMEIRA AVALIAÇÃO DE FISIOTERAPIA';
+    const { getHtmlPrintHeader, getHtmlPrintFooter, getHtmlPrintStyles } = await import('../lib/pdfHelpers');
     
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text('Avaliação de Fisioterapia', pageWidth / 2, 20, { align: 'center' });
+    const headerHtml = await getHtmlPrintHeader(settings, title);
+    const sigData = getProfessionalSignature();
+    const signatureName = sigData.profissionalAssinaturaTexto || sigData.profissionalNome || 'Profissional não identificado';
+    const role = sigData.profissionalRole ? ` - ${sigData.profissionalRole}` : ' - Fisioterapeuta';
+
+    const calculateAgePDF = (birthDateString: string) => {
+      if (!birthDateString) return '';
+      let parts = birthDateString.split('/');
+      let birthDate = parts.length === 3 
+        ? new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0])) 
+        : new Date(birthDateString);
+      if (isNaN(birthDate.getTime())) return '';
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+      return age + ' anos';
+    };
+
+    const ageCalculated = resident.birthDate ? calculateAgePDF(resident.birthDate) : '';
+    const ageText = ageCalculated ? ` (Idade: ${ageCalculated})` : '';
     
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Residente: ${resident.name}`, 14, 30);
-    doc.text(`Data da Avaliação: ${assessment.date}`, 14, 35);
+    const contentHtml = `
+      <div class="field">
+        <span class="label">Residente:</span>
+        <span class="value">${resident.name || 'Não informado'} ${ageText}</span>
+      </div>
+      <div class="field">
+        <span class="label">Data de Nascimento:</span>
+        <span class="value">${resident.birthDate || 'Não informado'}</span>
+      </div>
+      <div class="field">
+        <span class="label">Quarto/Leito:</span>
+        <span class="value">${resident.room || 'Não informado'} ${resident.bedNumber ? '- Leito ' + resident.bedNumber : ''}</span>
+      </div>
+      <div class="field">
+        <span class="label">Data da Avaliação:</span>
+        <span class="value">${assessment.date ? new Date(assessment.date).toLocaleDateString('pt-BR') : 'Não informado'}</span>
+      </div>
 
-    const tableData = [
-      ['Avaliação Motora', { content: assessment.motorAssessment || 'N/A', colSpan: 3 }],
-      ['Avaliação Respiratória', { content: assessment.respiratoryAssessment || 'N/A', colSpan: 3 }],
-      ['Diagnóstico Cinético', { content: assessment.kineticFunctionalDiagnosis || 'N/A', colSpan: 3 }],
-      ['Objetivos', { content: assessment.objectives || 'N/A', colSpan: 3 }],
-      ['Conduta', { content: assessment.conduct || 'N/A', colSpan: 3 }]
-    ];
+      <div class="section-title">Avaliação Motora</div>
+      <div class="paragraph">${assessment.motorAssessment || 'Não informado'}</div>
 
-    (doc as any).autoTable({
-      startY: 45,
-      body: tableData,
-      theme: 'grid',
-      styles: { fontSize: 9 }
-    });
+      <div class="section-title">Avaliação Respiratória</div>
+      <div class="paragraph">${assessment.respiratoryAssessment || 'Não informado'}</div>
 
-    addPdfSignatureNode(doc);
-    doc.save(`Avaliacao_Fisio_${resident.name.replace(/\s+/g, '_')}.pdf`);
+      <div class="section-title">Diagnóstico Cinesiofuncional</div>
+      <div class="paragraph">${assessment.kineticFunctionalDiagnosis || 'Não informado'}</div>
+
+      <div class="section-title">Objetivos Terapêuticos</div>
+      <div class="paragraph">${assessment.objectives || 'Não informado'}</div>
+
+      <div class="section-title">Condutas Terapêuticas</div>
+      <div class="paragraph">${assessment.conduct || 'Não informado'}</div>
+
+      <div class="section-title">Plano de Tratamento Detalhado</div>
+      <div class="paragraph">${assessment.detailedTreatmentPlan || 'Não informado'}</div>
+
+      <div class="section-title">Observações Finais</div>
+      <div class="paragraph">${assessment.finalObservations || 'Não informado'}</div>
+
+      <div class="signature-box" style="margin-top: 60px;">
+        <div class="signature-line" style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold; text-align: center;">${signatureName}</div>
+        <div class="signature-role" style="font-size: 10px; color: #666; text-align: center;">${role.replace(' - ', '')}</div>
+      </div>
+    `;
+
+    const footerHtml = getHtmlPrintFooter();
+    const styles = getHtmlPrintStyles();
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${title}</title>
+          <style>
+            ${styles}
+            .paragraph { font-family: sans-serif; }
+            .section-title { margin-top: 25px; }
+          </style>
+        </head>
+        <body>
+          <div style="font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
+            ${headerHtml}
+            ${contentHtml}
+            ${footerHtml}
+          </div>
+          <script>
+            setTimeout(() => {
+              window.print();
+              window.close();
+            }, 500);
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const handleExportEvolutionPDF = () => {
@@ -209,29 +284,45 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
   });
 
   const handleSaveAssessment = () => {
-    onChange({
-      ...ptData,
-      initialAssessment: assessment as PhysiotherapyAssessment
-    });
-    
-    // Atualizar PIA automaticamente
-    if (resident.pia) {
-      const updatedPia = { ...resident.pia };
+    try {
+      let finalResident = { ...resident };
       
-      
-      updatedPia.interventions = {
-        ...updatedPia.interventions,
-        physiotherapy: (assessment.treatmentConducts?.join(', ') || '') + '\n' + (assessment.detailedTreatmentPlan || '')
+      finalResident.physiotherapy = {
+        ...ptData,
+        initialAssessment: assessment as PhysiotherapyAssessment
       };
       
-      onSaveResident({
-        ...resident,
-        physiotherapy: {
-          ...ptData,
-          initialAssessment: assessment as PhysiotherapyAssessment
-        },
-        pia: updatedPia
-      });
+      // Atualizar PIA automaticamente se existir
+      if (finalResident.pia) {
+        finalResident.pia = {
+          ...finalResident.pia,
+          interventions: {
+            ...finalResident.pia.interventions,
+            physiotherapy: (assessment.treatmentConducts?.join(', ') || '') + '\n' + (assessment.detailedTreatmentPlan || '')
+          }
+        };
+      }
+      
+      // Salva uma única vez para evitar condições de corrida (evitando chamar onChange e onSaveResident simultaneamente)
+      onSaveResident(finalResident);
+      
+      // Post to Mural
+      if (onPostToMural) {
+        const sigData = getProfessionalSignature();
+        const role = sigData.profissionalRole ? ` - ${sigData.profissionalRole}` : ' - Fisioterapeuta';
+        const signatureName = sigData.profissionalAssinaturaTexto || sigData.profissionalNome || 'Profissional não identificado';
+        
+        onPostToMural({
+          author: signatureName,
+          text: `**Primeira Avaliação Registrada**\n\n**Área:** Fisioterapia\n**Residente:** ${resident.name}\n**Profissional:** ${signatureName}${role}\n**Data:** ${new Date().toLocaleString('pt-BR')}`,
+          visibilidade: ['admin'] // Sugestão para visibilidade de administração
+        });
+      }
+
+      alert('Avaliação Inicial Fisioterapêutica salva com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar avaliação:', error);
+      alert('Ocorreu um erro ao salvar a avaliação.');
     }
   };
 
@@ -516,23 +607,24 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
       )}
 
       {activeSubTab === 'evolucao' && (
-        <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-6 animate-in fade-in duration-300">
           <div className="flex justify-between items-center bg-blue-50/50 p-4 border rounded-2xl">
             <div>
               <h3 className="text-sm font-black text-gray-800 uppercase tracking-tight">Evolução Fisioterapêutica</h3>
               <p className="text-[10px] uppercase font-bold text-gray-500 mt-1 tracking-widest">Registros de progresso</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={handleExportEvolutionPDF}
-                className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-all font-black text-[10px] uppercase border"
+                className="bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-xl flex items-center gap-2 shadow-sm transition-all font-black text-[10px] uppercase border"
               >
                 <Printer size={14} />
-                Exportar PDF
+                Exportar Histórico
               </button>
               {!isAddingEvolution && (
                 <button
+                  type="button"
                   onClick={() => setIsAddingEvolution(true)}
                   className="px-4 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 shadow-xl flex items-center gap-2 transition-all"
                 >
@@ -543,201 +635,39 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
           </div>
 
           {isAddingEvolution && (
-            <div className="bg-white p-6 rounded-2xl border shadow-lg space-y-4">
-              <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest border-b pb-4">Registrar Nova Evolução</h3>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Data</label>
-                <input
-                  type="date"
-                  value={newEvolution.date}
-                  onChange={e => setNewEvolution({ ...newEvolution, date: e.target.value })}
-                  className="w-full max-w-[200px] p-3 border rounded-xl text-xs font-bold outline-none focus:ring-2"
-                />
-              </div>
-
-              <ChecklistGroup 
-                label="Situação Funcional Atual" 
-                options={currentSituationOptionsList} 
-                selected={newEvolution.currentSituationOptions} 
-                onChange={(s) => setNewEvolution({ ...newEvolution, currentSituationOptions: s })} 
-                isEditing={true} 
-              />
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Descrição da Evolução Clínica/Funcional</label>
-                <textarea
-                  value={newEvolution.evolutionDescription || newEvolution.description}
-                  onChange={e => setNewEvolution({ ...newEvolution, evolutionDescription: e.target.value, description: e.target.value })}
-                  className="w-full p-3 border rounded-xl text-xs bg-white focus:ring-2 outline-none transition-all min-h-[100px]"
-                  placeholder="Descreva o quadro evolutivo..."
-                />
-              </div>
-
-              <ChecklistGroup 
-                label="Evolução da Mobilidade e Equilíbrio" 
-                options={currentMobilityOptionsList} 
-                selected={newEvolution.currentMobilityOptions} 
-                onChange={(s) => setNewEvolution({ ...newEvolution, currentMobilityOptions: s })} 
-                isEditing={true} 
-              />
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Observações Funcionais/Motores</label>
-                <textarea
-                  value={newEvolution.functionalObservations}
-                  onChange={e => setNewEvolution({ ...newEvolution, functionalObservations: e.target.value })}
-                  className="w-full p-3 border border-gray-200 rounded-xl text-xs focus:ring-2 outline-none transition-all min-h-[60px]"
-                  placeholder="Observações complementares de mobilidade..."
-                />
-              </div>
-
-              <ChecklistGroup 
-                label="Atualização de Objetivos Terapêuticos (PIA)" 
-                options={piaGoalsUpdateOptionsList} 
-                selected={newEvolution.piaGoalsUpdateOptions} 
-                onChange={(s) => setNewEvolution({ ...newEvolution, piaGoalsUpdateOptions: s })} 
-                isEditing={true} 
-              />
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Ajustes nos Objetivos Específicos</label>
-                <textarea
-                  value={newEvolution.updatedGoals}
-                  onChange={e => setNewEvolution({ ...newEvolution, updatedGoals: e.target.value })}
-                  className="w-full p-3 border border-gray-200 rounded-xl text-xs focus:ring-2 outline-none transition-all min-h-[60px]"
-                  placeholder="Descreva novos objetivos ou justificativas..."
-                />
-              </div>
-
-              <ChecklistGroup 
-                label="Atualização da Conduta Fisioterapêutica" 
-                options={conductUpdateOptionsList} 
-                selected={newEvolution.conductUpdateOptions} 
-                onChange={(s) => setNewEvolution({ ...newEvolution, conductUpdateOptions: s })} 
-                isEditing={true} 
-              />
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-[#004c99] uppercase tracking-widest">Resposta ao Tratamento / Nova Conduta <span className="opacity-50">(Enviado ao PIA)</span></label>
-                <textarea
-                  value={newEvolution.updatedConduct || newEvolution.treatmentResponse}
-                  onChange={e => setNewEvolution({ ...newEvolution, updatedConduct: e.target.value, treatmentResponse: e.target.value })}
-                  className="w-full p-3 border border-blue-200 bg-blue-50/30 rounded-xl text-xs focus:ring-2 outline-none transition-all min-h-[80px]"
-                  placeholder="Resposta aos objetivos propostos e nova conduta..."
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Considerações Finais / Encaminhamentos</label>
-                <textarea
-                  value={newEvolution.finalObservations}
-                  onChange={e => setNewEvolution({ ...newEvolution, finalObservations: e.target.value })}
-                  className="w-full p-3 border border-gray-200 rounded-xl text-xs focus:ring-2 outline-none transition-all min-h-[60px]"
-                  placeholder="Anotações extras..."
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <button 
-                  onClick={() => setIsAddingEvolution(false)}
-                  className="px-6 py-3 text-[10px] font-black uppercase text-gray-500 hover:bg-gray-100 rounded-xl transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportEvolutionPDF}
-                  className="px-6 py-3 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl flex items-center gap-2 shadow-sm transition-all font-black text-[10px] uppercase border"
-                >
-                  <Printer size={16} />
-                  Exportar PDF
-                </button>
-                <button 
-                  onClick={handleAddEvolution}
-                  className="px-6 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-2 transition-all"
-                >
-                  <Save size={16} /> Salvar Evolução
-                </button>
-              </div>
-            </div>
+            <StandardEvolutionForm 
+               areaLabel="Fisioterapêutica"
+               onSave={(data) => {
+                 const evolutions = resident.physiotherapy?.evolutions || [];
+                 const newEvolutions = [{ id: Date.now().toString(), ...data }, ...evolutions];
+                 onChange({
+...ptData,
+evolutions: newEvolutions as any
+});
+                 setIsAddingEvolution(false);
+               }}
+               onCancel={() => setIsAddingEvolution(false)}
+            />
           )}
 
-          <div className="space-y-4">
-            {(!ptData.evolutions || ptData.evolutions.length === 0) ? (
-              <div className="text-center p-8 bg-gray-50 rounded-2xl border-2 border-dashed">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Nenhuma evolução registrada</p>
-              </div>
-            ) : (
-              ptData.evolutions.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(evolution => (
-                <div key={evolution.id} className="bg-white p-5 rounded-2xl border shadow-sm group hover:shadow-md transition-all">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center justify-center p-3 bg-blue-50 text-[#004c99] rounded-xl">
-                      <Clock size={20} />
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-black text-gray-800 uppercase tracking-tighter">
-                        {new Date(evolution.date).toLocaleDateString('pt-BR')}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <ChecklistGroup label="Situação Funcional" options={currentSituationOptionsList} selected={evolution.currentSituationOptions} onChange={() => {}} isEditing={false} />
-                    
-                    {evolution.evolutionDescription && (
-                      <div>
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Descrição</p>
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{evolution.evolutionDescription}</p>
-                      </div>
-                    )}
-                    
-                    {!evolution.evolutionDescription && evolution.description && (
-                      <div>
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Descrição</p>
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{evolution.description}</p>
-                      </div>
-                    )}
-
-                    <ChecklistGroup label="Evolução da Mobilidade" options={currentMobilityOptionsList} selected={evolution.currentMobilityOptions} onChange={() => {}} isEditing={false} />
-                    
-                    {evolution.functionalObservations && (
-                      <div>
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Observações Funcionais</p>
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{evolution.functionalObservations}</p>
-                      </div>
-                    )}
-
-                    <ChecklistGroup label="Atualização de Objetivos (PIA)" options={piaGoalsUpdateOptionsList} selected={evolution.piaGoalsUpdateOptions} onChange={() => {}} isEditing={false} />
-                    
-                    {evolution.updatedGoals && (
-                      <div>
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Objetivos Ajustados</p>
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{evolution.updatedGoals}</p>
-                      </div>
-                    )}
-
-                    <ChecklistGroup label="Atualização de Conduta" options={conductUpdateOptionsList} selected={evolution.conductUpdateOptions} onChange={() => {}} isEditing={false} />
-
-                    {(evolution.updatedConduct || evolution.treatmentResponse) && (
-                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                        <p className="text-[10px] font-black text-[#004c99] uppercase tracking-widest mb-1">Conduta / Resposta</p>
-                        <p className="text-xs text-gray-700 whitespace-pre-wrap">{evolution.updatedConduct || evolution.treatmentResponse}</p>
-                      </div>
-                    )}
-
-                    {evolution.finalObservations && (
-                      <div className="pt-2 border-t">
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Considerações Finais</p>
-                        <p className="text-xs text-gray-700 whitespace-pre-wrap">{evolution.finalObservations}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+          {!isAddingEvolution && (
+            <StandardEvolutionHistory 
+               evolutions={(resident.physiotherapy?.evolutions as any) || []} 
+               areaLabel="Fisioterapêutica" 
+               renderLegacyDetails={(ev: any) => {
+                 if(!ev.evolutionDescription && !ev.functionalObservations && !ev.treatmentResponse) return null;
+                 return (
+                   <div className="mt-3 bg-gray-50 p-3 rounded-lg border text-xs text-gray-600">
+                       {ev.evolutionDescription && <p className="mb-2 whitespace-pre-wrap">{ev.evolutionDescription}</p>}
+                       {ev.functionalObservations && <p><strong>Observações Funcionais:</strong> {ev.functionalObservations}</p>}
+                       {ev.treatmentResponse && <p><strong>Resposta ao Tratamento:</strong> {ev.treatmentResponse}</p>}
+                   </div>
+                 );
+               }}
+            />
+          )}
         </div>
       )}
-
       {activeSubTab === 'atendimentos' && (
         <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
           <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center bg-blue-50/50 p-4 border rounded-2xl gap-4">

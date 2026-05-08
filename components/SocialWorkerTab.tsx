@@ -27,12 +27,12 @@ export default function SocialWorkerTab({ resident, onChange }: SocialWorkerTabP
 
     // Nutrition
     if (resident.nutrition?.evolutions) {
-      const recentNutri = resident.nutrition.evolutions.filter(e => new Date(e.date) >= thirtyDaysAgo);
+      const recentNutri = resident.nutrition.evolutions.filter(e => new Date(e.dataEvolucao || e.date) >= thirtyDaysAgo);
       if (recentNutri.length > 0) {
         updates.push(`*Nutrição (Evoluções):*`);
         recentNutri.forEach(e => {
-            const parts = [e.weight ? `Peso: ${e.weight}kg` : '', e.foodAcceptance ? `Aceitação: ${e.foodAcceptance}` : ''].filter(Boolean);
-            updates.push(`- ${formatDt(new Date(e.date))}: ${parts.join(', ') || 'Evolução registrada.'}`);
+            const parts = [e.descricaoEvolucao ? `${e.descricaoEvolucao}` : '', e.weight ? `Peso: ${e.weight}kg` : '', e.foodAcceptance ? `Aceitação: ${e.foodAcceptance}` : ''].filter(Boolean);
+            updates.push(`- ${formatDt(new Date(e.dataEvolucao || e.date))}: ${parts.join(', ') || 'Evolução registrada.'}`);
         });
       }
     }
@@ -40,15 +40,16 @@ export default function SocialWorkerTab({ resident, onChange }: SocialWorkerTabP
 
     // Psychology
     if (resident.psychology?.evolutions) {
-      const recentPsi = resident.psychology.evolutions.filter(e => new Date(e.date) >= thirtyDaysAgo);
+      const recentPsi = resident.psychology.evolutions.filter(e => new Date(e.dataEvolucao || e.date) >= thirtyDaysAgo);
       if (recentPsi.length > 0) {
         updates.push(`*Psicologia (Evoluções):*`);
         recentPsi.forEach(e => {
             const parts = [
+                e.descricaoEvolucao ? `${e.descricaoEvolucao}` : '',
                 e.institutionalAdaptationStatus ? `Adaptação: ${e.institutionalAdaptationStatus}` : '',
                 e.moodBehaviorEvolution ? `Humor: ${e.moodBehaviorEvolution}` : ''
             ].filter(Boolean);
-            updates.push(`- ${formatDt(new Date(e.date))}: ${parts.join(' | ') || 'Evolução registrada.'}`);
+            updates.push(`- ${formatDt(new Date(e.dataEvolucao || e.date))}: ${parts.join(' | ') || 'Evolução registrada.'}`);
         });
       }
     }
@@ -56,15 +57,16 @@ export default function SocialWorkerTab({ resident, onChange }: SocialWorkerTabP
     
     // Occupational Therapy
     if (resident.occupationalTherapy?.evolutions) {
-      const recentTo = resident.occupationalTherapy.evolutions.filter(e => new Date(e.date) >= thirtyDaysAgo);
+      const recentTo = resident.occupationalTherapy.evolutions.filter(e => new Date(e.dataEvolucao || e.date) >= thirtyDaysAgo);
       if (recentTo.length > 0) {
         updates.push(`*Terapia Ocupacional (Evoluções):*`);
         recentTo.forEach(e => {
             const parts = [
+                e.descricaoEvolucao ? `${e.descricaoEvolucao}` : '',
                 e.functionalEvolution ? `Evolução Funcional: ${e.functionalEvolution}` : '', 
                 e.participationEvolution ? `Participação: ${e.participationEvolution}` : ''
             ].filter(Boolean);
-            updates.push(`- ${formatDt(new Date(e.date))}: ${parts.join(' | ') || 'Evolução registrada.'}`);
+            updates.push(`- ${formatDt(new Date(e.dataEvolucao || e.date))}: ${parts.join(' | ') || 'Evolução registrada.'}`);
         });
       }
     }
@@ -72,15 +74,16 @@ export default function SocialWorkerTab({ resident, onChange }: SocialWorkerTabP
 
     // Physiotherapy
     if (resident.physiotherapy?.evolutions) {
-      const recentFisio = resident.physiotherapy.evolutions.filter(e => new Date(e.date) >= thirtyDaysAgo);
+      const recentFisio = resident.physiotherapy.evolutions.filter(e => new Date(e.dataEvolucao || e.date) >= thirtyDaysAgo);
       if (recentFisio.length > 0) {
         updates.push(`*Fisioterapia (Evoluções):*`);
         recentFisio.forEach(e => {
             const parts = [
+                e.descricaoEvolucao ? `${e.descricaoEvolucao}` : '',
                 e.description ? `Descrição: ${e.description}` : '',
                 e.treatmentResponse ? `Resposta: ${e.treatmentResponse}` : ''
             ].filter(Boolean);
-            updates.push(`- ${formatDt(new Date(e.date))}: ${parts.join(' | ') || 'Evolução registrada.'}`);
+            updates.push(`- ${formatDt(new Date(e.dataEvolucao || e.date))}: ${parts.join(' | ') || 'Evolução registrada.'}`);
         });
       }
     }

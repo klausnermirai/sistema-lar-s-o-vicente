@@ -1,6 +1,7 @@
 import { getProfessionalSignature } from '../lib/api';
 import React from "react";
 import {
+  Edit,
   Plus,
   ChevronRight,
   Search,
@@ -28,6 +29,8 @@ import {
   Users,
   FileDown,
   Bed,
+  Check,
+  ChevronDown
 } from "lucide-react";
 import RoomMappingModal from "./RoomMappingModal";
 import {
@@ -117,6 +120,231 @@ const STAGE_THEMES: Record<
   },
 };
 
+function EmployeeSelect({ 
+  employees, 
+  value, 
+  onChange, 
+  placeholder = "Selecione o funcionário...", 
+  filterFunction,
+  emptyMessage = "Nenhum funcionário encontrado."
+}: { 
+  employees: any[], 
+  value: string, 
+  onChange: (id: string, emp: any) => void, 
+  placeholder?: string,
+  filterFunction?: (emp: any) => boolean,
+  emptyMessage?: string
+}) {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  if (!employees || employees.length === 0) {
+    return <div className="text-xs text-gray-500 italic p-3 border border-gray-100 rounded-xl bg-gray-50">Nenhum funcionário cadastrado para esta entidade.</div>;
+  }
+
+  let filteredList = employees;
+  if (filterFunction) {
+    const listTemp = employees.filter(filterFunction);
+    if (listTemp.length > 0) filteredList = listTemp; // Fallback to all if empty based on filter... wait, prompt said "se houver funcionarios mas nenhum com funcao, exibir a lista geral ou orientacao" -> okay, let's keep all if listTemp is empty.
+    else filteredList = employees;
+  }
+
+  const searchResults = filteredList.filter(e => {
+    const name = (e.nomeExibicao || e.nomeCompleto || "").toLowerCase();
+    const role = (e.funcao || "").toLowerCase();
+    return name.includes(search.toLowerCase()) || role.includes(search.toLowerCase());
+  });
+
+  const selectedEmp = employees.find(e => e.id === value);
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <div 
+        className="w-full p-4 border border-gray-100 rounded-xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all outline-none flex items-center justify-between cursor-pointer"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <span className={selectedEmp ? "text-gray-900" : "text-gray-400"}>
+          {selectedEmp ? `${selectedEmp.nomeExibicao || selectedEmp.nomeCompleto} ${selectedEmp.funcao ? `- ${selectedEmp.funcao}` : ''}` : placeholder}
+        </span>
+        <ChevronDown size={16} className="text-gray-400" />
+      </div>
+      
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 flex flex-col">
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
+              <input 
+                type="text" 
+                autoFocus
+                placeholder="Buscar pelo nome..." 
+                className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-transparent focus:border-blue-300 rounded-lg text-xs font-bold outline-none"
+                value={search}
+                onClick={e => e.stopPropagation()}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="overflow-y-auto p-1 flex-1">
+            {searchResults.length === 0 ? (
+              <div className="p-3 text-center text-xs text-gray-400 italic">
+                {emptyMessage}
+              </div>
+            ) : (
+              searchResults.map(emp => (
+                <div 
+                  key={emp.id}
+                  className={`p-3 text-xs font-bold rounded-lg cursor-pointer hover:bg-blue-50 flex flex-col ${value === emp.id ? 'bg-blue-100 text-blue-800' : 'text-gray-700'}`}
+                  onClick={() => {
+                    onChange(emp.id, emp);
+                    setIsOpen(false);
+                    setSearch("");
+                  }}
+                >
+                  <span className="uppercase">{emp.nomeExibicao || emp.nomeCompleto}</span>
+                  {emp.funcao && <span className="text-[10px] text-gray-500 font-medium uppercase mt-0.5">{emp.funcao}</span>}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmployeeMultiSelect({ 
+  employees, 
+  values, 
+  onChange, 
+  placeholder = "Selecione um ou mais profissionais..."
+}: { 
+  employees: any[], 
+  values: {id: string, nome: string, funcao?: string, documento?: string}[], 
+  onChange: (list: any[]) => void, 
+  placeholder?: string
+}) {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  if (!employees || employees.length === 0) {
+    return <div className="text-xs text-gray-500 italic p-3 border border-gray-100 rounded-xl bg-gray-50">Nenhum funcionário cadastrado para esta entidade.</div>;
+  }
+
+  const searchResults = employees.filter(e => {
+    const name = (e.nomeExibicao || e.nomeCompleto || "").toLowerCase();
+    const role = (e.funcao || "").toLowerCase();
+    return name.includes(search.toLowerCase()) || role.includes(search.toLowerCase());
+  });
+
+  const valueIds = values.map(v => v.id);
+
+  const toggleEmp = (emp: any) => {
+    if (valueIds.includes(emp.id)) {
+      onChange(values.filter(v => v.id !== emp.id));
+    } else {
+      const doc = emp.conselhoProfissional && emp.numeroRegistro ? `${emp.conselhoProfissional}${emp.ufRegistro ? `/${emp.ufRegistro}` : ''} nº ${emp.numeroRegistro}` : "";
+      onChange([...values, { id: emp.id, nome: emp.nomeExibicao || emp.nomeCompleto, funcao: emp.funcao, documento: doc }]);
+    }
+  };
+
+  const removeEmp = (e: React.MouseEvent, idToRemove: string) => {
+    e.stopPropagation();
+    onChange(values.filter(v => v.id !== idToRemove));
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <div 
+        className="w-full min-h-[50px] p-2 border border-gray-100 rounded-xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all outline-none flex items-center justify-between cursor-pointer"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <div className="flex flex-wrap gap-2 flex-1">
+          {values.length === 0 ? (
+            <span className="text-gray-400 p-2">{placeholder}</span>
+          ) : (
+            values.map(v => (
+              <div key={v.id} className="bg-blue-100 text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                <span>{v.nome} {v.funcao ? `(${v.funcao})` : ''}</span>
+                <X size={14} className="text-blue-600 hover:text-blue-800 cursor-pointer" onClick={(e) => removeEmp(e, v.id)} />
+              </div>
+            ))
+          )}
+        </div>
+        <ChevronDown size={16} className="text-gray-400 ml-2 mr-2 flex-shrink-0" />
+      </div>
+      
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 flex flex-col">
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
+              <input 
+                type="text" 
+                autoFocus
+                placeholder="Buscar pelo nome..." 
+                className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-transparent focus:border-blue-300 rounded-lg text-xs font-bold outline-none"
+                value={search}
+                onClick={e => e.stopPropagation()}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="overflow-y-auto p-1 flex-1">
+            {searchResults.length === 0 ? (
+              <div className="p-3 text-center text-xs text-gray-400 italic">
+                Nenhum funcionário encontrado.
+              </div>
+            ) : (
+              searchResults.map(emp => {
+                const isSelected = valueIds.includes(emp.id);
+                return (
+                  <div 
+                    key={emp.id}
+                    className="p-3 text-xs font-bold rounded-lg cursor-pointer hover:bg-blue-50 flex items-center justify-between text-gray-700"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleEmp(emp);
+                    }}
+                  >
+                    <div className="flex flex-col">
+                      <span className="uppercase">{emp.nomeExibicao || emp.nomeCompleto}</span>
+                      {emp.funcao && <span className="text-[10px] text-gray-500 font-medium uppercase mt-0.5">{emp.funcao}</span>}
+                    </div>
+                    {isSelected && <Check size={16} className="text-blue-600" />}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const ScreeningModule: React.FC<ScreeningModuleProps> = ({
   candidates,
   onSave,
@@ -145,6 +373,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
   const [managingCandidate, setManagingCandidate] =
     React.useState<Candidate | null>(null);
   const [isCreatingSimple, setIsCreatingSimple] = React.useState(false);
+  const [readOnlyForm, setReadOnlyForm] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState("");
   const [selectedStage, setSelectedStage] =
     React.useState<CandidateStage>("agendamentos");
@@ -213,35 +442,42 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
   }[] = [
     {
       id: "agendamentos",
-      label: "1. Agendamentos / Entrevista",
+      label: "1. Primeiro Contato",
       icon: Calendar,
       color: "indigo",
-      description: "Agendamento e primeira entrevista social.",
+      description: "Primeiro registro da demanda.",
+    },
+    {
+      id: "visita_social",
+      label: "2. Visita Social",
+      icon: UserCheck,
+      color: "blue",
+      description: "Registro da visita social realizada.",
     },
     {
       id: "aguardando_vaga",
-      label: "2. Fila de Espera",
+      label: "3. Fila de Espera",
       icon: Clock,
       color: "orange",
       description: "Aptos aguardando vaga disponível.",
     },
     {
       id: "decisao_diretoria",
-      label: "3. Diretoria",
+      label: "4. Diretoria",
       icon: Scale,
       color: "purple",
       description: "Análise de prioridade em ata de reunião.",
     },
     {
       id: "avaliacao_medica",
-      label: "4. Médico/Parecer",
+      label: "5. Médico/Parecer",
       icon: HeartPulse,
       color: "teal",
       description: "Avaliação clínica de compatibilidade.",
     },
     {
       id: "integracao",
-      label: "5. Integração",
+      label: "6. Integração",
       icon: Calendar,
       color: "pink",
       description: "Contratos e tarde de experiência.",
@@ -390,7 +626,18 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
     (c) => c.stage === "acolhido",
   );
 
-  const handleSaveSimpleAppointment = (data: Partial<Candidate>) => {
+  const handleSaveSimpleAppointment = (data: Partial<Candidate> & { contactName?: string; contactPhone?: string; contactRelation?: string; time?: string; }) => {
+    let authorName = "Usuário do Sistema";
+    if (typeof localStorage !== 'undefined') {
+        const professionalDataStr = localStorage.getItem("@ilpi/professionalDetails");
+        if (professionalDataStr) {
+            try {
+                const parsed = JSON.parse(professionalDataStr);
+                if (parsed.name) authorName = parsed.name;
+            } catch (e) {}
+        }
+    }
+
     const newCandidate: Candidate = {
       ...INITIAL_CANDIDATE,
       id: `C${Date.now()}`,
@@ -401,18 +648,24 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
       requestDescription: data.requestDescription || "",
       scheduledDate:
         data.scheduledDate || new Date().toISOString().split("T")[0],
+      scheduledPeriod: data.time ? (parseInt(data.time.split(':')[0]) < 12 ? 'manha' : 'tarde') : undefined,
       stage: "agendamentos",
       createdAt: new Date().toISOString(),
+      contactName: data.contactName || "",
+      contactPhone: data.contactPhone || "",
+      contactRelation: data.contactRelation || "",
+      registeredBy: authorName,
+      scheduledNotes: data.requestDescription || "",
     };
     onSave(newCandidate);
     
     // Convert and save to Agenda
-    const agendaEvent: any = { // Use any briefly to bypass tight type check if needed, though AgendaEvent is fine
+    const agendaEvent: any = { 
       id: `triagem-${newCandidate.id}`,
       institutionId: settings?.cnpj || 'default-inst',
       title: `Pré-Triagem: ${newCandidate.name}`,
       date: newCandidate.scheduledDate,
-      time: "09:00", // Default time as we don't capture time in simple appointment
+      time: data.time || "09:00",
       description: newCandidate.requestDescription || 'Agendamento de triagem inicial',
       professionalName: 'Assistência Social',
       professionalRole: 'Serviço Social',
@@ -432,19 +685,23 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
         candidate={editingCandidate}
         autoPrint={shouldAutoPrint}
         settings={settings}
+        readOnly={readOnlyForm}
         onSave={(data: any) => {
           onSave(data);
           setEditingCandidate(null);
           setShouldAutoPrint(false);
+          setReadOnlyForm(false);
         }}
         onCancel={() => {
           setEditingCandidate(null);
           setShouldAutoPrint(false);
+          setReadOnlyForm(false);
         }}
         onAdmit={() => {
           onAdmit(editingCandidate);
           setEditingCandidate(null);
           setShouldAutoPrint(false);
+          setReadOnlyForm(false);
         }}
       />
     );
@@ -525,7 +782,7 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
               className="flex-1 sm:flex-none bg-[#004c99] hover:bg-blue-800 text-white px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all font-black text-xs uppercase"
             >
               <Plus size={18} />
-              <span>Novo Agendamento</span>
+              <span>Novo Primeiro Contato</span>
             </button>
           </div>
         </div>
@@ -883,7 +1140,8 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
             setManagingCandidate(null);
             if (autoPrint) setShouldAutoPrint(true);
           }}
-          onOpenFullForm={(cand: Candidate) => {
+          onOpenFullForm={(cand: Candidate, viewOnly?: boolean) => {
+            setReadOnlyForm(!!viewOnly);
             setEditingCandidate(cand);
             setManagingCandidate(null);
           }}
@@ -918,17 +1176,21 @@ function SimpleAppointmentModal({
     requestOrigin: "CONTATO DIRETO" as any,
     requestDescription: "",
     scheduledDate: new Date().toISOString().split("T")[0],
+    time: "",
+    contactName: "",
+    contactPhone: "",
+    contactRelation: "",
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!data.name || !data.phone || !data.scheduledDate) return;
+    if (!data.name || !data.scheduledDate) return;
     onSave(data);
   };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
-      <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="p-6 md:p-8 border-b bg-indigo-50/50 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-xl border border-indigo-100 flex-shrink-0">
@@ -936,7 +1198,7 @@ function SimpleAppointmentModal({
             </div>
             <div>
               <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">
-                Novo Agendamento
+                Novo Primeiro Contato / Contato Inicial
               </h3>
               <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest hidden sm:block">
                 Pré-Triagem / Registro Inicial
@@ -952,128 +1214,183 @@ function SimpleAppointmentModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 md:p-10 space-y-6 overflow-y-auto flex-1">
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
-              Nome do Idoso *
-            </label>
-            <input
-              required
-              autoFocus
-              value={data.name}
-              onChange={(e) =>
-                setData((prev) => ({ ...prev, name: e.target.value }))
-              }
-              className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
-              placeholder="NOME COMPLETO..."
-            />
+          <div className="space-y-4">
+            <h4 className="text-xs font-black uppercase tracking-widest bg-gray-100 text-gray-500 py-1 px-3 rounded inline-block">1. Sobre o Solicitante</h4>
+            
+            <div className="grid grid-cols-2 gap-4">
+               <div className="space-y-2">
+                 <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                   Nome do Solicitante
+                 </label>
+                 <input
+                   autoFocus
+                   value={data.contactName}
+                   onChange={(e) =>
+                     setData((prev) => ({ ...prev, contactName: e.target.value }))
+                   }
+                   className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
+                   placeholder="NOME DO CONTATO..."
+                 />
+               </div>
+               <div className="space-y-2">
+                 <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                   Telefone do Solicitante
+                 </label>
+                 <div className="relative">
+                   <Phone
+                     className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300"
+                     size={14}
+                   />
+                   <input
+                     value={data.contactPhone}
+                     onChange={(e) =>
+                       setData((prev) => ({ ...prev, contactPhone: e.target.value }))
+                     }
+                     className="w-full pl-10 pr-4 py-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
+                     placeholder="(00) 00000-0000"
+                   />
+                 </div>
+               </div>
+            </div>
+            <div className="space-y-2">
+               <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                 Relação / Parentesco com o Idoso
+               </label>
+               <input
+                 value={data.contactRelation}
+                 onChange={(e) =>
+                   setData((prev) => ({ ...prev, contactRelation: e.target.value }))
+                 }
+                 className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
+                 placeholder="EX: FILHO, CÔNJUGE, ASSISTENTE SOCIAL..."
+               />
+             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4 pt-4 border-t border-dashed">
+            <h4 className="text-xs font-black uppercase tracking-widest bg-gray-100 text-gray-500 py-1 px-3 rounded inline-block">2. Sobre o Idoso / Caso</h4>
+            
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
-                Telefone Contato *
+                Nome do Idoso *
               </label>
-              <div className="relative">
-                <Phone
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300"
-                  size={14}
-                />
-                <input
+              <input
+                required
+                value={data.name}
+                onChange={(e) =>
+                  setData((prev) => ({ ...prev, name: e.target.value }))
+                }
+                className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
+                placeholder="NOME COMPLETO..."
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+               <div className="space-y-2">
+                 <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                   Telefone do Idoso
+                 </label>
+                 <div className="relative">
+                   <Phone
+                     className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300"
+                     size={14}
+                   />
+                   <input
+                     value={data.phone}
+                     onChange={(e) =>
+                       setData((prev) => ({ ...prev, phone: e.target.value }))
+                     }
+                     className="w-full pl-10 pr-4 py-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
+                     placeholder="(Opcional)"
+                   />
+                 </div>
+               </div>
+               <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                  Origem do Pedido *
+                </label>
+                <select
                   required
-                  value={data.phone}
+                  value={data.requestOrigin}
                   onChange={(e) =>
-                    setData((prev) => ({ ...prev, phone: e.target.value }))
+                    setData((prev) => ({
+                      ...prev,
+                      requestOrigin: e.target.value as any,
+                    }))
                   }
-                  className="w-full pl-10 pr-4 py-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
-                  placeholder="(00) 00000-0000"
+                  className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none bg-white"
+                >
+                  <option value="CREAS/PREFEITURA">CREAS/PREFEITURA</option>
+                  <option value="JUDICIAL">JUDICIAL</option>
+                  <option value="CONFERÊNCIAS">CONFERÊNCIAS</option>
+                  <option value="CONTATO DIRETO">CONTATO DIRETO</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                Motivo / Comentário Inicial
+              </label>
+              <textarea
+                value={data.requestDescription}
+                onChange={(e) =>
+                  setData((prev) => ({
+                    ...prev,
+                    requestDescription: e.target.value,
+                  }))
+                }
+                placeholder="REGISTRE O MOTIVO OU BREVE RELATO DO CONTATO..."
+                className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none h-24 resize-none"
+              />
+            </div>
+          </div>
+          
+          <div className="space-y-4 pt-4 border-t border-dashed">
+            <h4 className="text-xs font-black uppercase tracking-widest bg-gray-100 text-gray-500 py-1 px-3 rounded inline-block">3. Agendamento / Previsão</h4>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                  Data Prevista *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={data.scheduledDate}
+                  onChange={(e) =>
+                    setData((prev) => ({
+                      ...prev,
+                      scheduledDate: e.target.value,
+                    }))
+                  }
+                  className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                  Horário (Opcional)
+                </label>
+                <input
+                  type="time"
+                  value={data.time}
+                  onChange={(e) =>
+                    setData((prev) => ({
+                      ...prev,
+                      time: e.target.value,
+                    }))
+                  }
+                  className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
-                Data do contato *
-              </label>
-              <input
-                type="date"
-                required
-                value={data.scheduledDate}
-                onChange={(e) =>
-                  setData((prev) => ({
-                    ...prev,
-                    scheduledDate: e.target.value,
-                  }))
-                }
-                className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
-              Endereço da Visita
-            </label>
-            <div className="relative">
-              <MapPin
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300"
-                size={14}
-              />
-              <input
-                value={data.address}
-                onChange={(e) =>
-                  setData((prev) => ({ ...prev, address: e.target.value }))
-                }
-                className="w-full pl-10 pr-4 py-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none"
-                placeholder="RUA, NÚMERO, BAIRRO..."
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
-                Origem do Pedido *
-              </label>
-              <select
-                required
-                value={data.requestOrigin}
-                onChange={(e) =>
-                  setData((prev) => ({
-                    ...prev,
-                    requestOrigin: e.target.value as any,
-                  }))
-                }
-                className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none bg-white"
-              >
-                <option value="CREAS/PREFEITURA">CREAS/PREFEITURA</option>
-                <option value="JUDICIAL">JUDICIAL</option>
-                <option value="CONFERÊNCIAS">CONFERÊNCIAS</option>
-                <option value="CONTATO DIRETO">CONTATO DIRETO</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
-              Descrição / Breve Relato
-            </label>
-            <textarea
-              value={data.requestDescription}
-              onChange={(e) =>
-                setData((prev) => ({
-                  ...prev,
-                  requestDescription: e.target.value,
-                }))
-              }
-              placeholder="DESCREVA BREVEMENTE O CASO..."
-              className="w-full p-4 border border-gray-200 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-100 outline-none h-24 resize-none"
-            />
           </div>
 
           <button
             type="submit"
-            className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+            className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 mt-4"
           >
-            Cadastrar Agendamento <ArrowRight size={16} />
+            Cadastrar Registro Inicial <ArrowRight size={16} />
           </button>
         </form>
       </div>
@@ -1185,13 +1502,67 @@ function StatusManagementModal({
                 >
                   <FileText size={18} /> INICIAR / EDITAR ENTREVISTA
                 </button>
-                <button
-                  onClick={() => advanceStage("aguardando_vaga")}
-                  className="w-full py-3.5 bg-indigo-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3"
-                >
-                  <ArrowRight size={20} /> ENVIAR PARA FILA DE ESPERA
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => advanceStage("visita_social")}
+                    className="flex-1 py-3.5 bg-blue-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    <ArrowRight size={18} /> INICIAR VISITA SOCIAL
+                  </button>
+                  <button
+                    onClick={() => advanceStage("aguardando_vaga")}
+                    className="flex-1 py-3.5 bg-orange-50 text-orange-600 border border-orange-200 rounded-2xl text-[10px] font-black uppercase hover:bg-orange-100 transition-all flex items-center justify-center gap-2"
+                    title="Pular visita social e ir direto para fila"
+                  >
+                    PULAR PARA FILA <ArrowRight size={16} />
+                  </button>
+                </div>
               </div>
+            </div>
+          </div>
+        );
+      case "visita_social":
+        return (
+          <div className="space-y-6">
+            <div className="p-5 bg-blue-50 border border-blue-100 rounded-2xl flex items-start gap-4">
+              <UserCheck className="text-blue-500 shrink-0" size={20} />
+              <div className="space-y-1">
+                <p className="text-[11px] font-black text-blue-900 uppercase">
+                  Visita Social
+                </p>
+                <p className="text-[10px] text-blue-800 leading-relaxed font-medium">
+                  Preencha o formulário da Visita Social na ficha completa antes de enviar para a Fila de Espera.
+                </p>
+              </div>
+            </div>
+            
+            {!data.visitaSocialRelato && (
+               <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold uppercase rounded-xl flex items-center gap-2">
+                 <AlertCircle size={14} /> Recomenda-se registrar a Visita Social na ficha antes de encaminhar.
+               </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                onClick={() => onOpenFullForm(data, false)}
+                className="w-full py-3.5 bg-white border-2 border-blue-600 text-blue-600 rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-blue-50 transition-all flex items-center justify-center gap-3"
+              >
+                <FileText size={18} /> ABRIR FICHA / PREENCHER VISITA
+              </button>
+              
+              <button
+                onClick={() => regressStage("agendamentos")}
+                className="w-full py-3.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-2xl text-[11px] font-black uppercase hover:bg-blue-100 transition-all flex items-center justify-center gap-2"
+              >
+                <ArrowLeft size={16} /> Devolver para Primeiro Contato
+              </button>
+
+              <button
+                onClick={() => advanceStage("aguardando_vaga")}
+                className="w-full py-4 bg-orange-500 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-orange-600 transition-all flex items-center justify-center gap-2 mt-2"
+              >
+                Enviar para Fila de Espera <ArrowRight size={16} />
+              </button>
             </div>
           </div>
         );
@@ -1231,11 +1602,33 @@ function StatusManagementModal({
               </select>
             </div>
             <div className="grid grid-cols-1 gap-3">
+
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <button
+                  onClick={() => onOpenFullForm(data, true)}
+                  className="w-full py-3.5 bg-white border border-gray-200 text-gray-700 rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <FileText size={16} /> Ver Ficha
+                </button>
+                <button
+                  onClick={() => onOpenFullForm(data, false)}
+                  className="w-full py-3.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-indigo-100 transition-all flex items-center justify-center gap-2"
+                >
+                  <Edit size={16} /> Editar Ficha
+                </button>
+                <button
+                  onClick={() => onEdit(true)}
+                  className="w-full py-3.5 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+                >
+                  <Printer size={16} /> Gerar PDF
+                </button>
+              </div>
               <button
-                onClick={() => regressStage("agendamentos")}
+                onClick={() => regressStage("visita_social")}
                 className="w-full py-4 bg-orange-50 border border-orange-200 text-orange-700 rounded-2xl text-[11px] font-black uppercase hover:bg-orange-100 transition-all flex items-center justify-center gap-2"
               >
-                <ArrowLeft size={16} /> Devolver para Agendamentos
+                <ArrowLeft size={16} /> Devolver para Visita Social
               </button>
               <button
                 onClick={() => advanceStage("decisao_diretoria")}
@@ -1280,15 +1673,26 @@ function StatusManagementModal({
                 <ArrowLeft size={16} /> Devolver para Fila de Espera
               </button>
 
-              <button
-                onClick={() => {
-                  onSave(data);
-                  onEdit(true);
-                }}
-                className="w-full py-3.5 bg-gray-900 border-2 border-gray-900 text-white rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
-              >
-                <Printer size={16} /> Acessar Ficha p/ Gerar PDF
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    onSave(data);
+                    onOpenFullForm(data);
+                  }}
+                  className="w-1/2 py-3.5 bg-white border border-gray-200 text-gray-700 rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <FileText size={16} /> Ver / Editar Ficha
+                </button>
+                <button
+                  onClick={() => {
+                    onSave(data);
+                    onEdit(true);
+                  }}
+                  className="w-1/2 py-3.5 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+                >
+                  <Printer size={16} /> Gerar PDF
+                </button>
+              </div>
 
               <div className="flex items-center gap-4 bg-gray-50 border p-2 rounded-xl">
                 <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Mural:</label>
@@ -1416,15 +1820,26 @@ function StatusManagementModal({
                 <ArrowLeft size={16} /> Devolver para Parecer da Diretoria
               </button>
 
-              <button
-                onClick={() => {
-                  onSave(data);
-                  onEdit(true);
-                }}
-                className="w-full py-3.5 bg-gray-900 border-2 border-gray-900 text-white rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
-              >
-                <Printer size={16} /> Acessar Ficha p/ Gerar PDF
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    onSave(data);
+                    onOpenFullForm(data);
+                  }}
+                  className="w-1/2 py-3.5 bg-white border border-gray-200 text-gray-700 rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <FileText size={16} /> Ver / Editar Ficha
+                </button>
+                <button
+                  onClick={() => {
+                    onSave(data);
+                    onEdit(true);
+                  }}
+                  className="w-1/2 py-3.5 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+                >
+                  <Printer size={16} /> Gerar PDF
+                </button>
+              </div>
               
               <div className="flex items-center gap-4 bg-gray-50 border p-2 rounded-xl">
                 <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Mural:</label>
@@ -1571,15 +1986,26 @@ function StatusManagementModal({
                 <ArrowLeft size={16} /> Devolver para Avaliação Médica
               </button>
 
-              <button
-                onClick={() => {
-                  onSave(data);
-                  handleGenerateFullReport();
-                }}
-                className="w-full py-3.5 bg-gray-900 border-2 border-gray-900 text-white rounded-2xl text-[11px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
-              >
-                <Printer size={16} /> Acessar Ficha p/ Gerar PDF
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    onSave(data);
+                    onOpenFullForm(data);
+                  }}
+                  className="w-1/2 py-3.5 bg-white border border-gray-200 text-gray-700 rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <FileText size={16} /> Ver / Editar Ficha
+                </button>
+                <button
+                  onClick={() => {
+                    onSave(data);
+                    handleGenerateFullReport();
+                  }}
+                  className="w-1/2 py-3.5 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+                >
+                  <Printer size={16} /> Gerar PDF
+                </button>
+              </div>
               
               <button
                 onClick={() => {
@@ -1620,12 +2046,20 @@ function StatusManagementModal({
                 </div>
               )}
 
-              <button
-                onClick={handleGenerateFullReport}
-                className="w-full py-4 bg-white border-2 border-gray-200 text-gray-500 rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
-              >
-                <FileText size={16} /> Ver Ficha Completa
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => onOpenFullForm(data)}
+                  className="w-1/2 py-3.5 bg-white border border-gray-200 text-gray-700 rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <FileText size={16} /> Ver Ficha
+                </button>
+                <button
+                  onClick={handleGenerateFullReport}
+                  className="w-1/2 py-3.5 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase shadow-sm hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+                >
+                  <Printer size={16} /> Gerar PDF
+                </button>
+              </div>
             </div>
           </div>
         );
@@ -1702,12 +2136,6 @@ function StatusManagementModal({
             <>
               {renderStageControls()}
               <div className="pt-6 border-t flex flex-col gap-3">
-                <button
-                  onClick={onEdit}
-                  className="w-full py-4 text-[10px] font-black text-[#004c99] bg-blue-50 hover:bg-blue-100 rounded-2xl uppercase flex items-center justify-center gap-3 transition-all"
-                >
-                  <FileText size={18} /> Acessar Ficha Completa
-                </button>
                 {data.stage !== "acolhido" && data.stage !== "arquivado" && (
                   <button
                     onClick={() => setView("archive")}
@@ -1817,7 +2245,9 @@ const FormLabel = ({ children }: any) => (
 
 const FormInput = (props: any) => (
   <input
+    autoComplete="off"
     {...props}
+    value={props.value || ""}
     className="w-full p-2 border-b-2 border-gray-100 focus:border-blue-600 outline-none text-xs font-black uppercase bg-transparent"
   />
 );
@@ -1853,7 +2283,7 @@ const FormMultiChoice = ({ label, value, current, onClick }: any) => {
 
 
 
-function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settings }: any) {
+function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settings, readOnly }: any) {
   const [data, setData] = React.useState<Candidate>(candidate);
   const [isPrinting, setIsPrinting] = React.useState(false);
 
@@ -1917,6 +2347,25 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
 
           <div class="header-box">
             <p>Módulo de Triagem e Acolhimento ILPI</p>
+          </div>
+
+          <h2 class="section-title">0. Dados do Agendamento / Primeiro Contato</h2>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Data de Contato:</span><span class="value">${data.scheduledDate ? new Date(data.scheduledDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''}</span></div>
+            <div class="flex-col field"><span class="label">Horário:</span><span class="value">${data.scheduledPeriod || ''}</span></div>
+            <div class="flex-col field"><span class="label">Origem do Pedido:</span><span class="value">${data.requestOrigin || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Nome do Solicitante:</span><span class="value">${data.contactName || ''}</span></div>
+            <div class="flex-col field"><span class="label">Telefone (Solicitante):</span><span class="value">${data.contactPhone || ''}</span></div>
+            <div class="flex-col field"><span class="label">Relação/Parentesco:</span><span class="value">${data.contactRelation || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col-full field"><span class="label">Motivo do Pedido / Comentário Inicial:</span><span class="value">${data.scheduledNotes || data.requestDescription || ''}</span></div>
+          </div>
+          <div class="flex-row">
+            <div class="flex-col field"><span class="label">Registrado Por:</span><span class="value">${data.registeredBy || ''}</span></div>
+            <div class="flex-col field"><span class="label">Data Registro:</span><span class="value">${data.createdAt ? new Date(data.createdAt).toLocaleDateString('pt-BR') : ''}</span></div>
           </div>
 
           <h2 class="section-title">1. Identificação do Idoso</h2>
@@ -2045,8 +2494,56 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
           <h2 class="section-title">10. Motivo do Pedido</h2>
           <div class="paragraph">${data.interview?.requestReason || ''}</div>
 
-          <h2 class="section-title">11. Parecer Social</h2>
+          ${data.visitaSocialRelato || data.visitaSocialData ? `
+            <h2 class="section-title">11. Visita Social</h2>
+            <div class="flex-row">
+              <div class="flex-col field"><span class="label">Data da Visita:</span><span class="value">${data.visitaSocialData ? new Date(data.visitaSocialData + 'T12:00:00').toLocaleDateString('pt-BR') : ''}</span></div>
+              <div class="flex-col field"><span class="label">Local:</span><span class="value">${data.visitaSocialLocal || ''}</span></div>
+            </div>
+            <div class="flex-row">
+              <div class="flex-col field"><span class="label">Assistente Social:</span><span class="value">${data.visitaSocialAssistenteNome || ''} ${data.visitaSocialAssistenteFuncao ? `— ${data.visitaSocialAssistenteFuncao}` : ''}</span></div>
+            </div>
+            <div class="flex-row">
+              <div class="flex-col-full field">
+                <span class="label">Profissionais Acompanhantes:</span>
+                <span class="value">
+                  ${data.visitaSocialProfissionaisLista && data.visitaSocialProfissionaisLista.length > 0 
+                    ? '<ul style="margin: 4px 0; padding-left: 16px;">' + data.visitaSocialProfissionaisLista.map(p => `<li>${p.nome} ${p.funcao ? `— ${p.funcao}` : ''}</li>`).join('') + '</ul>'
+                    : (data.visitaSocialProfissionais ? data.visitaSocialProfissionais : 'Nenhum profissional acompanhante.')}
+                </span>
+              </div>
+            </div>
+            <div class="flex-row">
+              <div class="flex-col-full field"><span class="label">Relato da Visita:</span><span class="value">${data.visitaSocialRelato || ''}</span></div>
+            </div>
+            <div class="flex-row">
+              <div class="flex-col-full field"><span class="label">Observações Relevantes:</span><span class="value">${data.visitaSocialObservacoes || ''}</span></div>
+            </div>
+            <div class="flex-row">
+              <div class="flex-col-full field"><span class="label">Encaminhamento após visita:</span><span class="value">${data.visitaSocialEncaminhamento || ''}</span></div>
+            </div>
+          ` : `
+            <h2 class="section-title">11. Visita Social</h2>
+            <div class="paragraph"><i>Visita social não registrada.</i></div>
+          `}
+
+          <h2 class="section-title">12. Parecer Social</h2>
           <div class="paragraph">${data.interview?.socialAnalysis || ''}</div>
+
+          ${data.boardOpinion ? `
+          <h2 class="section-title">13. Parecer da Diretoria</h2>
+          <div class="paragraph">${data.boardOpinion}</div>
+          ` : ''}
+
+          ${data.medicalOpinion ? `
+          <h2 class="section-title">14. Parecer Médico</h2>
+          <div class="paragraph">${data.medicalOpinion}</div>
+          ` : ''}
+
+          ${data.integrationReport ? `
+          <h2 class="section-title">15. Relatório de Integração</h2>
+          <div class="paragraph">${data.integrationReport}</div>
+          ` : ''}
 
           <div class="signature-box" style="margin-top: 40px; text-align: center;">
             <div class="signature-line" style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold; line-height: 1.4;">
@@ -2160,14 +2657,83 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
           >
             <Printer size={18} /> Gerar PDF
           </button>
+          {!readOnly && (
           <button
             onClick={() => onSave(data)}
             className="px-8 py-3 bg-[#004c99] text-white rounded-2xl text-xs font-black uppercase flex items-center gap-2 hover:bg-blue-800 shadow-2xl shadow-blue-200 transition-all"
           >
             <Save size={20} /> Salvar Alterações
           </button>
+          )}
         </div>
       </div>
+
+      <fieldset disabled={readOnly} className={readOnly ? "opacity-90 pointer-events-none" : ""}>
+      {/* Seção 0: Dados do Agendamento */}
+      <FormSection num="0" title="DADOS DO AGENDAMENTO / PRIMEIRO CONTATO">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-6 bg-indigo-50/30 p-6 rounded-2xl border border-indigo-100">
+           <div>
+            <FormLabel>Data de Contato / Agendada</FormLabel>
+            <FormInput
+              type="date"
+              value={data.scheduledDate || ""}
+              onChange={(e: any) => updateField("scheduledDate", e.target.value)}
+            />
+          </div>
+           <div>
+            <FormLabel>Origem do Pedido</FormLabel>
+            <select
+                value={data.requestOrigin}
+                onChange={(e) => updateField("requestOrigin", e.target.value)}
+                className="w-full p-2 border-b-2 border-gray-100 focus:border-indigo-600 outline-none text-xs font-black uppercase bg-transparent"
+              >
+                <option value="CREAS/PREFEITURA">CREAS/PREFEITURA</option>
+                <option value="JUDICIAL">JUDICIAL</option>
+                <option value="CONFERÊNCIAS">CONFERÊNCIAS</option>
+                <option value="CONTATO DIRETO">CONTATO DIRETO</option>
+            </select>
+          </div>
+           <div>
+            <FormLabel>Telefone do Solicitante</FormLabel>
+            <FormInput
+              value={data.contactPhone || ""}
+              onChange={(e: any) => updateField("contactPhone", e.target.value)}
+            />
+          </div>
+          
+           <div>
+            <FormLabel>Nome do Solicitante</FormLabel>
+            <FormInput
+              value={data.contactName || ""}
+              onChange={(e: any) => updateField("contactName", e.target.value)}
+            />
+          </div>
+           <div>
+            <FormLabel>Relação / Parentesco com o Idoso</FormLabel>
+            <FormInput
+              value={data.contactRelation || ""}
+              onChange={(e: any) => updateField("contactRelation", e.target.value)}
+            />
+          </div>
+           <div>
+            <FormLabel>Registrado Por</FormLabel>
+            <FormInput
+              disabled
+              value={data.registeredBy || ""}
+              className="w-full p-2 border-b-2 border-gray-100 outline-none text-xs font-black uppercase bg-transparent text-gray-400"
+            />
+          </div>
+
+          <div className="md:col-span-3">
+             <FormLabel>Motivo do Pedido / Comentário Inicial</FormLabel>
+             <textarea
+               value={data.scheduledNotes || data.requestDescription || ""}
+               onChange={(e) => updateField("scheduledNotes", e.target.value)}
+               className="w-full p-4 border border-gray-200 mt-2 rounded-xl text-xs font-black uppercase bg-white focus:ring-2 focus:ring-indigo-100 outline-none h-24 resize-none shadow-sm"
+             />
+          </div>
+        </div>
+      </FormSection>
 
       {/* Identificação */}
       <FormSection num="1" title="IDENTIFICAÇÃO DO IDOSO">
@@ -2759,17 +3325,126 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
       {/* Motivo Solicitação */}
       <FormSection num="10" title="MOTIVO DA SOLICITAÇÃO DO ACOLHIMENTO">
         <textarea
-          value={data.interview.requestReason}
+          value={data.interview?.requestReason || ""}
           onChange={(e) => updateInterview("requestReason", e.target.value)}
           placeholder="Descreva detalhadamente o motivo do pedido..."
           className="w-full p-8 border border-gray-100 rounded-2xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all h-60 outline-none leading-relaxed"
         />
       </FormSection>
 
+      {/* Visita Social */}
+      <FormSection num="11" title="VISITA SOCIAL">
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                Data da Visita
+              </label>
+              <input
+                type="date"
+                value={data.visitaSocialData || ""}
+                onChange={(e) => updateField("visitaSocialData", e.target.value)}
+                className="w-full p-4 border border-gray-100 rounded-xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all outline-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                Local da Visita
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: Residência do idoso, CREAS..."
+                value={data.visitaSocialLocal || ""}
+                onChange={(e) => updateField("visitaSocialLocal", e.target.value)}
+                className="w-full p-4 border border-gray-100 rounded-xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all outline-none"
+              />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+                Assistente Social Responsável
+              </label>
+              <EmployeeSelect
+                employees={settings?.employees || []}
+                value={data.visitaSocialAssistenteId || ""}
+                placeholder="Selecione a assistente social..."
+                onChange={(id, emp) => {
+                  updateField("visitaSocialAssistenteId", id);
+                  updateField("visitaSocialAssistenteNome", emp ? (emp.nomeExibicao || emp.nomeCompleto) : "");
+                  updateField("visitaSocialAssistenteFuncao", emp ? emp.funcao : "");
+                  updateField("visitaSocialAssistenteDoc", emp?.conselhoProfissional && emp?.numeroRegistro ? `${emp.conselhoProfissional}${emp.ufRegistro ? `/${emp.ufRegistro}` : ''} nº ${emp.numeroRegistro}` : "");
+                }}
+                filterFunction={(e) => Boolean(e.funcao?.toLowerCase().includes('social') || e.areaProfissional?.toLowerCase().includes('social'))}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1 mb-1 block">
+                Profissionais Acompanhantes
+              </label>
+              <EmployeeMultiSelect
+                employees={settings?.employees || []}
+                values={data.visitaSocialProfissionaisLista || []}
+                placeholder="Selecione um ou mais profissionais..."
+                onChange={(list) => {
+                  updateField("visitaSocialProfissionaisLista", list);
+                  // Manter compatibilidade com versão anterior salvando string
+                  updateField("visitaSocialProfissionais", list.map((l: any) => l.nome).join(", "));
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+              Relato da Visita Social
+            </label>
+            <textarea
+              value={data.visitaSocialRelato || ""}
+              onChange={(e) => updateField("visitaSocialRelato", e.target.value)}
+              placeholder="Descreva a visita de forma objetiva..."
+              className="w-full p-5 border border-gray-100 rounded-2xl bg-gray-50 text-xs font-medium focus:bg-white transition-all h-32 outline-none uppercase"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+              Observações Relevantes
+            </label>
+            <textarea
+              value={data.visitaSocialObservacoes || ""}
+              onChange={(e) => updateField("visitaSocialObservacoes", e.target.value)}
+              placeholder="Ex: Condições de higiene precárias..."
+              className="w-full p-5 border border-gray-100 rounded-xl bg-gray-50 text-xs font-medium focus:bg-white transition-all h-24 outline-none uppercase"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest ml-1">
+              Encaminhamento após visita
+            </label>
+            <select
+              value={data.visitaSocialEncaminhamento || ""}
+              onChange={(e) => updateField("visitaSocialEncaminhamento", e.target.value)}
+              className="w-full p-4 border border-gray-100 rounded-xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all outline-none"
+            >
+              <option value="">Selecione...</option>
+              <option value="Encaminhar para fila de espera">Encaminhar para fila de espera</option>
+              <option value="Solicitar documentos/informações">Solicitar documentos/informações</option>
+              <option value="Aguardar nova avaliação">Aguardar nova avaliação</option>
+              <option value="Prioridade social urgente">Prioridade social urgente</option>
+              <option value="Encerrar demanda">Encerrar demanda</option>
+              <option value="Outro">Outro</option>
+            </select>
+          </div>
+        </div>
+      </FormSection>
+
       {/* Parecer Social */}
-      <FormSection num="11" title="PARECER SOCIAL">
+      <FormSection num="12" title="PARECER SOCIAL">
         <textarea
-          value={data.interview.socialAnalysis}
+          value={data.interview?.socialAnalysis || ""}
           onChange={(e) => updateInterview("socialAnalysis", e.target.value)}
           placeholder="Parecer técnico da Assistente Social..."
           className="w-full p-8 border-l-8 border-l-[#004c99] border-y border-r border-gray-100 rounded-2xl bg-gray-50 text-xs font-black uppercase focus:bg-white transition-all h-60 outline-none leading-relaxed"
@@ -2804,11 +3479,22 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
             className="w-full mt-2 p-3 border border-gray-200 rounded-xl bg-gray-50 text-xs font-black uppercase focus:bg-white focus:border-blue-300 outline-none transition-all"
           >
             <option value="">Selecione a Assistente Social (Ou use a Padrão Automática)</option>
-            {settings?.employees
-              ?.filter((e: any) => e.funcao?.toLowerCase().includes('social') || e.areaProfissional?.toLowerCase().includes('social'))
-              .map((e: any) => (
-              <option key={e.id} value={e.id}>{e.nomeExibicao || e.nomeCompleto} - {e.funcao}</option>
-            ))}
+            <optgroup label="Assistentes Sociais">
+              {settings?.employees
+                ?.filter((e: any) => e.funcao?.toLowerCase().includes('social') || e.areaProfissional?.toLowerCase().includes('social'))
+                .map((e: any) => (
+                  <option key={e.id} value={e.id}>{e.nomeExibicao || e.nomeCompleto} - {e.funcao}</option>
+                ))
+              }
+            </optgroup>
+            <optgroup label="Outros Profissionais">
+              {settings?.employees
+                ?.filter((e: any) => !(e.funcao?.toLowerCase().includes('social') || e.areaProfissional?.toLowerCase().includes('social')))
+                .map((e: any) => (
+                  <option key={e.id} value={e.id}>{e.nomeExibicao || e.nomeCompleto} - {e.funcao}</option>
+                ))
+              }
+            </optgroup>
           </select>
           {!data.assistenteSocialResponsavelId && (
              <p className="text-[10px] text-gray-400 mt-2 italic font-bold">
@@ -2817,6 +3503,32 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
           )}
         </div>
       </FormSection>
+      {data.boardOpinion && (
+        <FormSection num="13" title="PARECER DA DIRETORIA">
+          <div className="p-4 bg-purple-50 text-purple-900 rounded-xl text-xs font-black uppercase whitespace-pre-wrap">
+            {data.boardOpinion}
+          </div>
+        </FormSection>
+      )}
+
+      {data.medicalOpinion && (
+        <FormSection num="14" title="PARECER MÉDICO">
+          <div className="p-4 bg-teal-50 text-teal-900 rounded-xl text-xs font-black uppercase whitespace-pre-wrap">
+            {data.medicalOpinion}
+          </div>
+        </FormSection>
+      )}
+
+      {data.integrationReport && (
+        <FormSection num="15" title="RELATÓRIO DE INTEGRAÇÃO (ACOLHIMENTO)">
+          <div className="p-4 bg-pink-50 text-pink-900 rounded-xl text-xs font-black uppercase whitespace-pre-wrap">
+            {data.integrationReport}
+          </div>
+        </FormSection>
+      )}
+
+      </fieldset>
+
     </div>
     </div>
   );

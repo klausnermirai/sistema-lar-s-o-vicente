@@ -223,7 +223,8 @@ export interface Medication {
 
 export type CandidateStage = 
   | 'agendamentos'
-  | 'entrevista' 
+  | 'entrevista'
+  | 'visita_social'
   | 'aguardando_vaga' 
   | 'decisao_diretoria' 
   | 'avaliacao_medica' 
@@ -374,12 +375,36 @@ export interface Candidate {
   archiveReason?: string;
   
   // Campos de Agendamento
+  contactName?: string;
+  contactPhone?: string;
+  contactRelation?: string;
+  registeredBy?: string;
   scheduledDate?: string;
   scheduledPeriod?: 'manha' | 'tarde' | 'noite';
   scheduledNotes?: string;
   requestOrigin?: 'CREAS/PREFEITURA' | 'JUDICIAL' | 'CONFERÊNCIAS' | 'CONTATO DIRETO';
   exams?: ExamRequest[];
   requestDescription?: string;
+
+  // Campos de Visita Social
+  visitaSocialData?: string;
+  visitaSocialLocal?: string;
+  visitaSocialAssistenteId?: string;
+  visitaSocialAssistenteNome?: string;
+  visitaSocialAssistenteFuncao?: string;
+  visitaSocialAssistenteDoc?: string;
+  visitaSocialProfissionais?: string; // (comma separated or multiple) Let's use string and allow comma separation
+  visitaSocialProfissionaisLista?: {
+    id: string;
+    nome: string;
+    funcao?: string;
+    documento?: string;
+  }[];
+  visitaSocialRelato?: string;
+  visitaSocialObservacoes?: string;
+  visitaSocialEncaminhamento?: string;
+  visitaSocialCriadoEm?: string;
+  visitaSocialAtualizadoEm?: string;
 
   // Níveis de Decisão
   boardOpinion?: string;
@@ -483,10 +508,25 @@ export interface NutritionalEvolution {
   weight?: number;
   weightVariationPercent?: number;
   foodAcceptance?: string;
-  changedConsistencyOrRoute: boolean;
+  changedConsistencyOrRoute?: boolean;
   changeJustification?: string;
   piaGoalStatus?: string;
   newConduct?: string;
+
+  // New Standard Evolution Fields
+  dataEvolucao?: string;
+  descricaoEvolucao?: string;
+  mudancasObservadas?: string;
+  novaConduta?: string;
+  recomendacoes?: string;
+  incluirNoPIA?: boolean;
+  profissionalId?: string;
+  profissionalNome?: string;
+  profissionalFuncao?: string;
+  profissionalRegistro?: string;
+  profissionalAssinaturaTexto?: string;
+  criadoEm?: string;
+  atualizadoEm?: string;
 }
 
 export interface NutritionalAttendance {
@@ -532,9 +572,24 @@ export interface PsychologicalEvolution {
   date: string;
   institutionalAdaptationStatus?: string;
   moodBehaviorEvolution?: string;
-  currentSocializationQuality: string[];
+  currentSocializationQuality?: string[];
   piaGoalStatus?: string;
   newConduct?: string;
+
+  // New Standard Evolution Fields
+  dataEvolucao?: string;
+  descricaoEvolucao?: string;
+  mudancasObservadas?: string;
+  novaConduta?: string;
+  recomendacoes?: string;
+  incluirNoPIA?: boolean;
+  profissionalId?: string;
+  profissionalNome?: string;
+  profissionalFuncao?: string;
+  profissionalRegistro?: string;
+  profissionalAssinaturaTexto?: string;
+  criadoEm?: string;
+  atualizadoEm?: string;
 }
 
 export interface PsychologicalAttendance {
@@ -610,6 +665,21 @@ export interface OccupationalTherapyEvolution {
   conductUpdateOptions?: string[];
   updatedConduct?: string;
   finalObservations?: string;
+
+  // New Standard Evolution Fields
+  dataEvolucao?: string;
+  descricaoEvolucao?: string;
+  mudancasObservadas?: string;
+  novaConduta?: string;
+  recomendacoes?: string;
+  incluirNoPIA?: boolean;
+  profissionalId?: string;
+  profissionalNome?: string;
+  profissionalFuncao?: string;
+  profissionalRegistro?: string;
+  profissionalAssinaturaTexto?: string;
+  criadoEm?: string;
+  atualizadoEm?: string;
 }
 
 export interface OccupationalTherapyAttendance {
@@ -672,6 +742,21 @@ export interface PhysiotherapyEvolution {
   conductUpdateOptions?: string[];
   updatedConduct?: string;
   finalObservations?: string;
+
+  // New Standard Evolution Fields
+  dataEvolucao?: string;
+  descricaoEvolucao?: string;
+  mudancasObservadas?: string;
+  novaConduta?: string;
+  recomendacoes?: string;
+  incluirNoPIA?: boolean;
+  profissionalId?: string;
+  profissionalNome?: string;
+  profissionalFuncao?: string;
+  profissionalRegistro?: string;
+  profissionalAssinaturaTexto?: string;
+  criadoEm?: string;
+  atualizadoEm?: string;
 }
 
 export interface PhysiotherapyAttendance {
@@ -1151,26 +1236,34 @@ export interface MedicationStockEntry {
 export interface ResidentMedicationStockMovement {
   id: string;
   institutionId: string;
-  ownerType?: 'resident' | 'institution';
-  ownerId?: string;
-  residentId?: string; // Legacy/fallback
-  prescriptionId?: string;
+  ownerType: 'resident' | 'institution';
+  ownerId: string;
+  residentId?: string; // quando ownerType = resident
+  prescriptionId?: string; // quando houver vínculo com prescrição
   medicamentoPrescritoTexto: string;
-  tipoMovimentacao: 'entrada' | 'saida' | 'ajuste_positivo' | 'ajuste_negativo';
-  quantidade: number;
+  tipoMovimentacao: 'entrada' | 'saida' | 'ajuste';
+  ajusteTipo?: 'positivo' | 'negativo'; // para quando tipoMovimentacao for 'ajuste'
   motivo: string;
+  quantidade: number;
+  unidade?: string;
   dataHora: string;
   responsavelUserId?: string;
   responsavelNome: string;
+  origem: 'manual' | 'automatica';
   observacoes?: string;
-  nivelCritico?: number;
+  saldoAnterior?: number;
+  saldoAtual?: number;
+  criadoEm?: string;
 }
 
 export interface MedicationAdministrationLog {
   id: string;
   institutionId?: string;
   residentId: string;
-  prescriptionId: string; // Refers to Resident's Medication ID
+  tipoMinistracao?: "fixa" | "eventual_sos";
+  sintomaOuQueixa?: string;
+  condutaSosId?: string;
+  prescriptionId?: string; // Optional for SOS, Refers to Resident's Medication ID for Fixa
   medicamentoPrescritoTexto: string;
   horarioPrevisto: string;
   dataOperacional: string;
@@ -1180,6 +1273,15 @@ export interface MedicationAdministrationLog {
   dataHoraRegistro: string;
   responsavelUserId?: string;
   responsavelNome: string;
+  dosagem?: string;
+  quantidade?: string;
+  formaFarmaceutica?: string;
+  via?: string;
+  origemEstoque?: 'residente' | 'instituição' | 'qualquer' | 'sem_baixa_automatica';
+  estoqueBaixado?: boolean;
+  autorizadoPorNome?: string;
+  autorizadoPorFuncao?: string;
+  autorizadoPorRegistro?: string;
   observacoes?: string;
   
   profissionalId?: string;
@@ -1203,4 +1305,28 @@ export interface MedicationSeparationLog {
     dose: string;
     plannedTime: string;
   }[];
+}
+
+export interface SosProtocol {
+  id: string;
+  institutionId: string;
+  residentId: string;
+  sintomaOuQueixa: string;
+  medicamentoAutorizado: string;
+  dosagem: string;
+  quantidade: string;
+  formaFarmaceutica: string;
+  via: string;
+  intervaloMinimoHoras?: number;
+  estoquePreferencial: 'residente' | 'instituição' | 'qualquer' | 'sem_baixa_automatica';
+  autorizadoPorProfissionalId?: string;
+  autorizadoPorNome: string;
+  autorizadoPorFuncao?: string;
+  autorizadoPorRegistro?: string;
+  dataAutorizacao: string;
+  dataRevisao?: string;
+  observacoes?: string;
+  status: 'ativo' | 'inativo';
+  criadoEm: string;
+  atualizadoEm: string;
 }

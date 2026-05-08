@@ -1,4 +1,6 @@
 import { getProfessionalSignature } from '../lib/api';
+import { StandardEvolutionForm } from './StandardEvolutionForm';
+import { StandardEvolutionHistory } from './StandardEvolutionHistory';
 import React, { useState } from 'react';
 import { Resident, OccupationalTherapyData, OccupationalTherapyAssessment, OccupationalTherapyEvolution, OccupationalTherapyAttendance, MuralMessage } from '../types';
 import { Plus, Save, Edit2, CheckCircle, Clock, Printer, FileSpreadsheet } from 'lucide-react';
@@ -214,10 +216,15 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
   });
 
   const handleSaveAssessment = () => {
-    onChange({
-      ...otData,
-      initialAssessment: assessment as OccupationalTherapyAssessment
-    });
+    try {
+      onChange({
+        ...otData,
+        initialAssessment: assessment as any
+      });
+      alert('Avaliação Salva com Sucesso!');
+    } catch(e) {
+      alert('Erro ao salvar avaliação.');
+    }
   };
 
   const handleSaveEvolution = () => {
@@ -629,155 +636,41 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
           </div>
 
           {isAddingEvolution && (
-            <div className="bg-white p-6 rounded-2xl border border-blue-200 shadow-md mb-6 relative">
-              <h4 className="text-sm font-black text-[#004c99] uppercase tracking-widest mb-4 border-b pb-2">Registrar Nova Evolução</h4>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Data</label>
-                  <input
-                    type="date"
-                    value={newEvolution.date || ''}
-                    onChange={(e) => setNewEvolution({ ...newEvolution, date: e.target.value })}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Evolução funcional</label>
-                  <select
-                    value={newEvolution.functionalEvolution || ''}
-                    onChange={(e) => setNewEvolution({ ...newEvolution, functionalEvolution: e.target.value })}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="Melhora">Melhora</option>
-                    <option value="Estável">Estável</option>
-                    <option value="Piora">Piora</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Participação nas atividades</label>
-                  <select
-                    value={newEvolution.participationEvolution || ''}
-                    onChange={(e) => setNewEvolution({ ...newEvolution, participationEvolution: e.target.value })}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="Aumentou">Aumentou</option>
-                    <option value="Mantida">Mantida</option>
-                    <option value="Reduziu">Reduziu</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nível de independência atual</label>
-                  <select
-                    value={newEvolution.currentIndependenceLevel || ''}
-                    onChange={(e) => setNewEvolution({ ...newEvolution, currentIndependenceLevel: e.target.value })}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="Independente">Independente</option>
-                    <option value="Parcial">Parcial</option>
-                    <option value="Dependente">Dependente</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Status das metas do PIA</label>
-                  <select
-                    value={newEvolution.piaGoalStatus || ''}
-                    onChange={(e) => setNewEvolution({ ...newEvolution, piaGoalStatus: e.target.value })}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="Atingida">Atingida</option>
-                    <option value="Em andamento">Em andamento</option>
-                    <option value="Não atingida">Não atingida</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="mb-6">
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nova conduta / ajuste</label>
-                <textarea
-                  value={newEvolution.newConduct || ''}
-                  onChange={(e) => setNewEvolution({ ...newEvolution, newConduct: e.target.value })}
-                  rows={3}
-                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddingEvolution(false)}
-                  className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-xl font-black text-[10px] uppercase transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportEvolutionPDF}
-                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-all font-black text-[10px] uppercase border"
-                >
-                  <Printer size={14} />
-                  Exportar PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveEvolution}
-                  disabled={!newEvolution.functionalEvolution || !newEvolution.newConduct}
-                  className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all font-black text-[10px] uppercase"
-                >
-                  <Save size={14} />
-                  Salvar Evolução
-                </button>
-              </div>
-            </div>
+             <StandardEvolutionForm 
+                areaLabel="Terapêutica Ocupacional"
+                onSave={(data) => {
+                  const evolutions = resident.occupationalTherapy?.evolutions || [];
+                  const newEvolutions = [{ id: Date.now().toString(), ...data }, ...evolutions];
+                  onChange({
+                    ...(resident.occupationalTherapy || {}),
+                    evolutions: newEvolutions as any
+                  });
+                  setIsAddingEvolution(false);
+                }}
+                onCancel={() => setIsAddingEvolution(false)}
+             />
           )}
 
-          <div className="space-y-4">
-            {(!otData.evolutions || otData.evolutions.length === 0) ? (
-              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 text-center text-gray-500">
-                Nenhuma evolução registrada.
-              </div>
-            ) : (
-              otData.evolutions.map((ev) => (
-                <div key={ev.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-2 text-[#004c99]">
-                      <Clock size={16} />
-                      <span className="font-bold">{ev.date}</span>
+          {!isAddingEvolution && (
+             <StandardEvolutionHistory 
+                evolutions={(resident.occupationalTherapy?.evolutions as any) || []} 
+                areaLabel="Terapêutica Ocupacional" 
+                renderLegacyDetails={(ev: any) => {
+                  if(!ev.functionalEvolution && !ev.participationEvolution && !ev.currentIndependenceLevel && !ev.piaGoalStatus && !ev.evolutionDescription) return null;
+                  return (
+                    <div className="mt-3 bg-gray-50 p-3 rounded-lg border text-xs text-gray-600">
+                        {ev.evolutionDescription && <p className="mb-2 whitespace-pre-wrap">{ev.evolutionDescription}</p>}
+                        {ev.functionalEvolution && <p><strong>Evolução Funcional:</strong> {ev.functionalEvolution}</p>}
+                        {ev.participationEvolution && <p><strong>Participação:</strong> {ev.participationEvolution}</p>}
+                        {ev.currentIndependenceLevel && <p><strong>Independência:</strong> {ev.currentIndependenceLevel}</p>}
+                        {ev.piaGoalStatus && <p><strong>Status PIA:</strong> {ev.piaGoalStatus}</p>}
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div>
-                      <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Evolução Funcional</span>
-                      <span className="text-sm font-medium text-gray-800">{ev.functionalEvolution}</span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Participação</span>
-                      <span className="text-sm font-medium text-gray-800">{ev.participationEvolution || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Independência</span>
-                      <span className="text-sm font-medium text-gray-800">{ev.currentIndependenceLevel || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Metas PIA</span>
-                      <span className="text-sm font-medium text-gray-800">{ev.piaGoalStatus || 'N/A'}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Conduta / Ajuste</span>
-                    <p className="text-sm text-gray-700 mt-1">{ev.newConduct}</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+                  );
+                }}
+             />
+          )}
         </div>
       )}
-
       {/* 3. Atendimentos */}
       {activeSubTab === 'atendimentos' && (
         <div className="space-y-6 animate-in fade-in duration-300">

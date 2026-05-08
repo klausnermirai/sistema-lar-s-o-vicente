@@ -50,9 +50,9 @@ const HandoverTabletView: React.FC<HandoverTabletViewProps> = ({
       prevShift = sortedShifts[currentIndex - 1];
     } else {
       prevShift = sortedShifts[sortedShifts.length - 1];
-      const prevDate = new Date(opDate);
+      const prevDate = new Date(opDate + 'T12:00:00');
       prevDate.setDate(prevDate.getDate() - 1);
-      prevOpDate = prevDate.toISOString().split('T')[0];
+      prevOpDate = `${prevDate.getFullYear()}-${String(prevDate.getMonth()+1).padStart(2,'0')}-${String(prevDate.getDate()).padStart(2,'0')}`;
     }
   }
 

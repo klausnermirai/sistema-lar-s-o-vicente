@@ -1153,7 +1153,7 @@ async function startServer() {
     }
   });
 
-  // ========== SHIFTS ==========
+  // ========== TURNOS E PROCEDIMENTOS ==========
   app.get('/api/shifts', requireAuth, async (req, res) => {
     const { institutionId } = req.query;
     if (!institutionId) return res.json([]);
@@ -1168,6 +1168,61 @@ async function startServer() {
       res.json(shifts);
     } catch (e: any) {
       res.status(500).json({ error: 'Erro ao buscar turnos' });
+    }
+  });
+
+  // ========== SOS PROTOCOLS ==========
+  app.get('/api/sos-protocols', requireAuth, async (req, res) => {
+    const { institutionId, residentId } = req.query;
+    if (!institutionId) return res.json([]);
+    try {
+      const realId = await getRealInstitutionId(institutionId as string);
+      let query: any = db.collection('sosProtocols').where('institutionId', '==', realId);
+      if (residentId) {
+        query = query.where('residentId', '==', residentId);
+      }
+      const snapshot = await query.get();
+      const protocols = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      res.json(protocols);
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: 'Erro ao buscar condutas SOS' });
+    }
+  });
+
+  app.post('/api/sos-protocols', requireRole(['administrador', 'gerencial', 'saude', 'tecnico_enfermagem', 'enfermeiro']), async (req, res) => {
+    const payload = req.body;
+    try {
+      if (!payload.institutionId) return res.status(400).json({ error: 'Falta institutionId' });
+      const realId = await getRealInstitutionId(payload.institutionId);
+      
+      const session = (req as any).user;
+      const isAdminOrNurse = session?.role === 'administrador' || session?.role === 'gerencial' || session?.role === 'enfermeiro' || session?.role === 'saude';
+      if (!isAdminOrNurse) {
+          return res.status(403).json({ error: 'Acesso negado para gerenciar condutas SOS.'});
+      }
+
+      const dataToSave = {
+        ...payload,
+        institutionId: realId,
+        atualizadoEm: new Date().toISOString()
+      };
+
+      if (dataToSave.id && dataToSave.id.length > 5) {
+        // Edit existing
+        const { id, ...saveData } = dataToSave;
+        await db.collection('sosProtocols').doc(id).set(saveData, { merge: true });
+        res.json(dataToSave);
+      } else {
+        // Create new
+        const { id, ...saveData } = dataToSave;
+        saveData.criadoEm = new Date().toISOString();
+        const docRef = await db.collection('sosProtocols').add(saveData);
+        res.json({ ...saveData, id: docRef.id });
+      }
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: 'Erro ao salvar conduta SOS' });
     }
   });
 

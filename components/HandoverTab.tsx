@@ -49,10 +49,41 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
   settings
 }) => {
   const [viewMode, setViewMode] = useState<'registrar' | 'historico'>('registrar');
+
+  const getOperationalDateLocal = (d: Date) => {
+    let earliestStart = "06:00"; 
+    if (shifts && shifts.length > 0) {
+      let minMinutes = 24 * 60;
+      shifts.forEach(s => {
+         if (!s.horarioInicio) return;
+         const [h, m] = s.horarioInicio.split(':').map(Number);
+         const mins = h * 60 + m;
+         if (mins < minMinutes) {
+           minMinutes = mins;
+           earliestStart = s.horarioInicio;
+         }
+      });
+    }
+
+    const [startH, startM] = earliestStart.split(':').map(Number);
+    const hour = d.getHours();
+    const minute = d.getMinutes();
+    
+    const isBeforeStart = hour < startH || (hour === startH && minute < startM);
+    
+    const opDate = new Date(d.getTime());
+    if (isBeforeStart) {
+      opDate.setDate(opDate.getDate() - 1);
+    }
+    
+    return `${opDate.getFullYear()}-${String(opDate.getMonth()+1).padStart(2,'0')}-${String(opDate.getDate()).padStart(2,'0')}`;
+  };
+
   const [selectedHistoryDate, setSelectedHistoryDate] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return getOperationalDateLocal(new Date());
   });
+
+  const [filterShift, setFilterShift] = useState<string>('todos');
 
   const [shift, setShift] = useState<ShiftHandover['shift']>('manha');
   const [summary, setSummary] = useState('');
@@ -78,10 +109,20 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
     }
 
     // 1. Save Handover
+    const now = new Date();
+    const opDate = getOperationalDateLocal(now);
+    const selectedShiftObj = shifts.find(s => s.id === shift || s.nomeTurno === shift || s.id === 'Turno ' + shift) as any;
+    const finalTurnoId = selectedShiftObj?.id || shift;
+    const finalTurnoNome = selectedShiftObj?.nomeTurno || shift;
+
     const handover: ShiftHandover = {
       id: Math.random().toString(36).substr(2, 9),
-      timestamp: Date.now(), ...getProfessionalSignature(),
-      shift,
+      timestamp: now.getTime(), 
+      ...getProfessionalSignature(),
+      shift: finalTurnoNome,
+      turnoId: finalTurnoId,
+      turnoNome: finalTurnoNome,
+      dataOperacional: opDate,
       summary,
       pendingTasks,
       visibilidade,
@@ -95,12 +136,16 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
     if (hasIncident) {
       const incident: IncidentReport = {
         id: Math.random().toString(36).substr(2, 9),
-        timestamp: Date.now(), ...getProfessionalSignature(),
+        timestamp: now.getTime(), 
+        ...getProfessionalSignature(),
         residentIds: selectedResidentIds,
         type: incidentType,
         description,
         conduct,
         visibilidade,
+        dataOperacional: opDate,
+        turnoId: finalTurnoId,
+        turnoNome: finalTurnoNome,
         professionalName: 'Equipe de Enfermagem' // Placeholder
       };
       onSaveIncident(incident);
@@ -153,18 +198,23 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
   const getIncidentsForDate = (dateStr: string) => {
     return residents.flatMap(r => (r.incidents || []).map(inc => ({ ...inc, residentName: r.name })))
       .filter(inc => {
-        const d = new Date(inc.timestamp);
-        const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        return localDate === dateStr;
+        const opDate = inc.dataOperacional || getOperationalDateLocal(new Date(inc.timestamp));
+        if (opDate !== dateStr) return false;
+        if (filterShift !== 'todos') {
+          return inc.turnoId === filterShift || inc.turnoNome === filterShift;
+        }
+        return true;
       });
   };
 
   const getHandoversForDate = (dateStr: string) => {
     return handovers.filter(h => {
-      const d = new Date(h.timestamp);
-      // fallback to timestamp if dataOperacional missing for older entries
-      const localDate = h.dataOperacional || `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      return localDate === dateStr;
+      const opDate = h.dataOperacional || getOperationalDateLocal(new Date(h.timestamp));
+      if (opDate !== dateStr) return false;
+      if (filterShift !== 'todos') {
+        return h.turnoId === filterShift || h.turnoNome === filterShift || h.shift === filterShift;
+      }
+      return true;
     });
   };
 
@@ -176,7 +226,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
     }
     
     // Fallback for older entries
-    const opDate = handover.dataOperacional || new Date(handover.timestamp).toISOString().split('T')[0];
+    const opDate = handover.dataOperacional || getOperationalDateLocal(new Date(handover.timestamp));
     const turnoId = handover.turnoId;
 
     const vitalSigns = residents.flatMap(r => 
@@ -188,7 +238,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
     ).filter(inc => {
        if (turnoId && inc.turnoId) return inc.turnoId === turnoId && inc.dataOperacional === opDate;
        // legacy comparison
-       return new Date(inc.timestamp).toISOString().split('T')[0] === opDate;
+       return getOperationalDateLocal(new Date(inc.timestamp)) === opDate;
     });
 
     const sigAuth = getProfessionalSignature() as { name: string, role: string, doc: string };
@@ -226,14 +276,30 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
         </div>
 
         {viewMode === 'historico' && (
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] font-black uppercase text-gray-400">Data:</label>
-            <input 
-              type="date" 
-              value={selectedHistoryDate}
-              onChange={e => setSelectedHistoryDate(e.target.value)}
-              className="px-3 py-2 bg-gray-50 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-[#004c99]/10"
-            />
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] font-black uppercase text-gray-400">Turno:</label>
+              <select 
+                value={filterShift}
+                onChange={e => setFilterShift(e.target.value)}
+                className="px-3 py-2 bg-gray-50 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-[#004c99]/10"
+              >
+                <option value="todos">Todos os turnos</option>
+                {(shifts && shifts.length > 0 ? shifts : [{id: 'manha', nomeTurno: 'Manhã'}, {id: 'tarde', nomeTurno: 'Tarde'}, {id: 'noite', nomeTurno: 'Noite'}]).map((s) => (
+                   <option key={s.id || s} value={s.id || s}>{s.nomeTurno || `Turno ${s}`}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] font-black uppercase text-gray-400">Data:</label>
+              <input 
+                type="date" 
+                value={selectedHistoryDate}
+                onChange={e => setSelectedHistoryDate(e.target.value)}
+                className="px-3 py-2 bg-gray-50 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-[#004c99]/10"
+              />
+            </div>
           </div>
         )}
       </div>
@@ -245,37 +311,94 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
               <h3 className="text-sm font-black uppercase text-gray-800 tracking-widest mb-6 flex items-center gap-2">
                 <Clock size={16} className="text-[#004c99]"/> Plantões Registrados
               </h3>
-              <div className="space-y-4">
-                {getHandoversForDate(selectedHistoryDate).length === 0 ? (
-                  <p className="text-xs text-gray-400 font-bold uppercase py-4 text-center">Nenhum plantão registrado nesta data.</p>
-                ) : (
-                  getHandoversForDate(selectedHistoryDate).map(h => (
-                    <div key={h.id} className="p-4 border rounded-2xl bg-gray-50 relative group">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-[10px] font-black bg-[#004c99] text-white px-2 py-1 rounded-lg uppercase">
-                          Turno: {h.shift}
-                        </span>
-                        <div className="flex items-center gap-4">
-                          <span className="text-xs text-gray-500 font-medium">
-                            {new Date(h.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {h.professionalName}
-                          </span>
-                          <button 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handlePrintHandover(h);
-                            }}
-                            className="bg-transparent text-gray-400 hover:text-[#004c99] transition-colors"
-                            title="Exportar PDF do Plantão"
-                          >
-                             <Download size={16} />
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-sm text-gray-800 mb-2"><strong>Resumo:</strong> {h.summary}</p>
-                      {h.pendingTasks && <p className="text-xs text-red-600 font-medium"><strong>Pendências:</strong> {h.pendingTasks}</p>}
-                    </div>
-                  ))
-                )}
+              <div className="space-y-6">
+                {(() => {
+                   const availableShifts = shifts && shifts.length > 0 ? shifts : [{id: 'manha', nomeTurno: 'Manhã'}, {id: 'tarde', nomeTurno: 'Tarde'}, {id: 'noite', nomeTurno: 'Noite'}];
+                   const filteredShifts = filterShift === 'todos' ? availableShifts : availableShifts.filter(s => s.id === filterShift || s.nomeTurno === filterShift);
+                   const handoversForDate = getHandoversForDate(selectedHistoryDate);
+
+                   if (filteredShifts.length === 0) return null;
+
+                   return filteredShifts.map(shiftDef => {
+                     const sId = shiftDef.id || shiftDef;
+                     const sName = shiftDef.nomeTurno || `Turno ${shiftDef}`;
+                     const shiftHandovers = handoversForDate.filter(h => h.turnoId === sId || h.turnoNome === sName || h.shift === sName || h.shift === sId);
+
+                     return (
+                       <div key={sId} className="border rounded-2xl overflow-hidden">
+                          <div className="bg-gray-100 px-4 py-3 border-b flex justify-between items-center">
+                             <span className="text-xs font-black uppercase text-[#004c99]">{sName}</span>
+                          </div>
+                          <div className="p-4 bg-gray-50/50">
+                             {shiftHandovers.length === 0 ? (
+                                <p className="text-xs text-gray-400 font-bold uppercase py-2 text-center italic">Sem plantão registrado para este turno.</p>
+                             ) : (
+                                shiftHandovers.map(h => (
+                                  <div key={h.id} className="p-4 bg-white border rounded-xl relative group mb-3 last:mb-0 shadow-sm flex flex-col gap-3">
+                                    <div className="flex justify-between items-center mb-1">
+                                      <div className="flex items-center gap-2">
+                                         <span className="text-[10px] font-black bg-[#004c99] text-white px-2 py-1 rounded-lg uppercase">
+                                           {h.turnoNome || h.shift}
+                                         </span>
+                                         <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
+                                           Data Operacional: {new Date(h.dataOperacional + 'T12:00:00').toLocaleDateString('pt-BR')} 
+                                         </span>
+                                         {shiftDef.horarioInicio && (
+                                           <span className="text-[10px] font-bold text-gray-400">
+                                              ({shiftDef.horarioInicio} - {shiftDef.horarioFim || '*'})
+                                           </span>
+                                         )}
+                                      </div>
+                                      <div className="flex items-center gap-4">
+                                        <span className="text-[10px] font-black text-gray-400 tracking-widest uppercase">
+                                          Registro Real: {new Date(h.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {h.professionalName}
+                                        </span>
+                                        <button 
+                                          onClick={(e) => {
+                                              e.preventDefault();
+                                              handlePrintHandover(h);
+                                          }}
+                                          className="bg-transparent text-gray-400 hover:text-[#004c99] transition-colors"
+                                          title="Exportar PDF do Plantão"
+                                        >
+                                           <Download size={16} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="text-sm text-gray-800 leading-relaxed bg-gray-50 p-3 rounded-lg border"><strong>Relatório do Turno:</strong><br/><span className="whitespace-pre-wrap">{h.summary}</span></div>
+                                    {h.pendingTasks && <div className="text-sm text-orange-800 leading-relaxed bg-orange-50 p-3 rounded-lg border border-orange-100"><strong>Pendências:</strong><br/><span className="whitespace-pre-wrap">{h.pendingTasks}</span></div>}
+                                    
+                                    {/* Inline Incidents rendering */}
+                                    {(() => {
+                                      const shiftIncidents = getIncidentsForDate(selectedHistoryDate).filter(i => {
+                                        // Some legacy incidents might only be mapped by time, but new ones have turnoId
+                                        return i.turnoId === h.turnoId || i.turnoNome === h.turnoNome || i.turnoNome === h.shift;
+                                      });
+                                      if (shiftIncidents.length === 0) return null;
+                                      return (
+                                        <div className="mt-2 space-y-2">
+                                          <h4 className="text-[10px] font-black uppercase text-red-600 flex items-center gap-1 mb-1"><AlertTriangle size={12}/> Intercorrências Vinculadas (Neste Plantão):</h4>
+                                          {shiftIncidents.map(inc => (
+                                            <div key={inc.id} className="p-3 border border-red-200 rounded-xl bg-red-50 text-sm">
+                                               <div className="flex justify-between items-center mb-1">
+                                                 <span className="text-[10px] font-black bg-red-600 text-white px-2 py-0.5 rounded uppercase">{inc.type}</span>
+                                                 <span className="text-[10px] font-black text-red-400 uppercase">Residente(s): {inc.residentName}</span>
+                                               </div>
+                                               <p className="text-red-900 mt-1 whitespace-pre-wrap"><strong>Fatos:</strong> {inc.description}</p>
+                                               {inc.conduct && <p className="text-red-800 mt-1 whitespace-pre-wrap"><strong>Conduta:</strong> {inc.conduct}</p>}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                ))
+                             )}
+                          </div>
+                       </div>
+                     )
+                   });
+                })()}
               </div>
             </div>
 
@@ -322,20 +445,23 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
             
             <div className="bg-white p-8 rounded-[40px] border shadow-sm">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-               {['manha', 'tarde', 'noite'].map((s) => (
+               {(shifts && shifts.length > 0 ? shifts : [{id: 'manha', nomeTurno: 'Manhã'}, {id: 'tarde', nomeTurno: 'Tarde'}, {id: 'noite', nomeTurno: 'Noite'}]).map((s) => {
+                  const sId = s.id || s;
+                  const sName = s.nomeTurno || `Turno ${s}`;
+                  return (
                   <button
-                    key={s}
-                    onClick={() => setShift(s as any)}
+                    key={sId}
+                    onClick={() => setShift(sId)}
                     className={`py-6 rounded-3xl flex flex-col items-center justify-center gap-2 transition-all border ${
-                      shift === s 
+                      shift === sId 
                         ? 'bg-[#004c99] text-white border-[#004c99] shadow-lg scale-[1.02]' 
                         : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-100'
                     }`}
                   >
                     <Clock size={24} />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Turno {s}</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">{sName}</span>
                   </button>
-               ))}
+               )})}
             </div>
 
             <div className="space-y-6">
