@@ -201,11 +201,16 @@ export const getHtmlPrintFooter = () => {
 
 export const getHtmlPrintStyles = () => `
   @media print {
-    @page { margin: 15mm; size: A4 portrait; }
+    @page { margin: 12mm 14mm 20mm 14mm; size: A4; }
     body { -webkit-print-color-adjust: exact; margin: 0; padding: 0; }
+    .print-wrapper { padding-bottom: 24mm; box-sizing: border-box; }
   }
   body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 11px; color: #000; line-height: 1.4; padding: 20px; }
   
+  .print-wrapper {
+    box-sizing: border-box;
+  }
+
   .print-header {
     display: flex;
     align-items: center;
@@ -243,7 +248,8 @@ export const getHtmlPrintStyles = () => `
     left: 0;
     width: 100%;
     border-top: 1px solid #ccc;
-    padding-top: 10px;
+    padding-top: 5px;
+    padding-bottom: 5px;
     font-size: 9px;
     color: #555;
     text-align: center;
@@ -258,11 +264,14 @@ export const getHtmlPrintStyles = () => `
     margin-bottom: 20px;
     text-align: center;
   }
-  table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 15px; font-size: 10px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 15px; font-size: 10px; page-break-inside: auto; break-inside: auto; }
+  tr { page-break-inside: avoid; break-inside: avoid; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
   th, td { border: 1px solid #000; padding: 6px 8px; text-align: left; }
   th { background-color: #f0f0f0; font-weight: bold; text-transform: uppercase; }
   
-  .flex-row { display: flex; flex-wrap: wrap; margin-bottom: 6px; }
+  .flex-row { display: flex; flex-wrap: wrap; margin-bottom: 6px; break-inside: avoid; page-break-inside: avoid; }
   .flex-col { flex: 1; min-width: 30%; padding-right: 10px; box-sizing: border-box; }
   .flex-col-half { flex: 0 0 50%; padding-right: 10px; box-sizing: border-box; }
   .flex-col-full { flex: 0 0 100%; margin-bottom: 6px; box-sizing: border-box; }
@@ -271,10 +280,47 @@ export const getHtmlPrintStyles = () => `
   .value { border-bottom: 1px dotted #999; padding-bottom: 1px; flex: 1; }
   .field { display: flex; margin-bottom: 6px; align-items: baseline; }
   
-  .section-title { font-size: 12px; font-weight: bold; text-transform: uppercase; color: #000; border-bottom: 1px solid #000; margin-top: 20px; margin-bottom: 10px; padding-bottom: 2px; }
-  .paragraph { text-align: justify; white-space: pre-wrap; font-size: 11px; margin-top: 5px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; min-height: 60px; }
+  .section-title { 
+    font-size: 12px; 
+    font-weight: bold; 
+    text-transform: uppercase; 
+    color: #000; 
+    border-bottom: 1px solid #000; 
+    margin-top: 20px; 
+    margin-bottom: 10px; 
+    padding-bottom: 2px; 
+    page-break-after: avoid; 
+    break-after: avoid;
+  }
+  .paragraph { 
+    height: auto; 
+    min-height: 40px; 
+    overflow: visible; 
+    white-space: pre-wrap; 
+    word-break: break-word; 
+    overflow-wrap: anywhere; 
+    text-align: justify; 
+    font-size: 11px; 
+    margin-top: 5px; 
+    padding: 10px; 
+    border: 1px solid #ccc; 
+    border-radius: 4px; 
+  }
+
+  .print-section,
+  .form-section,
+  .pdf-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   
-  .signature-box { margin-top: 50px; text-align: center; }
+  .signature-box { 
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-top: 24px; 
+    margin-bottom: 24px; 
+    text-align: center; 
+  }
   .signature-line { border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold; }
   .signature-role { font-size: 10px; color: #666; }
 `;
@@ -389,14 +435,14 @@ export const printAttendanceHtmlPdf = async (
         <h2 class="section-title">3. Descrição do Atendimento</h2>
         <div class="paragraph">${desc}</div>
 
-        <div class="signature-box" style="margin-top: 50px; text-align: center;">
-          <div class="signature-line" style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold;">
+        <div class="signature-box">
+          <div class="signature-line">
             ${(attendance.profissionalAssinaturaTexto || attendance.signature || attendance.profissionalNome || "Profissional não identificado").replace(/\n/g, '<br/>')}
           </div>
-          <div class="signature-role" style="font-size: 10px; color: #666; margin-top: 2px;">
+          <div class="signature-role" style="margin-top: 5px;">
             ${area}
           </div>
-          <div class="signature-role" style="font-size: 10px; color: #666; margin-top: 2px;">
+          <div class="signature-role" style="margin-top: 2px;">
             ${dateStr}
           </div>
         </div>

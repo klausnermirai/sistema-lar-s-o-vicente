@@ -1,5 +1,5 @@
 import { getProfessionalSignature, fetchProcedureLogs } from '../lib/api';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Resident, IncidentReport, ShiftHandover, MuralMessage, InstitutionSettings } from '../types';
 import { 
   AlertTriangle, 
@@ -16,7 +16,8 @@ import {
   Clock,
   Download,
   History,
-  Calendar
+  Calendar,
+  Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import jsPDF from 'jspdf';
@@ -25,6 +26,7 @@ import { addPdfSignatureNode } from '../lib/pdfUtils';
 import autoTable from 'jspdf-autotable';
 import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
 
+import { generateRoutinesSummaryText } from '../lib/routineSummaryHelper';
 import HandoverTabletView from './HandoverTabletView';
 
 interface HandoverTabProps {
@@ -90,16 +92,34 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
   const [pendingTasks, setPendingTasks] = useState('');
   
   const [hasIncident, setHasIncident] = useState(false);
+  const [residentSearchTerm, setResidentSearchTerm] = useState('');
   const [selectedResidentIds, setSelectedResidentIds] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [conduct, setConduct] = useState('');
   const [incidentType, setIncidentType] = useState<IncidentReport['type']>('clinica');
+  const [incidentDate, setIncidentDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  });
+  const [incidentTime, setIncidentTime] = useState(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  });
   
   const [visibilidade, setVisibilidade] = useState<string[]>(['admin', 'publico']);
+  const [historyLogs, setHistoryLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (viewMode === 'historico' && settings?.id) {
+       fetchProcedureLogs(settings.id, selectedHistoryDate)
+         .then(logs => setHistoryLogs(logs))
+         .catch(err => console.error(err));
+    }
+  }, [viewMode, selectedHistoryDate, settings?.id]);
 
   const handleSaveAll = () => {
-    if (!summary.trim()) {
-      alert("Por favor, preencha o resumo do plantão.");
+    if (!hasIncident && !summary.trim()) {
+      alert("Por favor, preencha o resumo do plantão ou registre uma intercorrência.");
       return;
     }
 
@@ -108,68 +128,71 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
       return;
     }
 
-    // 1. Save Handover
     const now = new Date();
     const opDate = getOperationalDateLocal(now);
     const selectedShiftObj = shifts.find(s => s.id === shift || s.nomeTurno === shift || s.id === 'Turno ' + shift) as any;
     const finalTurnoId = selectedShiftObj?.id || shift;
     const finalTurnoNome = selectedShiftObj?.nomeTurno || shift;
 
-    const handover: ShiftHandover = {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: now.getTime(), 
-      ...getProfessionalSignature(),
-      shift: finalTurnoNome,
-      turnoId: finalTurnoId,
-      turnoNome: finalTurnoNome,
-      dataOperacional: opDate,
-      summary,
-      pendingTasks,
-      visibilidade,
-      professionalName: 'Supervisor de Turno' // Placeholder
-    };
-    onSaveHandover(handover);
+    // 1. Save Handover
+    if (summary.trim()) {
+      const handover: ShiftHandover = {
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: now.getTime(), 
+        ...getProfessionalSignature(),
+        shift: finalTurnoNome,
+        turnoId: finalTurnoId,
+        turnoNome: finalTurnoNome,
+        dataOperacional: opDate,
+        summary,
+        pendingTasks,
+        visibilidade,
+        professionalName: 'Supervisor de Turno' // Placeholder
+      };
+      onSaveHandover(handover);
 
-    let incidentMsg = '';
+      // Post to Mural
+      if (visibilidade.length > 0) {
+        onPostToMural({
+          author: `Relatório de Plantão - ${shift.toUpperCase()}`,
+          text: `🔄 Resumo do Turno Adicionado`,
+          detailedContent: `RESUMO DO TURNO:\n${summary}\n\nPENDÊNCIAS:\n${pendingTasks || 'Nenhuma'}`,
+          visibilidade
+        });
+      }
+    }
 
     // 2. Save Incident if applied
     if (hasIncident) {
+      const partsDate = incidentDate.split('-');
+      const partsTime = incidentTime.split(':');
+      let incidentTimestamp = now.getTime();
+      let incOpDate = opDate;
+      
+      if (partsDate.length === 3 && partsTime.length === 2) {
+        const incDateTime = new Date(Number(partsDate[0]), Number(partsDate[1]) - 1, Number(partsDate[2]), Number(partsTime[0]), Number(partsTime[1]));
+        incidentTimestamp = incDateTime.getTime();
+        incOpDate = getOperationalDateLocal(incDateTime);
+      }
+
       const incident: IncidentReport = {
         id: Math.random().toString(36).substr(2, 9),
-        timestamp: now.getTime(), 
+        timestamp: incidentTimestamp, 
         ...getProfessionalSignature(),
         residentIds: selectedResidentIds,
         type: incidentType,
         description,
         conduct,
         visibilidade,
-        dataOperacional: opDate,
+        dataOperacional: incOpDate,
         turnoId: finalTurnoId,
         turnoNome: finalTurnoNome,
         professionalName: 'Equipe de Enfermagem' // Placeholder
       };
       onSaveIncident(incident);
 
-      const residentNames = residents
-        .filter(r => selectedResidentIds.includes(r.id))
-        .map(r => r.name)
-        .join(', ');
-      
-      incidentMsg = `\n🚨 INTERCORRÊNCIA [${incidentType.toUpperCase()}]: Residentes: ${residentNames}. Descrição: ${description}. Conduta: ${conduct}`;
-    }
-
-    // 3. Post to Mural
-    if (visibilidade.length > 0) {
-      // Post Shift Handover
-      onPostToMural({
-        author: `Relatório de Plantão - ${shift.toUpperCase()}`,
-        text: `🔄 Resumo do Turno Adicionado`,
-        detailedContent: `RESUMO DO TURNO:\n${summary}\n\nPENDÊNCIAS:\n${pendingTasks || 'Nenhuma'}`,
-        visibilidade
-      });
-
-      // Post Incident separately for better visibility if it exists
-      if (hasIncident) {
+      // Post Incident separately for better visibility
+      if (visibilidade.length > 0) {
         const residentNames = residents
           .filter(r => selectedResidentIds.includes(r.id))
           .map(r => r.name)
@@ -178,7 +201,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
         onPostToMural({
           author: `🚨 INTERCORRÊNCIA [${incidentType.toUpperCase()}]`,
           text: `🚩 Nova intercorrência registrada para: ${residentNames}`,
-          detailedContent: `Descrição:\n${description}\n\nConduta:\n${conduct}`,
+          detailedContent: `Data/Hora: ${incidentDate.split('-').reverse().join('/')} às ${incidentTime}\n\nDescrição:\n${description}\n\nConduta:\n${conduct}`,
           visibilidade
         });
       }
@@ -192,7 +215,11 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
     setDescription('');
     setConduct('');
     
-    alert('Plantão (e intercorrências) registrados com sucesso!');
+    const d = new Date();
+    setIncidentDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+    setIncidentTime(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`);
+    
+    alert('Registros salvos com sucesso!');
   };
 
   const getIncidentsForDate = (dateStr: string) => {
@@ -245,7 +272,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
     
     // Import dynamically since it's inside an async handle
     const { printHandoverHtmlPdf } = await import('../lib/printHandover');
-    await printHandoverHtmlPdf(handover, logs, vitalSigns, handoverIncidents, settings, sigAuth);
+    await printHandoverHtmlPdf(handover, logs, vitalSigns, handoverIncidents, settings, sigAuth, residents);
   };
 
   return (
@@ -391,6 +418,19 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                                         </div>
                                       );
                                     })()}
+
+                                    {/* Inline Routines rendering */}
+                                    {(() => {
+                                      const shiftLogs = historyLogs.filter(l => l.turnoId === h.turnoId || l.turnoId === h.shift);
+                                      return (
+                                        <div className="mt-4 pt-4 border-t border-gray-100">
+                                          <h4 className="text-[10px] font-black uppercase text-[#004c99] mb-2 flex items-center gap-1"><CheckCircle2 size={12}/> Resumo das Rotinas Registradas:</h4>
+                                          <pre className="text-[11px] text-gray-700 bg-gray-50/50 p-3 rounded-xl border border-gray-100 whitespace-pre-wrap font-mono relative">
+                                            {generateRoutinesSummaryText(shiftLogs, residents, selectedHistoryDate)}
+                                          </pre>
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
                                 ))
                              )}
@@ -466,7 +506,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
 
             <div className="space-y-6">
               <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Relatório de Atividades e Eventos (obrigatório)</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Relatório de Atividades e Eventos {hasIncident ? '(opcional ao registrar apenas intercorrência)' : '(obrigatório)'}</label>
                 <textarea 
                   value={summary}
                   onChange={e => setSummary(e.target.value)}
@@ -515,6 +555,27 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                 animate={{ opacity: 1, height: 'auto' }}
                 className="pt-8 border-t mt-8 space-y-6"
               >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Data da Ocorrência</label>
+                    <input 
+                      type="date"
+                      value={incidentDate}
+                      onChange={e => setIncidentDate(e.target.value)}
+                      className="w-full px-4 py-3 bg-gray-50 border rounded-2xl text-xs font-bold uppercase outline-none focus:bg-white focus:ring-2 focus:ring-red-100 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Hora da Ocorrência</label>
+                    <input 
+                      type="time"
+                      value={incidentTime}
+                      onChange={e => setIncidentTime(e.target.value)}
+                      className="w-full px-4 py-3 bg-gray-50 border rounded-2xl text-xs font-bold uppercase outline-none focus:bg-white focus:ring-2 focus:ring-red-100 transition-all"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Tipo de Ocorrência</label>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -534,25 +595,65 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                   </div>
                 </div>
 
-                <div>
+                <div className="relative">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Residentes Envolvidos ({selectedResidentIds.length})</label>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-h-[150px] overflow-y-auto custom-scrollbar p-1">
-                    {residents.map(r => (
-                      <button
-                        key={r.id}
-                        onClick={() => setSelectedResidentIds(prev => 
-                          prev.includes(r.id) ? prev.filter(id => id !== r.id) : [...prev, r.id]
-                        )}
-                        className={`p-3 rounded-2xl text-[10px] font-black uppercase transition-all border text-center ${
-                          selectedResidentIds.includes(r.id) 
-                            ? 'bg-red-100 border-red-300 text-red-700 shadow-sm ring-2 ring-red-500/10' 
-                            : 'bg-slate-100 border-slate-200 text-slate-600 hover:border-slate-400 hover:bg-white'
-                        }`}
-                      >
-                        {r.name.split(' ')[0]}
-                      </button>
-                    ))}
+                  
+                  {selectedResidentIds.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {selectedResidentIds.map(id => {
+                        const r = residents.find(res => res.id === id);
+                        if (!r) return null;
+                        return (
+                          <div key={id} className="flex items-center gap-2 bg-red-100 text-red-800 px-3 py-1.5 rounded-full text-xs font-bold border border-red-200">
+                            <span>{r.name}</span>
+                            <button type="button" onClick={() => setSelectedResidentIds(prev => prev.filter(x => x !== id))} className="text-red-500 hover:text-red-800 focus:outline-none">
+                              <X size={14} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                    <input 
+                      type="text" 
+                      placeholder="Buscar residente por nome..." 
+                      value={residentSearchTerm}
+                      onChange={e => setResidentSearchTerm(e.target.value)}
+                      className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold uppercase outline-none focus:bg-white focus:ring-2 focus:ring-red-100 transition-all"
+                    />
                   </div>
+
+                  {residentSearchTerm.trim() !== '' && (
+                    <div className="absolute z-50 w-full mt-2 max-h-[200px] overflow-y-auto custom-scrollbar bg-white border border-gray-200 rounded-xl shadow-xl">
+                      {(() => {
+                        const available = residents.filter(r => !selectedResidentIds.includes(r.id));
+                        const filtered = available.filter(r => r.name.toLowerCase().includes(residentSearchTerm.toLowerCase()));
+                        
+                        if (filtered.length === 0) {
+                          return <div className="p-4 text-xs font-bold text-gray-500 text-center uppercase">Nenhum residente encontrado.</div>;
+                        }
+
+                        return filtered.map(r => (
+                          <button
+                            key={r.id}
+                            onClick={() => {
+                              setSelectedResidentIds(prev => [...prev, r.id]);
+                              setResidentSearchTerm('');
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex flex-col transition-colors"
+                          >
+                            <span className="text-xs font-black text-gray-800 uppercase">{r.name}</span>
+                            <span className="text-[10px] text-gray-500 font-bold uppercase mt-0.5">
+                              {r.birthDate ? `${Math.abs(new Date(Date.now() - new Date(r.birthDate + 'T00:00:00').getTime()).getUTCFullYear() - 1970)} anos` : 'Sem idade informada'}
+                            </span>
+                          </button>
+                        ));
+                      })()}
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -584,10 +685,10 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
             <button 
               id="save-handover-button"
               onClick={handleSaveAll}
-              disabled={!summary.trim() || (hasIncident && (!description.trim() || selectedResidentIds.length === 0))}
+              disabled={(!summary.trim() && !hasIncident) || (hasIncident && (!description.trim() || selectedResidentIds.length === 0))}
               className="px-10 py-5 bg-[#004c99] text-white rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 hover:scale-105 disabled:opacity-30 disabled:hover:scale-100 transition-all flex items-center gap-3"
             >
-              <Save size={20} /> Finalizar Turno e Salvar Registros
+              <Save size={20} /> {summary.trim() && hasIncident ? 'Salvar Plantão e Intercorrência' : summary.trim() ? 'Salvar Plantão' : 'Salvar Intercorrência'}
             </button>
           </div>
 

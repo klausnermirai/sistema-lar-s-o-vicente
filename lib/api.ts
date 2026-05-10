@@ -196,6 +196,12 @@ export const bulkSaveResidents = async (residents: any[]) => {
   return response.json();
 };
 
+export const fetchEmployees = async () => {
+  const response = await fetch('/api/employees', { headers: getAuthHeaders() });
+  if (!response.ok) throw new Error('Erro ao buscar funcionários');
+  return response.json();
+};
+
 export const fetchSettings = async (institutionId: string) => {
   const response = await fetch(`/api/settings?institutionId=${institutionId}`, {
     headers: getAuthHeaders()

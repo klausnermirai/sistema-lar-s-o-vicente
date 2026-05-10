@@ -1,3 +1,4 @@
+import { generateRoutinesSummaryText } from './routineSummaryHelper';
 import { ShiftHandover, Resident, OperationalShift, InstitutionSettings, IncidentReport, ShiftProcedureLog } from '../types';
 import { getHtmlPrintHeader, getHtmlPrintStyles, getHtmlPrintFooter } from './pdfHelpers';
 
@@ -7,7 +8,8 @@ export const printHandoverHtmlPdf = async (
   vitalSigns: any[],
   incidents: any[],
   settings: InstitutionSettings | null | undefined,
-  professionalSignature: { name: string, role: string, doc: string }
+  professionalSignature: { name: string, role: string, doc: string },
+  residents: Resident[] = [] // added residents param with fallback
 ) => {
   const printWindow = window.open("", "_blank");
   if (!printWindow) return;
@@ -17,33 +19,7 @@ export const printHandoverHtmlPdf = async (
   const dateStr = handover.dataOperacional ? handover.dataOperacional.split('-').reverse().join('/') : '';
   const timestampStr = new Date(handover.timestamp).toLocaleString('pt-BR');
 
-  const banhos = logs.filter(l => l.tipoProcedimento === 'banho');
-  const higieneOral = logs.filter(l => l.tipoProcedimento === 'higiene_oral');
-  const decubito = logs.filter(l => l.tipoProcedimento === 'decubito');
-  const barbaTrico = logs.filter(l => l.tipoProcedimento === 'barba_trico');
-  const unhas = logs.filter(l => l.tipoProcedimento === 'unhas');
-  const fralda = logs.filter(l => l.tipoProcedimento === 'fralda');
-  const alimentacao = logs.filter(l => l.tipoProcedimento === 'alimentacao');
-
-  const getBanhosText = () => {
-    if (banhos.length === 0) return "Nenhum registro de banho.";
-    return `Total realizados: ${banhos.length}`;
-  };
-
-  const getHigieneOralText = () => {
-    if (higieneOral.length === 0) return "Nenhum registro de higiene oral.";
-    return `Realizados: ${higieneOral.length}`;
-  };
-
-  const getFraldasText = () => {
-    if (fralda.length === 0) return "Nenhum registro de fralda.";
-    return `Total de registros: ${fralda.length}`;
-  };
-
-  const getAlimentacaoText = () => {
-    if (alimentacao.length === 0) return "Nenhum registro de alimentação.";
-    return alimentacao.map(a => `${a.refeicaoNome || 'Refeição'}: ${a.horarioAproximado || 'S/hora'} (${Object.keys(a.registrosPorResidente || {}).length} registros)`).join('<br>');
-  };
+  const routinesText = generateRoutinesSummaryText(logs, residents, handover.dataOperacional || '');
 
   const html = `
     <html>
@@ -55,8 +31,9 @@ export const printHandoverHtmlPdf = async (
         </style>
       </head>
       <body>
-        ${headerHtml}
-        <div class="subtitle">Saúde e Cuidados / Passagem de Plantão</div>
+        <div class="print-wrapper">
+          ${headerHtml}
+          <div class="subtitle">Saúde e Cuidados / Passagem de Plantão</div>
 
         <div class="flex-row" style="margin-bottom: 20px;">
           <div class="flex-col-half field">
@@ -91,34 +68,8 @@ export const printHandoverHtmlPdf = async (
         <h2 class="section-title">2. Pendências para o Próximo Turno</h2>
         <div class="paragraph">${handover.pendingTasks || "Sem pendências registradas."}</div>
 
-        <h2 class="section-title">3. Rotinas Registradas no Turno</h2>
-        ${logs.length > 0 ? `
-          <div class="flex-row">
-            <div class="flex-col-full field">
-              <span class="label">Banho:</span> <span class="value" style="border:none;">${getBanhosText()}</span>
-            </div>
-            <div class="flex-col-full field">
-              <span class="label">Higiene oral:</span> <span class="value" style="border:none;">${getHigieneOralText()}</span>
-            </div>
-            <div class="flex-col-full field">
-              <span class="label">Alimentação:</span> <span class="value" style="border:none;">${getAlimentacaoText()}</span>
-            </div>
-            <div class="flex-col-full field">
-              <span class="label">Troca de fraldas:</span> <span class="value" style="border:none;">${getFraldasText()}</span>
-            </div>
-            <div class="flex-col-full field">
-              <span class="label">Mudança de decúbito:</span> <span class="value" style="border:none;">Total de registros: ${decubito.length}</span>
-            </div>
-            <div class="flex-col-full field">
-              <span class="label">Tricotomia / Barba:</span> <span class="value" style="border:none;">Total de registros: ${barbaTrico.length}</span>
-            </div>
-            <div class="flex-col-full field">
-              <span class="label">Corte de Unhas:</span> <span class="value" style="border:none;">Total de registros: ${unhas.length}</span>
-            </div>
-          </div>
-        ` : `
-          <div class="paragraph" style="border:none; padding: 0;">Não há rotinas registradas para este turno.</div>
-        `}
+        <h2 class="section-title">3. Rotinas do Dia e Turno</h2>
+        <div class="paragraph" style="white-space: pre-wrap; font-family: monospace; font-size: 11px;">${routinesText}</div>
 
         <h2 class="section-title">4. Sinais Vitais Registrados</h2>
         ${vitalSigns.length > 0 ? `
@@ -199,6 +150,7 @@ export const printHandoverHtmlPdf = async (
           <div class="signature-role">
             Responsável pelo registro do plantão
           </div>
+        </div>
         </div>
 
         ${getHtmlPrintFooter()}

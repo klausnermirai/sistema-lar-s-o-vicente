@@ -609,6 +609,61 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
             )}
           </div>
 
+          {/* Tabela das Últimas Marcações */}
+          {history.length > 0 && (
+            <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm p-8 mt-6 overflow-hidden">
+              <h3 className="text-sm font-black uppercase text-gray-800 tracking-widest mb-6">Últimas 5 Medições</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50/80">
+                      <th className="p-3 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">Indicador</th>
+                      {history.slice(0, 5).map((h, i) => (
+                        <th key={i} className="p-3 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 whitespace-nowrap">
+                          {new Date(h.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50 text-xs font-bold text-gray-700">
+                    <tr className="hover:bg-gray-50/50 transition-colors">
+                      <td className="p-3">Glicose</td>
+                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.hgtValue || '-'}</td>)}
+                    </tr>
+                    <tr className="hover:bg-gray-50/50 transition-colors">
+                      <td className="p-3">Peso</td>
+                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.weight ? `${h.weight} kg` : '-'}</td>)}
+                    </tr>
+                    <tr className="hover:bg-gray-50/50 transition-colors">
+                      <td className="p-3">Altura</td>
+                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.height ? `${h.height} cm` : '-'}</td>)}
+                    </tr>
+                    <tr className="hover:bg-gray-50/50 transition-colors">
+                      <td className="p-3">Pressão máxima</td>
+                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.paSystolic || '-'}</td>)}
+                    </tr>
+                    <tr className="hover:bg-gray-50/50 transition-colors">
+                      <td className="p-3">Pressão mínima</td>
+                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.paDiastolic || '-'}</td>)}
+                    </tr>
+                    <tr className="hover:bg-gray-50/50 transition-colors">
+                      <td className="p-3">Frequência cardíaca</td>
+                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.fc || '-'}</td>)}
+                    </tr>
+                    <tr className="hover:bg-gray-50/50 transition-colors">
+                      <td className="p-3">Saturação</td>
+                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.spo2 ? `${h.spo2}%` : '-'}</td>)}
+                    </tr>
+                    <tr className="hover:bg-gray-50/50 transition-colors">
+                      <td className="p-3">Temperatura</td>
+                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.temperature ? `${h.temperature}°C` : '-'}</td>)}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Mini Gráfico ou Destaque Biométrico aqui no futuro */}
         </div>
 

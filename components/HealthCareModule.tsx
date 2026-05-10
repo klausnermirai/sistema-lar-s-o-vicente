@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import DailyRoutineTab from './DailyRoutineTab';
 import VitalSignsTab from './VitalSignsTab';
+import { VitalSignsDailyReport } from './VitalSignsDailyReport';
 import HandoverTab from './HandoverTab';
 import { OperationalAdministrationTab } from './OperationalAdministrationTab';
 import { fetchShifts } from '../lib/api';
@@ -39,6 +40,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
   const [searchTerm, setSearchTerm] = useState('');
   const [isTabletMode, setIsTabletMode] = useState(false);
   const [tabletMenuActive, setTabletMenuActive] = useState(true);
+  const [showVitalSignsDailyReport, setShowVitalSignsDailyReport] = useState(false);
   const [shifts, setShifts] = useState<any[]>([]);
 
   useEffect(() => {
@@ -148,8 +150,9 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
         <DailyRoutineTab 
           residents={residents}
           onSaveLogs={handleCollectiveLogsSave}
-          isTabletMode={true}
+          isTabletMode={isTabletMode}
           shifts={shifts}
+          onPostToMural={onPostToMural}
         />
       );
     }
@@ -161,7 +164,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
           residents={residents}
           settings={settings}
           shifts={shifts}
-          isTabletMode={true}
+          isTabletMode={isTabletMode}
           onSaveIncident={(incident) => {
             // Save incident to each involved resident
             incident.residentIds.forEach(rid => {
@@ -219,6 +222,10 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
       );
     }
 
+    if (activeSubTab === 'sinais_vitais' && showVitalSignsDailyReport) {
+       return <VitalSignsDailyReport residents={residents} onBack={() => setShowVitalSignsDailyReport(false)} />;
+    }
+
     if (!selectedResident) {
       return (
         <div className="flex flex-col items-center justify-center p-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 h-full">
@@ -236,7 +243,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
     return (
       <VitalSignsTab 
         resident={selectedResident}
-        isTabletMode={true}
+        isTabletMode={isTabletMode}
         onSave={(entry) => {
           const per = selectedResident.per || { 
             lastUpdated: new Date().toISOString(), 
@@ -318,8 +325,15 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
              </div>
           </div>
 
-          <div className="flex-1 w-full max-w-xl relative search-container group">
-             <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+          <div className="flex items-center gap-4">
+             <button 
+                onClick={() => setShowVitalSignsDailyReport(true)}
+                className="px-6 py-4 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-sm flex items-center gap-2"
+             >
+                <ClipboardList size={20} /> Relatório do Dia
+             </button>
+             <div className="w-full max-w-xl relative search-container group flex-1">
+               <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
              <input 
                type="text" 
                placeholder="Buscar residente para atendimento..."
@@ -372,6 +386,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
                </div>
              )}
           </div>
+        </div>
         </div>
       )}
 

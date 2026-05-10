@@ -2545,11 +2545,11 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
           <div class="paragraph">${data.integrationReport}</div>
           ` : ''}
 
-          <div class="signature-box" style="margin-top: 40px; text-align: center;">
-            <div class="signature-line" style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold; line-height: 1.4;">
+          <div class="signature-box">
+            <div class="signature-line">
               ${signatureHtml}
             </div>
-            <div class="signature-role" style="font-size: 10px; color: #666; margin-top: 5px;">
+            <div class="signature-role" style="margin-top: 5px;">
               Documento gerado em: ${printDate}
             </div>
           </div>

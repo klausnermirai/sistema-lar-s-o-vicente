@@ -79,6 +79,7 @@ export interface InstitutionSettings {
     cityState?: string;
     additionalText?: string;
   };
+  employees?: any[];
 }
 
 export interface AssistedFamily {

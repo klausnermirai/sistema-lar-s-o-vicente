@@ -22,7 +22,7 @@ import { DUMMY_RESIDENTS, INITIAL_RESIDENT, DUMMY_CANDIDATES } from './constants
 import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Pill, Briefcase, FileSearch, FileText, ClipboardList } from 'lucide-react';
 
 
-import { fetchResidents, fetchCandidates, saveResident as apiSaveResident, saveCandidate as apiSaveCandidate, bulkSaveCandidates as apiBulkSaveCandidates, bulkSaveResidents as apiBulkSaveResidents, deleteCandidate as apiDeleteCandidate, deleteResident as apiDeleteResident, fetchSettings, Session, saveMuralMessage as apiSaveMuralMessage } from './lib/api';
+import { fetchResidents, fetchCandidates, saveResident as apiSaveResident, saveCandidate as apiSaveCandidate, bulkSaveCandidates as apiBulkSaveCandidates, bulkSaveResidents as apiBulkSaveResidents, deleteCandidate as apiDeleteCandidate, deleteResident as apiDeleteResident, fetchSettings, fetchEmployees, Session, saveMuralMessage as apiSaveMuralMessage } from './lib/api';
 
 // TEMPORÁRIO PARA PROTOTIPAÇÃO: Pular Login/Setup se true
 const DEV_BYPASS_AUTH = false;
@@ -83,7 +83,7 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const [residentsData, candidatesData, settingsData] = await Promise.all([
+      const [residentsData, candidatesData, settingsData, employeesData] = await Promise.all([
         fetchResidents(idToFetch, session.hierarchy?.type).catch((err) => {
           console.error("Residents fetch error:", err);
           return [];
@@ -96,11 +96,25 @@ const App: React.FC = () => {
           console.error("Settings fetch error:", err);
           return undefined;
         }),
+        fetchEmployees().catch((err) => {
+          console.error("Employees fetch error:", err);
+          return [];
+        })
       ]);
 
       setResidents(residentsData || []);
       setCandidates(candidatesData || []);
-      setSettings(settingsData || null);
+      
+      let finalSettings = settingsData || null;
+      if (finalSettings) {
+        finalSettings.employees = employeesData || [];
+        console.log("Entidade atual (App.tsx loadData):", idToFetch);
+        console.log("Funcionários encontrados:", finalSettings.employees.length);
+        if (finalSettings.employees.length > 0) {
+          console.log("Amostra de funcionários:", finalSettings.employees.map((e: any) => ({ nome: e.nomeExibicao || e.nomeCompleto, funcao: e.funcao })));
+        }
+      }
+      setSettings(finalSettings);
 
       // Se respondeu estritamente null (404), a instituição precisa de setup
       if (settingsData === null && !DEV_BYPASS_AUTH) {

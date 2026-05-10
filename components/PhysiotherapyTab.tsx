@@ -132,9 +132,9 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
       <div class="section-title">Observações Finais</div>
       <div class="paragraph">${assessment.finalObservations || 'Não informado'}</div>
 
-      <div class="signature-box" style="margin-top: 60px;">
-        <div class="signature-line" style="border-top: 1px solid #000; width: 300px; margin: 0 auto; padding-top: 5px; font-weight: bold; text-align: center;">${signatureName}</div>
-        <div class="signature-role" style="font-size: 10px; color: #666; text-align: center;">${role.replace(' - ', '')}</div>
+      <div class="signature-box">
+        <div class="signature-line">${signatureName}</div>
+        <div class="signature-role">${role.replace(' - ', '')}</div>
       </div>
     `;
 

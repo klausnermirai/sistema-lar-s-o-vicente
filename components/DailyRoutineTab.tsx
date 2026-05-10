@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Resident, DailyRoutineLog, OperationalShift, ShiftProcedureLog, MealConfiguration } from '../types';
 import { getCurrentShift, getOperationalDate } from '../lib/shiftUtils';
-import { fetchProcedureLogs, saveProcedureLog, fetchMeals } from '../lib/api';
+import { fetchProcedureLogs, saveProcedureLog, fetchMeals, fetchMural } from '../lib/api';
 import { 
   CheckCircle2, 
   XCircle, 
@@ -23,7 +23,8 @@ import {
   ChevronLeft,
   Loader2,
   Clock,
-  Bandage
+  Bandage,
+  FileText
 } from 'lucide-react';
 
 interface DailyRoutineTabProps {
@@ -31,6 +32,7 @@ interface DailyRoutineTabProps {
   onSaveLogs: (updates: { residentId: string, log: DailyRoutineLog }[]) => void;
   isTabletMode?: boolean;
   shifts?: OperationalShift[];
+  onPostToMural?: (message: any) => void;
 }
 
 const ROUTINE_TASKS = [
@@ -44,8 +46,8 @@ const ROUTINE_TASKS = [
   { id: 'curativos', name: 'Curativos', icon: Bandage, careNeedKey: 'woundCareAssistance' as const, isMandatory: false, category: 'Cuidado', careLabelName: 'Necessita curativo', occurrenceType: 'recurrent' },
 ];
 
-const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs, isTabletMode, shifts = [] }) => {
-  const [tabletStep, setTabletStep] = useState<'menu' | 'register'>('menu');
+const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs, isTabletMode, shifts = [], onPostToMural }) => {
+  const [tabletStep, setTabletStep] = useState<'menu' | 'register' | 'summary'>('menu');
   const [selectedTaskId, setSelectedTaskId] = useState(ROUTINE_TASKS[0].id);
   const [genderFilter, setGenderFilter] = useState<'todos' | 'masculino' | 'feminino'>('todos');
   const [searchTerm, setSearchTerm] = useState('');
@@ -139,7 +141,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
 
   const handleSelectAll = (select: boolean) => {
     if (select) {
-      if (isTabletMode && tabletStep === 'register') {
+      if (tabletStep === 'register') {
         const isDaily = (selectedTask as any).occurrenceType === 'daily';
         const selectableIds = filteredResidents.filter(r => {
           if (!isDaily) return true;
@@ -186,7 +188,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
     alert(`${updates.length} registros salvos com sucesso!`);
   };
 
-  if (isTabletMode && tabletStep === 'menu') {
+  if (tabletStep === 'menu') {
     return (
       <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in zoom-in-95 duration-500">
         <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter mb-2 text-center">Plano de Rotinas</h2>
@@ -210,6 +212,16 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{task.category}</p>
               </button>
             ))}
+            <button
+               onClick={() => setTabletStep('summary')}
+               className="col-span-2 md:col-span-3 lg:col-span-4 flex flex-col items-center justify-center p-8 bg-blue-50 border-2 border-blue-200 rounded-[32px] hover:border-[#004c99] hover:shadow-xl transition-all duration-300 group hover:-translate-y-1"
+            >
+               <div className="w-16 h-16 rounded-2xl bg-white text-[#004c99] flex items-center justify-center mb-4 shadow-sm group-hover:scale-110 transition-transform duration-500">
+                  <FileText size={32} />
+               </div>
+               <h3 className="text-xl font-black text-[#004c99] uppercase tracking-tighter text-center leading-tight">Resumo do Dia</h3>
+               <p className="text-[10px] font-bold text-blue-600/60 uppercase tracking-widest mt-1">Histórico completo de rotinas</p>
+            </button>
           </div>
         </div>
       </div>
@@ -325,168 +337,190 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
     }
   };
 
-  if (isTabletMode && tabletStep === 'register' && selectedTask.id === 'alimentacao' && !selectedMeal) {
-    return (
-      <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in zoom-in-95 duration-500">
-        <div className="flex items-center gap-4 mb-8 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 shrink-0">
-          <button 
-            onClick={() => setTabletStep('menu')}
-            className="w-14 h-14 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl flex items-center justify-center transition-all"
-          >
-            <ChevronLeft size={28} />
-          </button>
-          <div>
-            <h2 className="text-2xl font-black text-[#004c99] uppercase tracking-tighter">Refeições de Hoje</h2>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">Selecione qual refeição registrar</p>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            {meals.map(meal => {
-              const hasRecords = procedureLogs.some(l => l.tipoProcedimento === 'alimentacao' && l.refeicaoId === meal.id);
-              
-              return (
-                <button
-                  key={meal.id}
-                  onClick={() => {
-                    setSelectedMeal(meal);
-                    const existingLog = procedureLogs.find(l => l.tipoProcedimento === 'alimentacao' && l.refeicaoId === meal.id);
-                    if (existingLog && existingLog.registrosPorResidente) {
-                        setMealRecords(existingLog.registrosPorResidente);
-                    } else {
-                        setMealRecords({}); 
-                    }
-                  }}
-                  className="flex flex-col items-center justify-center p-8 bg-white border-2 border-gray-100 rounded-[32px] hover:border-[#004c99] hover:shadow-xl transition-all duration-300 group"
-                >
-                  <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mb-6 shadow-sm transition-transform duration-500 ${
-                    hasRecords ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-[#004c99]'
-                  }`}>
-                    {hasRecords ? <CheckCircle2 size={32} /> : <Coffee size={32} />}
-                  </div>
-                  <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter text-center leading-tight mb-2">{meal.nomeRefeicao}</h3>
-                  <div className="flex flex-col items-center gap-1">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-100 px-3 py-1 rounded-lg">~ {meal.horarioAproximado}</span>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{meal.turnoNome}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isTabletMode && tabletStep === 'register' && selectedTask.id === 'alimentacao' && selectedMeal) {
-    return (
-      <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in zoom-in-95 duration-500">
-        <div className="flex items-center gap-4 mb-4 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 shrink-0">
-          <button 
-            onClick={() => setSelectedMeal(null)}
-            className="w-14 h-14 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl flex items-center justify-center transition-all"
-          >
-            <ChevronLeft size={28} />
-          </button>
-          <div className="flex-1">
-            <h2 className="text-2xl font-black text-[#004c99] uppercase tracking-tighter">{selectedMeal.nomeRefeicao}</h2>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">
-              Registro de Alimentação - {selectedMeal.horarioAproximado}
-            </p>
-          </div>
-          <div className="bg-blue-50 px-6 py-4 rounded-2xl flex gap-6">
-            <div className="text-[10px] uppercase font-black text-[#004c99] tracking-widest flex flex-col gap-1 text-right border-r border-[#004c99]/20 pr-6">
-              <span className="text-gray-500">Registrados</span>
-              <span className="text-lg leading-none">{Object.keys(mealRecords).length} / {residents.length}</span>
+  const renderRegisterContent = () => {
+    if (selectedTask.id === 'alimentacao' && !selectedMeal) {
+      return (
+        <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in zoom-in-95 duration-500">
+          <div className="flex items-center gap-4 mb-8 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 shrink-0">
+            
+              <button 
+                onClick={() => setTabletStep('menu')}
+                className="w-14 h-14 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl flex items-center justify-center transition-all"
+              >
+                <ChevronLeft size={28} />
+              </button>
+            <div>
+              <h2 className="text-2xl font-black text-[#004c99] uppercase tracking-tighter">Refeições de Hoje</h2>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">Selecione qual refeição registrar</p>
             </div>
-            <div className="text-[10px] uppercase font-black text-[#004c99] tracking-widest flex flex-col gap-1 text-right">
-              <span className="text-gray-500">Data</span>
-              <span>{operationalDate.split('-').reverse().join('/')}</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+              {meals.map(meal => {
+                const hasRecords = procedureLogs.some(l => l.tipoProcedimento === 'alimentacao' && l.refeicaoId === meal.id);
+                
+                return (
+                  <button
+                    key={meal.id}
+                    onClick={() => {
+                      setSelectedMeal(meal);
+                      const existingLog = procedureLogs.find(l => l.tipoProcedimento === 'alimentacao' && l.refeicaoId === meal.id);
+                      if (existingLog && existingLog.registrosPorResidente) {
+                          setMealRecords(existingLog.registrosPorResidente);
+                      } else {
+                          setMealRecords({}); 
+                      }
+                    }}
+                    className="flex flex-col items-center justify-center p-8 bg-white border-2 border-gray-100 rounded-[32px] hover:border-[#004c99] hover:shadow-xl transition-all duration-300 group"
+                  >
+                    <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mb-6 shadow-sm transition-transform duration-500 ${
+                      hasRecords ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-[#004c99]'
+                    }`}>
+                      {hasRecords ? <CheckCircle2 size={32} /> : <Coffee size={32} />}
+                    </div>
+                    <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter text-center leading-tight mb-2">{meal.nomeRefeicao}</h3>
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-100 px-3 py-1 rounded-lg">~ {meal.horarioAproximado}</span>
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{meal.turnoNome}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (selectedTask.id === 'alimentacao' && selectedMeal) {
+      return (
+        <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in zoom-in-95 duration-500">
+          <div className="flex flex-col lg:flex-row items-center gap-4 mb-8 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 shrink-0">
+            <div className="flex items-center gap-4 w-full lg:w-auto">
+              <button 
+                onClick={() => setSelectedMeal(null)}
+                className="w-14 h-14 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl flex items-center justify-center transition-all shrink-0"
+              >
+                <ChevronLeft size={28} />
+              </button>
+              <div className="flex-1">
+                <h2 className="text-xl md:text-2xl font-black text-[#004c99] uppercase tracking-tighter">{selectedMeal.nomeRefeicao}</h2>
+                <p className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">
+                  Registro de Alimentação - {selectedMeal.horarioAproximado}
+                </p>
+              </div>
+            </div>
+            <div className="w-full lg:flex-1 lg:flex lg:justify-end">
+              <div className="bg-blue-50 px-4 md:px-6 py-4 rounded-2xl flex flex-col md:flex-row gap-4 md:gap-6 items-center w-full lg:w-auto shadow-sm border border-blue-100">
+              <div className="text-[10px] uppercase font-black text-[#004c99] tracking-widest flex flex-row items-center justify-between md:flex-col gap-1 md:text-right md:border-r border-[#004c99]/20 md:pr-6 w-full md:w-auto border-b border-[#004c99]/10 md:border-b-0 pb-2 md:pb-0">
+                <span className="text-gray-500">Registrados</span>
+                <span className="text-lg leading-none">{Object.keys(mealRecords).length} / {residents.length}</span>
+              </div>
+              <div className="text-[10px] uppercase font-black text-[#004c99] tracking-widest flex flex-row items-center justify-between md:flex-col gap-1 md:text-right w-full md:w-auto">
+                <span className="text-gray-500">Data</span>
+                <span>{operationalDate.split('-').reverse().join('/')}</span>
+              </div>
+              <button 
+                  onClick={handleProcedureLog}
+                  className="w-full md:w-auto md:ml-4 py-3 md:py-4 px-6 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-md flex justify-center items-center gap-2 mt-2 md:mt-0"
+                >
+                  <CheckCircle2 size={20} />
+                  Finalizar Reg.
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto custom-scrollbar bg-white rounded-[32px] p-6 shadow-sm border border-gray-100">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {residents.map(r => {
+                const needsAssistance = r.careNeeds?.feedingAssistance;
+                const currentStatus = mealRecords[r.id];
+                
+                const setStatus = (status: 'comeu' | 'comeu_pouco' | 'nao_comeu' | 'recusou') => {
+                   setMealRecords(prev => {
+                     if (prev[r.id] === status) {
+                       const next = {...prev};
+                       delete next[r.id];
+                       return next;
+                     }
+                     return { ...prev, [r.id]: status };
+                   });
+                };
+                
+                return (
+                  <div key={r.id} className="border-2 border-gray-100 rounded-2xl p-4 flex flex-col gap-4 hover:border-gray-200 transition-all relative">
+                    {needsAssistance && (
+                      <span className="absolute -top-3 right-4 px-3 py-1 bg-orange-100 text-orange-700 text-[9px] font-black uppercase tracking-widest rounded-lg border border-orange-200 shadow-sm z-10">
+                        Acompanhamento alimentar
+                      </span>
+                    )}
+                    <div className="flex items-center gap-3">
+                      <UserCircle2 size={32} className="text-gray-300" />
+                      <div>
+                        <p className="text-sm font-black uppercase tracking-tighter truncate leading-none text-[#004c99]">{r.name}</p>
+                        <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mt-1">Q. {r.room || '--'} • L. {r.bedNumber || '--'}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                      <button onClick={() => setStatus('comeu')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'comeu' ? 'bg-green-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Comeu</button>
+                      <button onClick={() => setStatus('comeu_pouco')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'comeu_pouco' ? 'bg-yellow-400 text-yellow-900 shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Pouco</button>
+                      <button onClick={() => setStatus('nao_comeu')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'nao_comeu' ? 'bg-red-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Não</button>
+                      <button onClick={() => setStatus('recusou')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'recusou' ? 'bg-orange-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Recusou</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in zoom-in-95 duration-500">
+        <div className="flex flex-col lg:flex-row items-center gap-4 mb-8 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 shrink-0">
+          <div className="flex items-center gap-4 w-full lg:w-auto">
+            
+              <button 
+                onClick={() => setTabletStep('menu')}
+                className="w-14 h-14 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl flex items-center justify-center transition-all shrink-0"
+              >
+                <ChevronLeft size={28} />
+              </button>
+            <div className="flex-1">
+              <h2 className="text-xl md:text-2xl font-black text-[#004c99] uppercase tracking-tighter">Registro de {selectedTask.name}</h2>
+              <p className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">Marque quem realizou neste turno</p>
+            </div>
+          </div>
+          <div className="w-full lg:flex-1 lg:flex lg:justify-end">
+            <div className="bg-blue-50 px-4 md:px-6 py-4 rounded-2xl flex flex-col md:flex-row gap-4 md:gap-6 items-center w-full lg:w-auto mt-0 shadow-sm border border-blue-100">
+            <div className="text-[10px] uppercase font-black text-[#004c99] tracking-widest flex flex-row items-center justify-between md:flex-col gap-1 md:text-right md:border-r border-[#004c99]/20 md:pr-6 w-full md:w-auto border-b border-[#004c99]/10 md:border-b-0 pb-2 md:pb-0">
+              <span className="text-gray-500">Total Selecionado</span>
+              <span className="text-lg leading-none">{selectedResidentIds.length}</span>
+            </div>
+            <div className="text-[10px] uppercase font-black text-[#004c99] tracking-widest flex flex-row items-center justify-between md:flex-col gap-1 md:text-right w-full md:w-auto">
+              <span className="text-gray-500">Data e Turno</span>
+              <span>{operationalDate.split('-').reverse().join('/')} - {selectedShift || '--'}</span>
             </div>
             <button 
                 onClick={handleProcedureLog}
-                className="ml-4 py-3 px-6 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-md flex items-center gap-2"
+                className="w-full md:w-auto md:ml-4 py-3 md:py-4 px-6 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-md flex justify-center items-center gap-2 mt-2 md:mt-0"
               >
                 <CheckCircle2 size={20} />
                 Finalizar Reg.
               </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-x-auto bg-white rounded-[32px] p-6 shadow-sm border border-gray-100">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {residents.map(r => {
-              const needsAssistance = r.careNeeds?.feedingAssistance;
-              const currentStatus = mealRecords[r.id];
-              
-              const setStatus = (status: 'comeu' | 'comeu_pouco' | 'nao_comeu' | 'recusou') => {
-                 setMealRecords(prev => {
-                   if (prev[r.id] === status) {
-                     const next = {...prev};
-                     delete next[r.id];
-                     return next;
-                   }
-                   return { ...prev, [r.id]: status };
-                 });
-              };
-              
-              return (
-                <div key={r.id} className="border-2 border-gray-100 rounded-2xl p-4 flex flex-col gap-4 hover:border-gray-200 transition-all relative">
-                  {needsAssistance && (
-                    <span className="absolute -top-3 right-4 px-3 py-1 bg-orange-100 text-orange-700 text-[9px] font-black uppercase tracking-widest rounded-lg border border-orange-200 shadow-sm z-10">
-                      Acompanhamento alimentar
-                    </span>
-                  )}
-                  <div className="flex items-center gap-3">
-                    <UserCircle2 size={32} className="text-gray-300" />
-                    <div>
-                      <p className="text-sm font-black uppercase tracking-tighter truncate leading-none text-[#004c99]">{r.name}</p>
-                      <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mt-1">Q. {r.room || '--'} • L. {r.bedNumber || '--'}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                    <button onClick={() => setStatus('comeu')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'comeu' ? 'bg-green-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Comeu</button>
-                    <button onClick={() => setStatus('comeu_pouco')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'comeu_pouco' ? 'bg-yellow-400 text-yellow-900 shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Pouco</button>
-                    <button onClick={() => setStatus('nao_comeu')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'nao_comeu' ? 'bg-red-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Não</button>
-                    <button onClick={() => setStatus('recusou')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'recusou' ? 'bg-orange-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Recusou</button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isTabletMode && tabletStep === 'register') {
-    return (
-      <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in zoom-in-95 duration-500">
-        <div className="flex items-center gap-4 mb-8 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 shrink-0">
-          <button 
-            onClick={() => setTabletStep('menu')}
-            className="w-14 h-14 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl flex items-center justify-center transition-all"
-          >
-            <ChevronLeft size={28} />
-          </button>
-          <div className="flex-1">
-            <h2 className="text-2xl font-black text-[#004c99] uppercase tracking-tighter">Registro de {selectedTask.name}</h2>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">Marque quem realizou neste turno</p>
-          </div>
-          <div className="bg-blue-50 px-6 py-4 rounded-2xl">
-            <div className="text-[10px] uppercase font-black text-[#004c99] tracking-widest flex flex-col gap-1 text-right">
-              <span>Data: {operationalDate.split('-').reverse().join('/')}</span>
-              <span>Turno: {selectedShift || '--'}</span>
             </div>
           </div>
         </div>
 
-        <div className="flex-1 flex gap-6 overflow-hidden max-w-6xl mx-auto w-full">
+        <div className="flex-1 overflow-y-auto custom-scrollbar pb-4">
+          <div className="flex flex-col xl:flex-row gap-6 max-w-6xl mx-auto w-full h-auto xl:h-full">
           {/* Form Controls - Shift Config */}
-          <div className="w-1/3 flex flex-col gap-6">
-            <div className="bg-white rounded-[32px] p-6 shadow-sm border border-gray-100">
+          <div className="w-full xl:w-1/3 flex flex-col gap-6 shrink-0 xl:shrink overflow-y-auto custom-scrollbar xl:pr-2 z-10 bottom-0 left-0 right-0 bg-gray-50 xl:bg-transparent p-4 xl:p-0 border-t xl:border-0 border-gray-200">
+            <div className="bg-white rounded-[32px] p-6 shadow-sm border border-gray-100 flex flex-col">
               <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6">Configuração</h3>
               <div className="mb-4">
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Turno Operacional</label>
@@ -505,24 +539,10 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                   </div>
               </div>
             </div>
-
-            <div className="bg-white rounded-[32px] p-8 shadow-sm border border-gray-100 flex flex-col justify-center gap-4">
-              <div className="text-center p-4 bg-gray-50 rounded-2xl border border-gray-100 mb-2">
-                 <p className="text-4xl font-black text-[#004c99]">{selectedResidentIds.length}</p>
-                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mt-1">Total Selecionado</p>
-              </div>
-              <button 
-                onClick={handleProcedureLog}
-                className="w-full py-6 bg-[#004c99] text-white rounded-2xl text-lg font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-xl flex items-center justify-center gap-3"
-              >
-                <CheckCircle2 size={32} />
-                Finalizar Registro
-              </button>
-            </div>
           </div>
 
           {/* Resident List */}
-          <div className="w-2/3 flex flex-col bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden relative">
+          <div className="w-full xl:w-2/3 flex flex-col bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden relative min-h-[500px]">
             {isLoadingLogs && (
               <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex items-center justify-center">
                 <Loader2 className="animate-spin text-[#004c99]" size={40} />
@@ -631,324 +651,406 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
           </div>
         </div>
       </div>
+    </div>
     );
-  }
+  };
 
-  return (
-    <div className="flex bg-gray-50/10 h-full min-h-0 animate-in fade-in duration-500">
-      {/* Task Selector Sidebar */}
-      <div className="w-72 border-r bg-white flex flex-col shrink-0 min-h-0">
-        <div className="p-6 border-b">
-          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Selecione a Rotina</h3>
-          <p className="text-[11px] text-gray-500 leading-tight">Escolha qual atividade do plano de cuidados deseja registrar coletivamente.</p>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          {ROUTINE_TASKS.map(task => (
-            <button
-              key={task.id}
-              onClick={() => {
-                setSelectedTaskId(task.id);
-                setSelectedResidentIds([]);
-              }}
-              className={`w-full flex items-center gap-3 p-4 rounded-2xl transition-all ${
-                selectedTaskId === task.id 
-                  ? 'bg-blue-50 text-[#004c99] ring-1 ring-blue-100' 
-                  : 'hover:bg-gray-50 text-gray-600'
-              }`}
-            >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${selectedTaskId === task.id ? 'bg-white shadow-sm' : 'bg-gray-100'}`}>
-                {typeof task.icon === 'function' ? task.icon({}) : <task.icon size={20} />}
-              </div>
-              <div className="text-left">
-                <p className="text-xs font-black uppercase tracking-tighter">{task.name}</p>
-                <p className="text-[9px] font-bold opacity-50 uppercase tracking-widest">{task.category}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+  const handleGenerateMuralSummary = async (dateStr: string) => {
+    if (!onPostToMural) {
+       alert("Funcionalidade de mural não disponível.");
+       return;
+    }
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header & Controls */}
-        <div className="p-8 border-b bg-white">
+    const savedSession = localStorage.getItem('ssvp_session');
+    const session = savedSession ? JSON.parse(savedSession) : null;
+    const currentInstId = session?.institutionId || session?.cnpj;
+
+    if (!currentInstId) {
+       alert("Não foi possível identificar a instituição.");
+       return;
+    }
+
+    const title = `Resumo das Rotinas — ${dateStr.split('-').reverse().join('/')}`;
+
+    try {
+      const messages = await fetchMural(currentInstId);
+      const alreadyPosted = messages.some((m: any) => m.text === title);
+      
+      if (alreadyPosted) {
+        if (!window.confirm(`Já existe um resumo de rotinas publicado para o dia ${dateStr.split('-').reverse().join('/')}. Deseja publicar novamente e atualizar a informação?`)) {
+           return;
+        }
+      } else {
+        if (!window.confirm(`Deseja gerar e publicar no mural o resumo das rotinas do dia ${dateStr.split('-').reverse().join('/')}?`)) {
+           return;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not check duplicate murals", e);
+      if (!window.confirm(`Deseja gerar e publicar no mural o resumo das rotinas do dia ${dateStr.split('-').reverse().join('/')}?`)) {
+         return;
+      }
+    }
+
+    let summaryText = '';
+
+    ROUTINE_TASKS.forEach(task => {
+      summaryText += `*${task.name}*:`;
+
+      const realizados: string[] = [];
+      const tabletLogs = procedureLogs.filter(log => log.tipoProcedimento === task.id);
+      
+      // Get legacy/desktop logs
+      residents.forEach(r => {
+          const log = (r.dailyRoutines || []).find(dr => dr.taskId === task.id && dr.date === dateStr);
+          if (log && log.status !== 'nao_concluido' && log.status !== 'ausente') {
+              if (!realizados.includes(r.name)) {
+                  realizados.push(r.name);
+              }
+          }
+      });
+
+      if (task.id === 'alimentacao') {
+          const refeicoes = Array.from(new Set(tabletLogs.map(t => t.refeicaoNome)));
+          if (refeicoes.length === 0) {
+             summaryText += `- Nenhum registro.`;
+             return;
+          }
+
+          refeicoes.forEach(rNome => {
+              const logsRefeicao = tabletLogs.filter(t => t.refeicaoNome === rNome);
+              const pendentesLocal: string[] = [];
+              const targetResidents = residents.filter(r => r.careNeeds?.feedingAssistance);
+
+              const attended = new Set<string>();
+              logsRefeicao.forEach(tLog => {
+                 if (tLog.registrosPorResidente) {
+                    Object.entries(tLog.registrosPorResidente).forEach(([resId, status]) => {
+                       if (status !== 'ausente') attended.add(resId);
+                    });
+                 }
+              });
+
+              targetResidents.forEach(r => {
+                 if (!attended.has(r.id)) pendentesLocal.push(r.name);
+              });
+
+              if (pendentesLocal.length === 0) {
+                  summaryText += `- _${rNome}_: todos registrados.`;
+              } else {
+                  summaryText += `- _${rNome}_: sem registro: ${pendentesLocal.join(', ')}.`;
+              }
+          });
+          summaryText += ``;
+          return;
+      }
+
+      tabletLogs.forEach(tLog => {
+          tLog.residentesSelecionados.forEach(resId => {
+             const r = residents.find(res => res.id === resId);
+             if (r && !realizados.includes(r.name)) {
+                 realizados.push(r.name);
+             }
+          });
+      });
+
+      if (task.isMandatory) {
+          const pendentes = [];
+          let targetResidents = residents;
+          if (task.careNeedKey) {
+             targetResidents = residents.filter(r => r.careNeeds && r.careNeeds[task.careNeedKey as keyof typeof r.careNeeds]);
+          }
+
+          targetResidents.forEach(r => {
+             if (!realizados.includes(r.name)) {
+                pendentes.push(r.name);
+             }
+          });
+
+          if (pendentes.length > 0) {
+             summaryText += `- Sem registro: ${pendentes.join(', ')}`;
+          } else {
+             summaryText += `- Todos registrados.`;
+          }
+      } else {
+          // Eventuais
+          if (realizados.length > 0) {
+             summaryText += `- Realizado em: ${realizados.join(', ')}`;
+          } else {
+             summaryText += `- Nenhum registro no dia.`;
+          }
+      }
+    });
+
+    onPostToMural({
+      author: 'Sistema',
+      text: title,
+      detailedContent: summaryText.trim(),
+      visibilidade: ['Equipe', 'Gestão']
+    });
+
+    alert('Resumo gerado e publicado no mural com sucesso!');
+  };
+
+  const renderSummary = () => {
+    const hasLogs = procedureLogs.length > 0 || residents.some(r => (r.dailyRoutines || []).some(dr => dr.date === selectedDate));
+
+    return (
+      <div className="flex flex-col h-full bg-gray-50/10">
+        <div className="p-8 border-b bg-white shrink-0">
           <div className="flex justify-between items-start mb-6">
             <div>
               <div className="flex items-center gap-3 mb-2">
-                <span className="px-3 py-1 bg-[#004c99] text-white text-[9px] font-black uppercase tracking-widest rounded-full">Registro Coletivo</span>
-                <span className="text-sm font-bold text-gray-400">/</span>
-                <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">{selectedTask.name}</h2>
+                <span className="px-3 py-1 bg-blue-100 text-blue-700 text-[9px] font-black uppercase tracking-widest rounded-full">Histórico</span>
+                <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">Relatório do Dia</h2>
               </div>
               <p className="text-sm text-gray-500 font-medium max-w-2xl">
-                Registre a execução desta rotina para múltiplos residentes de uma vez. Marque as exceções conforme necessário.
+                Acompanhe o relatório das rotinas.
               </p>
             </div>
             
-            <div className="flex gap-3">
               <button 
-                onClick={() => logTask('nao_concluido')}
-                disabled={selectedResidentIds.length === 0}
-                className="px-6 py-3 border border-red-200 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+                onClick={() => setTabletStep('menu')}
+                className="w-12 h-12 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl flex items-center justify-center transition-all"
               >
-                <XCircle size={16} /> Registrar Exceção (Não Realizado)
+                <ChevronLeft size={24} />
               </button>
-              <button 
-                onClick={() => logTask('concluido')}
-                disabled={selectedResidentIds.length === 0}
-                className="px-8 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xl flex items-center gap-2"
-              >
-                <CheckCircle2 size={16} /> Confirmar Realização em Lote
-              </button>
-            </div>
           </div>
-          
-          {selectedTask.careNeedKey && (
-            <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-100 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-[#004c99] text-white flex items-center justify-center">
-                {typeof selectedTask.icon === 'function' ? selectedTask.icon({ size: 20 }) : React.createElement(selectedTask.icon, { size: 20 })}
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase text-[#004c99] tracking-widest leading-tight">Indicador Especial</p>
-                <p className="text-sm font-bold text-gray-800 mt-0.5">
-                  <span className="font-black text-[#004c99] mr-1">{residents.filter(r => r.careNeeds && r.careNeeds[selectedTask.careNeedKey as keyof typeof r.careNeeds]).length}</span>
-                  residentes cadastrados necessitam de auxílio para {(selectedTask.name).toLowerCase()}.
-                </p>
-              </div>
-              <div className="ml-auto">
-                <button
-                  onClick={() => {
-                    const idsToSelect = residents.filter(r => r.careNeeds && r.careNeeds[selectedTask.careNeedKey as keyof typeof r.careNeeds]).map(r => r.id);
-                    // Select them
-                    const merged = Array.from(new Set([...selectedResidentIds, ...idsToSelect]));
-                    setSelectedResidentIds(merged);
-                  }}
-                  className="px-4 py-2 bg-white text-[#004c99] border hover:bg-gray-50 border-gray-200 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm"
-                >
-                  Selecionar Todos com Necessidade
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-6 mt-6">
+          <div className="flex flex-wrap items-center gap-6">
             <div className="flex items-center gap-2">
-              <label className="text-[10px] font-black uppercase text-gray-400">Data (Histórico/Registro):</label>
+              <label className="text-[10px] font-black uppercase text-gray-400">Data:</label>
               <input 
                 type="date" 
                 value={selectedDate}
                 onChange={e => setSelectedDate(e.target.value)}
-                className="px-3 py-2 bg-gray-50 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-[#004c99]/10"
+                className="px-4 py-2 bg-gray-50 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-[#004c99]/10"
               />
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <label className="text-[10px] font-black uppercase text-gray-400">Hora (Aprox):</label>
-              <input 
-                type="time" 
-                value={selectedTime}
-                onChange={e => setSelectedTime(e.target.value)}
-                className="px-3 py-2 bg-gray-50 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-[#004c99]/10"
-              />
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <label className="text-[10px] font-black uppercase text-gray-400">Turno:</label>
-              <select 
-                value={selectedShift}
-                onChange={e => setSelectedShift(e.target.value as any)}
-                className="px-3 py-2 bg-gray-50 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-[#004c99]/10"
-              >
-                <option value="Manhã">Manhã</option>
-                <option value="Tarde">Tarde</option>
-                <option value="Noite">Noite</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-xl border ml-4">
-              <button 
-                onClick={() => setGenderFilter('todos')}
-                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${genderFilter === 'todos' ? 'bg-white shadow-sm text-[#004c99]' : 'text-gray-400'}`}
-              >
-                Todos
-              </button>
-              <button 
-                onClick={() => setGenderFilter('masculino')}
-                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${genderFilter === 'masculino' ? 'bg-white shadow-sm text-[#004c99]' : 'text-gray-400'}`}
-              >
-                Homens
-              </button>
-              <button 
-                onClick={() => setGenderFilter('feminino')}
-                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${genderFilter === 'feminino' ? 'bg-white shadow-sm text-[#004c99]' : 'text-gray-400'}`}
-              >
-                Mulheres
-              </button>
-            </div>
-
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
-              <input 
-                type="text"
-                placeholder="Filtrar residentes por nome..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-50 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-[#004c99]/10 transition-all"
-              />
-            </div>
-
-            <div className="ml-auto flex items-center gap-4">
-              <button 
-                onClick={() => handleSelectAll(true)}
-                className="text-[10px] font-black text-[#004c99] uppercase tracking-widest hover:underline"
-              >
-                Selecionar Todos
-              </button>
-              <button 
-                onClick={() => handleSelectAll(false)}
-                className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:underline"
-              >
-                Limpar Seleção
-              </button>
             </div>
           </div>
         </div>
-
-        {/* Residents List */}
-        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-gray-50/50">
-          <div className="bg-white border rounded-3xl overflow-hidden shadow-sm">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/80 border-b">
-                  <th className="p-4 w-16 text-center cursor-pointer" onClick={() => handleSelectAll(selectedResidentIds.length !== filteredResidents.length)}>
-                    <button className="text-[#004c99] hover:opacity-80 transition-opacity">
-                      {selectedResidentIds.length === filteredResidents.length && filteredResidents.length > 0 ? (
-                        <CheckSquare size={20} />
-                      ) : (
-                        <Square size={20} className="text-gray-300 hover:text-blue-200" />
-                      )}
-                    </button>
-                  </th>
-                  <th className="p-4 text-[10px] uppercase font-black tracking-widest text-gray-400">Nome do Residente</th>
-                  <th className="p-4 text-[10px] uppercase font-black tracking-widest text-gray-400">Ala / Quarto</th>
-                  <th className="p-4 text-[10px] uppercase font-black tracking-widest text-gray-400">Status em {selectedDate.split('-').reverse().join('/')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredResidents.map(resident => {
-                  const isSelected = selectedResidentIds.includes(resident.id);
-                  const logForDate = resident.dailyRoutines?.find(r => r.taskId === selectedTask.id && r.date === selectedDate);
-                  
-                  // For non-mandatory tasks, find the most recent log if none today
-                  let lastRecordText = '';
-                  if (!logForDate && !selectedTask.isMandatory) {
-                     const history = (resident.dailyRoutines || []).filter(r => r.taskId === selectedTask.id && r.status === 'concluido').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                     if (history.length > 0) {
-                       lastRecordText = `Último: ${history[0].date.split('-').reverse().join('/')}`;
-                     } else {
-                       lastRecordText = 'Sem registro';
+        
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+          {isLoadingLogs ? (
+             <div className="flex items-center justify-center py-12">
+               <Loader2 className="animate-spin text-[#004c99]" size={40} />
+             </div>
+          ) : !hasLogs ? (
+             <div className="flex flex-col items-center justify-center py-16 text-center">
+               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <FileText className="text-gray-400" size={32} />
+               </div>
+               <p className="text-gray-500 font-medium text-lg text-center">Nenhum registro de rotina encontrado para esta data.</p>
+             </div>
+          ) : (
+             <div className="space-y-6 max-w-5xl mx-auto pb-12">
+               {ROUTINE_TASKS.map(task => {
+                 const realizados: { resident: Resident, time: string, author: string, status: string }[] = [];
+                 const tabletLogs = procedureLogs.filter(log => log.tipoProcedimento === task.id);
+                 
+                 // Collect desktop local logs
+                 residents.forEach(r => {
+                     const log = (r.dailyRoutines || []).find(dr => dr.taskId === task.id && dr.date === selectedDate);
+                     if (log && !realizados.find(x => x.resident.id === r.id)) {
+                         realizados.push({ 
+                             resident: r, 
+                             time: log.time || '', 
+                             author: log.performedBy || 'Sistema', 
+                             status: log.status 
+                         });
                      }
-                  }
+                 });
 
-                  return (
-                    <tr 
-                      key={resident.id}
-                      onClick={() => handleToggleSelect(resident.id)}
-                      className={`border-b border-gray-50 transition-all cursor-pointer hover:bg-gray-50/80 ${isSelected ? 'bg-blue-50/40' : ''}`}
-                    >
-                      <td className="p-4 text-center">
-                        {isSelected ? (
-                          <CheckSquare className="text-[#004c99] inline-block" size={20} />
-                        ) : (
-                          <Square className="text-gray-200 inline-block group-hover:text-gray-300" size={20} />
-                        )}
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-gray-800 text-sm uppercase">{resident.name}</span>
-                          {selectedTask.careNeedKey && resident.careNeeds && resident.careNeeds[selectedTask.careNeedKey as keyof typeof resident.careNeeds] && (
-                            <span className="px-2 py-0.5 bg-[#004c99]/10 text-[#004c99] rounded text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
-                              {typeof selectedTask.icon === 'function' ? selectedTask.icon({ size: 10 }) : React.createElement(selectedTask.icon, { size: 10 })} {(selectedTask as any).careLabelName || 'Auxílio'}
-                            </span>
-                          )}
+                 if (task.id === 'alimentacao') {
+                     const refeicoes = Array.from(new Set(tabletLogs.map(t => t.refeicaoNome)));
+                     const dependentes = residents.filter(r => r.careNeeds && r.careNeeds.feedingAssistance);
+                     
+                     return (
+                       <div key={task.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                            <div className="p-4 bg-gray-50/80 border-b flex items-center gap-3">
+                               <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-[#004c99] shadow-sm">
+                                 {typeof task.icon === 'function' ? task.icon({ size: 16 }) : React.createElement(task.icon, { size: 16 })}
+                               </div>
+                               <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">{task.name}</h3>
+                            </div>
+                            <div className="p-6 space-y-6">
+                              {refeicoes.length === 0 && <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Sem registro para {task.name.toLowerCase()} nesta data</p>}
+                              {refeicoes.map(rNome => {
+                                  const logsRefeicao = tabletLogs.filter(t => t.refeicaoNome === rNome);
+                                  
+                                  const pendentesOuNao = dependentes.filter(r => {
+                                      let status = null;
+                                      logsRefeicao.forEach(tLog => {
+                                          if (tLog.registrosPorResidente && tLog.registrosPorResidente[r.id]) {
+                                              status = tLog.registrosPorResidente[r.id];
+                                          }
+                                      });
+                                      return !status || status === 'nao_comeu' || status === 'recusou';
+                                  }).map(r => {
+                                      let statusDesc = 'Sem registro';
+                                      let author = '';
+                                      let time = '';
+                                      let finalStatus = 'sem_registro';
+                                      logsRefeicao.forEach(tLog => {
+                                          if (tLog.registrosPorResidente && tLog.registrosPorResidente[r.id]) {
+                                              const st = tLog.registrosPorResidente[r.id];
+                                              if (st === 'nao_comeu') { statusDesc = 'Não comeu'; finalStatus = st; }
+                                              if (st === 'recusou') { statusDesc = 'Recusou'; finalStatus = st; }
+                                              author = tLog.responsavelNome || '';
+                                              time = tLog.criadoEm ? new Date(tLog.criadoEm).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+                                          }
+                                      });
+                                      return { resident: r, status: statusDesc, reqStatus: finalStatus, author, time };
+                                  });
+
+                                  return (
+                                     <div key={rNome} className="space-y-3">
+                                        <h4 className="text-[11px] font-black text-[#004c99] uppercase tracking-widest bg-blue-50/50 inline-block px-3 py-1.5 rounded-lg">{rNome}</h4>
+                                        {pendentesOuNao.length === 0 ? (
+                                            <p className="text-xs font-bold text-gray-500">Todos os dependentes registrados.</p>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                               {pendentesOuNao.map((item, i) => (
+                                                   <div key={i} className="flex items-center justify-between bg-orange-50/50 border border-orange-100 p-3 rounded-xl">
+                                                      <div>
+                                                         <p className="text-[11px] font-black text-[#004c99] uppercase tracking-tighter truncate w-32 sm:w-48">{item.resident.name}</p>
+                                                         {item.author && <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest truncate">{item.author} às {item.time}</p>}
+                                                      </div>
+                                                      <span className="text-[9px] px-2 py-1 rounded font-black uppercase tracking-widest bg-orange-100 text-orange-700">
+                                                         {item.status}
+                                                      </span>
+                                                   </div>
+                                               ))}
+                                            </div>
+                                        )}
+                                     </div>
+                                  )
+                              })}
+                            </div>
+                       </div>
+                     );
+                 }
+                 
+                 // Process tablet normal procedures
+                 tabletLogs.forEach(tLog => {
+                      tLog.residentesSelecionados.forEach(resId => {
+                         const r = residents.find(res => res.id === resId);
+                         if (r && !realizados.find(x => x.resident.id === resId)) {
+                             realizados.push({
+                                 resident: r,
+                                 time: new Date(tLog.criadoEm).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                                 author: tLog.responsavelNome,
+                                 status: 'concluido'
+                             });
+                         }
+                      });
+                 });
+
+                 const isOccasional = task.id === 'barba' || task.id === 'unhas';
+
+                 if (isOccasional) {
+                     return (
+                        <div key={task.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                             <div className="p-4 bg-gray-50/80 border-b flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-[#004c99] shadow-sm">
+                                  {typeof task.icon === 'function' ? task.icon({ size: 16 }) : React.createElement(task.icon, { size: 16 })}
+                                </div>
+                                <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">{task.name}</h3>
+                             </div>
+                             <div className="p-6">
+                                {realizados.length === 0 ? (
+                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Nenhum registro.</p>
+                                ) : (
+                                    <div className="space-y-3">
+                                        <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Realizado em:</p>
+                                        <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            {realizados.map((item, i) => (
+                                                <li key={i} className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 flex items-center justify-between">
+                                                   <div>
+                                                      <p className="text-[11px] font-black text-[#004c99] uppercase tracking-tighter">{item.resident.name}</p>
+                                                      <p className="text-[9px] uppercase font-bold tracking-widest text-blue-400/80">{item.author + (item.time ? " - " + item.time : "")}</p>
+                                                   </div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                             </div>
                         </div>
-                      </td>
-                      <td className="p-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                        {resident.gender === 'masculino' ? 'Masculina' : 'Feminina'} {resident.room ? ` - Q${resident.room}` : ''}
-                      </td>
-                      <td className="p-4">
-                        {!logForDate ? (
-                          !selectedTask.isMandatory ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-50 text-gray-600 border border-gray-200 text-[9px] font-black uppercase tracking-widest rounded-lg">
-                              <Info size={12} /> {lastRecordText}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-orange-50 text-orange-600 border border-orange-100 text-[9px] font-black uppercase tracking-widest rounded-lg">
-                              <AlertTriangle size={12} /> Pendente
-                            </span>
-                          )
-                        ) : logForDate.status === 'concluido' ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-600 border border-green-100 text-[9px] font-black uppercase tracking-widest rounded-lg" title={`Hora: ${logForDate.time || '--'}`}>
-                            <CheckCircle2 size={12} /> Concluído {logForDate.time ? `(${logForDate.time})` : ''} {logForDate.shift ? `- ${logForDate.shift}` : ''}
-                          </span>
-                        ) : logForDate.status === 'nao_concluido' ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 border border-red-100 text-[9px] font-black uppercase tracking-widest rounded-lg">
-                            <XCircle size={12} /> Não Concluído
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-50 text-gray-600 border border-gray-200 text-[9px] font-black uppercase tracking-widest rounded-lg">
-                            <UserCircle2 size={12} /> Ausente
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-                {filteredResidents.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="p-8 text-center text-sm text-gray-500">Nenhum residente encontrado com os filtros atuais.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                     );
+                 }
 
-        {/* Floating Bulk Action Bar */}
-        {selectedResidentIds.length > 0 && (
-          <div className="px-8 py-4 bg-[#004c99] text-white flex items-center justify-between animate-in slide-in-from-bottom duration-500">
-             <div className="flex items-center gap-4">
-               <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                 <Users size={20} />
-               </div>
-               <div>
-                  <p className="text-xs font-black uppercase tracking-widest">
-                    {selectedResidentIds.length} Residentes Selecionados
-                  </p>
-                  <p className="text-[10px] opacity-70 uppercase font-bold">
-                    Ação em lote será aplicada à rotina de {selectedTask.name}
-                  </p>
-               </div>
-             </div>
-             
-             <div className="flex gap-4">
-                <button 
-                  onClick={() => handleSelectAll(false)}
-                  className="px-4 py-2 text-[10px] font-black uppercase hover:bg-white/10 rounded-lg transition-all"
-                >
-                  Desmarcar Todos
-                </button>
-                <button 
-                  onClick={() => logTask('concluido')}
-                  className="px-8 py-4 bg-white text-[#004c99] rounded-2xl text-[10px] font-black uppercase shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
-                >
-                  Confirmar Realização ({selectedResidentIds.length})
-                </button>
-             </div>
-          </div>
-        )}
+                 let pendentes = [];
+                 if (task.careNeedKey) {
+                    pendentes = residents.filter(r => 
+                       r.careNeeds && 
+                       r.careNeeds[task.careNeedKey] && 
+                       !realizados.find(x => x.resident.id === r.id)
+                    );
+                 } else {
+                    pendentes = residents.filter(r => !realizados.find(x => x.resident.id === r.id));
+                 }
+
+                 const naoConcluidosEExcecoes = realizados.filter(x => x.status === 'nao_concluido' || x.status === 'ausente');
+                 
+                 const showEmpty = pendentes.length === 0 && naoConcluidosEExcecoes.length === 0;
+
+                 return (
+                    <div key={task.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                         <div className="p-4 bg-gray-50/80 border-b flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-[#004c99] shadow-sm">
+                              {typeof task.icon === 'function' ? task.icon({ size: 16 }) : React.createElement(task.icon, { size: 16 })}
+                            </div>
+                            <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">{task.name}</h3>
+                         </div>
+                         
+                         <div className="p-6">
+                            {showEmpty ? (
+                                <p className="text-xs font-bold text-gray-400 pr-8">Todos registrados.</p>
+                            ) : (
+                                <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {pendentes.map((r, i) => (
+                                        <li key={"p-"+i} className="bg-orange-50/20 p-3 rounded-xl border border-orange-100/30 flex justify-between items-center">
+                                           <div>
+                                             <p className="text-[11px] font-black text-[#004c99] uppercase tracking-tighter line-clamp-1">{r.name}</p>
+                                             <p className="text-[9px] uppercase font-bold tracking-widest text-orange-400 mt-0.5" title={task.careNeedKey ? 'Necessita de acompanhamento' : 'Aguardando registro'}>
+                                                {task.careNeedKey ? 'Necessita acompanhamento' : 'Aguardando'}
+                                             </p>
+                                           </div>
+                                           <span className="text-[9px] px-2 py-1 rounded font-black uppercase tracking-widest bg-orange-100 text-orange-700">Sem Registro</span>
+                                        </li>
+                                    ))}
+                                    {naoConcluidosEExcecoes.map((item, i) => (
+                                        <li key={"nc-"+i} className="bg-red-50/20 p-3 rounded-xl border border-red-100/30 flex justify-between items-center">
+                                           <div>
+                                              <p className="text-[11px] font-black text-[#004c99] uppercase tracking-tighter line-clamp-1">{item.resident.name}</p>
+                                              <p className="text-[9px] uppercase font-bold tracking-widest text-red-400 mt-0.5">{item.author + (item.time ? " - " + item.time : "")}</p>
+                                           </div>
+                                           <span className="text-[9px] px-2 py-1 rounded font-black uppercase tracking-widest bg-red-100 text-red-700">
+                                              {item.status === 'ausente' ? 'Ausente' : 'Não Realizado'}
+                                           </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                         </div>
+                    </div>
+                 );
+               })}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
+  if (tabletStep === 'summary') {
+    return (
+      <div className="h-full bg-white flex flex-col animate-in fade-in duration-300">
+        {renderSummary()}
+      </div>
+    );
+  }
+
+  return renderRegisterContent();
+}
 
 export default DailyRoutineTab;
