@@ -31,6 +31,46 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
   const [professionalCRM, setProfessionalCRM] = useState('');
   const [sosProtocols, setSosProtocols] = useState<SosProtocol[]>([]);
 
+  
+  const getDependencyDegree = (r: Resident) => {
+    let count = 0;
+    const careKeys = [
+      'bathAssistance',
+      'oralHygieneAssistance',
+      'feedingAssistance',
+      'diaperChangeAssistance',
+      'decubitusChangeAssistance',
+      'tricotomyAssistance',
+      'nailCareAssistance',
+      'woundCareAssistance'
+    ];
+    
+    careKeys.forEach(k => {
+      if ((r.careNeeds as any)?.[k]) count++;
+    });
+
+    const computed = count <= 2 ? 1 : count <= 5 ? 2 : 3;
+    
+    if (r.grauDependenciaManual !== undefined && r.grauDependenciaManual !== null) {
+      return r.grauDependenciaManual;
+    }
+    return computed;
+  };
+
+  const getActiveDependencies = (r: Resident) => {
+    const careKeys = [
+      { key: 'bathAssistance', label: 'Banho' },
+      { key: 'oralHygieneAssistance', label: 'Higiene' },
+      { key: 'feedingAssistance', label: 'Alimentação' },
+      { key: 'diaperChangeAssistance', label: 'Fraldas' },
+      { key: 'decubitusChangeAssistance', label: 'Decúbito' },
+      { key: 'tricotomyAssistance', label: 'Tricotomia' },
+      { key: 'nailCareAssistance', label: 'Unhas' },
+      { key: 'woundCareAssistance', label: 'Curativo/Pele' }
+    ];
+    return careKeys.filter(k => (r.careNeeds as any)?.[k.key]).map(k => k.label);
+  };
+
   useEffect(() => {
     const loadProtocols = async () => {
       try {
@@ -57,7 +97,7 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
           Não foram encontrados dados de saúde prévios para este residente. 
           Inicie o prontuário para centralizar o histórico clínico e sinais vitais.
         </p>
-        <button
+        <button type="button"
           onClick={() => {
             const initialPer: PerData = {
               lastUpdated: new Date().toISOString(),
@@ -126,12 +166,6 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
           </p>
         </div>
         <div className="flex gap-3">
-          <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 shadow-sm transition-all flex items-center gap-2">
-            <History size={16} /> Ver Histórico Completo
-          </button>
-          <button className="px-4 py-2 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 shadow-xl transition-all flex items-center gap-2">
-            <Plus size={16} /> Nova Evolução
-          </button>
         </div>
       </div>
 
@@ -342,61 +376,13 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
           </div>
 
           {/* Clinical Progress / Evolução Médica */}
-          <div className="bg-white border rounded-3xl shadow-sm overflow-hidden">
+          <div id="history-section" className="bg-white border rounded-3xl shadow-sm overflow-hidden">
             <div className="p-6 border-b flex justify-between items-center bg-gray-50/50">
               <h4 className="text-sm font-black text-gray-800 uppercase tracking-tight flex items-center gap-2">
                 <History size={18} className="text-[#004c99]" />
                 Registros de Consultas e Evolução Clínica
               </h4>
-              <button 
-                onClick={() => setIsAddingProgress(!isAddingProgress)}
-                className="px-4 py-2 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 shadow-sm transition-all"
-              >
-                {isAddingProgress ? 'Cancelar' : '+ Nova Evolução'}
-              </button>
             </div>
-
-            {isAddingProgress && (
-              <div className="p-6 bg-blue-50/30 border-b space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1 block">Profissional / Avaliador</label>
-                    <input 
-                      type="text" 
-                      value={professionalName}
-                      onChange={e => setProfessionalName(e.target.value)}
-                      placeholder="Nome do Médico/Enfermeiro" 
-                      className="w-full px-3 py-2 border rounded-xl text-xs outline-none focus:border-[#004c99] focus:ring-1 focus:ring-[#004c99]"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1 block">CRM/COREN (Opcional)</label>
-                    <input 
-                      type="text" 
-                      value={professionalCRM}
-                      onChange={e => setProfessionalCRM(e.target.value)}
-                      placeholder="Ex: CRM-SP 12345" 
-                      className="w-full px-3 py-2 border rounded-xl text-xs outline-none focus:border-[#004c99] focus:ring-1 focus:ring-[#004c99]"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1 block">Anotação Clínica</label>
-                  <textarea 
-                    value={newProgressNote}
-                    onChange={e => setNewProgressNote(e.target.value)}
-                    placeholder="Evolução clínica, alterações de conduta, resumo da consulta..." 
-                    className="w-full px-3 py-2 border rounded-xl text-xs min-h-[100px] outline-none focus:border-[#004c99] focus:ring-1 focus:ring-[#004c99]"
-                  />
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <button onClick={() => setIsAddingProgress(false)} className="px-4 py-2 text-gray-400 font-bold text-xs uppercase hover:bg-gray-100 rounded-xl">Cancelar</button>
-                  <button onClick={handleAddProgress} className="px-6 py-2 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 flex items-center gap-2">
-                    <Save size={14} /> Salvar Registro
-                  </button>
-                </div>
-              </div>
-            )}
 
             <div className="p-6">
               {(!per.clinicalProgress || per.clinicalProgress.length === 0) ? (
@@ -438,23 +424,26 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
         <div className="lg:col-span-4 space-y-8">
            {/* Functional Status */}
            <div className="bg-white border rounded-3xl p-6 shadow-sm">
-            <h4 className="text-sm font-black text-gray-800 uppercase tracking-tight mb-6 border-b pb-4">Status Funcional</h4>
+            <h4 className="text-sm font-black text-gray-800 uppercase tracking-tight mb-6 border-b pb-4">Quadro de Dependências</h4>
             <div className="space-y-4">
               <div className="p-4 bg-gray-50 rounded-2xl border">
-                 <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Grau de Dependência</p>
-                 <p className="text-xs font-black uppercase tracking-tighter text-[#004c99]">{per.functionalStatus.dependencyLevel || 'Não avaliado'}</p>
+                 <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Grau de Dependência (Enfermagem)</p>
+                 <p className="text-xs font-black uppercase tracking-tighter text-[#004c99]">
+                   Grau {getDependencyDegree(resident)}
+                   {resident.grauDependenciaManual !== undefined && resident.grauDependenciaManual !== null ? ' (Ajuste Manual)' : ''}
+                 </p>
               </div>
               <div className="p-4 bg-gray-50 rounded-2xl border">
-                 <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Mobilidade</p>
-                 <p className="text-xs font-black uppercase tracking-tighter text-gray-800">{per.functionalStatus.mobility || 'Não avaliado'}</p>
-              </div>
-              <div className="p-4 bg-gray-50 rounded-2xl border">
-                 <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Continência</p>
-                 <p className="text-xs font-black uppercase tracking-tighter text-gray-800">{per.functionalStatus.continence || 'Não avaliado'}</p>
-              </div>
-              <div className="p-4 bg-gray-50 rounded-2xl border">
-                 <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Consciência</p>
-                 <p className="text-xs font-black uppercase tracking-tighter text-gray-800">{per.functionalStatus.consciousness || 'Não avaliado'}</p>
+                 <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2">Dependências Ativas</p>
+                 {getActiveDependencies(resident).length > 0 ? (
+                   <div className="flex flex-wrap gap-1.5">
+                     {getActiveDependencies(resident).map(dep => (
+                       <span key={dep} className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-[9px] font-bold text-gray-500 uppercase tracking-widest">{dep}</span>
+                     ))}
+                   </div>
+                 ) : (
+                   <p className="text-xs font-black uppercase tracking-tighter text-gray-400">Nenhuma dependência registrada</p>
+                 )}
               </div>
             </div>
           </div>
@@ -466,7 +455,7 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
               <Calendar className="mx-auto mb-2 opacity-50" size={24} />
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Mantenha a agenda atualizada no módulo de consultas</p>
             </div>
-            <button className="w-full mt-6 py-3 bg-white text-gray-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all">
+            <button type="button" className="w-full mt-6 py-3 bg-white text-gray-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all">
               Agendar Avaliação
             </button>
           </div>

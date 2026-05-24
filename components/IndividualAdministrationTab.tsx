@@ -145,7 +145,7 @@ export const IndividualAdministrationTab: React.FC<{ residents: Resident[], sess
          {searchTerm && (
            <div className="absolute top-24 left-6 right-6 bg-white rounded-2xl shadow-xl border overflow-hidden max-h-60 overflow-y-auto">
              {filteredResidents.map(r => (
-               <button
+               <button type="button"
                  key={r.id}
                  onClick={() => {
                    setSelectedResidentId(r.id);
@@ -169,7 +169,7 @@ export const IndividualAdministrationTab: React.FC<{ residents: Resident[], sess
                     Prontuário de Ministração - {date.split('-').reverse().join('/')}
                  </p>
                </div>
-               <button 
+               <button type="button" 
                  onClick={() => setIsHistoryModalOpen(true)}
                  className="px-4 py-2 border border-gray-200 rounded-xl bg-gray-50 text-gray-600 font-black tracking-widest uppercase text-[10px] hover:bg-gray-100 transition-colors"
                >
@@ -227,7 +227,7 @@ export const IndividualAdministrationTab: React.FC<{ residents: Resident[], sess
                                   {log?.observacoes && <p className="mt-2 text-gray-400 italic bg-gray-50 p-2 rounded text-xs border border-dashed">Obs: {log.observacoes}</p>}
                                </div>
                              ) : (
-                               <button 
+                               <button type="button" 
                                  onClick={() => { setSelectedMedToAdminister({ med, time }); setIsSignModalOpen(true); }}
                                  className="w-full py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
                                >
@@ -293,8 +293,8 @@ export const IndividualAdministrationTab: React.FC<{ residents: Resident[], sess
                    </div>
 
                    <div className="flex gap-3 pt-2">
-                      <button onClick={() => setIsSignModalOpen(false)} className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
-                      <button disabled={isLoading || (status !== 'administrado' && !observation)} onClick={handleAdminister} className="flex-[2] py-4 text-xs font-black uppercase tracking-widest text-white bg-[#004c99] rounded-xl hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2">
+                      <button type="button" onClick={() => setIsSignModalOpen(false)} className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
+                      <button type="button" disabled={isLoading || (status !== 'administrado' && !observation)} onClick={handleAdminister} className="flex-[2] py-4 text-xs font-black uppercase tracking-widest text-white bg-[#004c99] rounded-xl hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2">
                         {isLoading ? 'Salvando...' : 'Confirmar e Assinar'}
                       </button>
                    </div>
@@ -312,7 +312,7 @@ export const IndividualAdministrationTab: React.FC<{ residents: Resident[], sess
                     <h3 className="text-sm font-black uppercase text-[#004c99]">Histórico Completo de Ministração</h3>
                     <p className="text-xs text-gray-600 font-bold mt-1">Prontuário de {selectedResident?.name}</p>
                   </div>
-                  <button onClick={() => setIsHistoryModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-xl text-xs font-black text-gray-500 uppercase hover:bg-gray-200">Fechar</button>
+                  <button type="button" onClick={() => setIsHistoryModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-xl text-xs font-black text-gray-500 uppercase hover:bg-gray-200">Fechar</button>
                 </div>
 
                 <div className="flex-1 overflow-auto border rounded-2xl">

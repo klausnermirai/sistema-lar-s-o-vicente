@@ -287,13 +287,13 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
             </h2>
           </div>
           <div className="flex gap-2 ml-4">
-            <button 
+            <button type="button" 
               onClick={() => setViewMode('registrar')}
               className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'registrar' ? 'bg-[#004c99] text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
             >
               Registrar
             </button>
-            <button 
+            <button type="button" 
               onClick={() => setViewMode('historico')}
               className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${viewMode === 'historico' ? 'bg-[#004c99] text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
             >
@@ -380,7 +380,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                                         <span className="text-[10px] font-black text-gray-400 tracking-widest uppercase">
                                           Registro Real: {new Date(h.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {h.professionalName}
                                         </span>
-                                        <button 
+                                        <button type="button" 
                                           onClick={(e) => {
                                               e.preventDefault();
                                               handlePrintHandover(h);
@@ -489,7 +489,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                   const sId = s.id || s;
                   const sName = s.nomeTurno || `Turno ${s}`;
                   return (
-                  <button
+                  <button type="button"
                     key={sId}
                     onClick={() => setShift(sId)}
                     className={`py-6 rounded-3xl flex flex-col items-center justify-center gap-2 transition-all border ${
@@ -537,7 +537,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                   <p className="text-[10px] text-gray-500 uppercase font-black">Clique no botão ao lado para registrar uma intercorrência</p>
                 </div>
               </div>
-              <button 
+              <button type="button" 
                 onClick={() => setHasIncident(!hasIncident)}
                 className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
                   hasIncident 
@@ -580,7 +580,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Tipo de Ocorrência</label>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {['queda', 'comportamental', 'clinica', 'outros'].map((t) => (
-                      <button
+                      <button type="button"
                         key={t}
                         onClick={() => setIncidentType(t as any)}
                         className={`py-3 rounded-xl text-[9px] font-black uppercase transition-all border ${
@@ -637,7 +637,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
                         }
 
                         return filtered.map(r => (
-                          <button
+                          <button type="button"
                             key={r.id}
                             onClick={() => {
                               setSelectedResidentIds(prev => [...prev, r.id]);
@@ -682,7 +682,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
           </div>
 
           <div className="pt-4 flex justify-end">
-            <button 
+            <button type="button" 
               id="save-handover-button"
               onClick={handleSaveAll}
               disabled={(!summary.trim() && !hasIncident) || (hasIncident && (!description.trim() || selectedResidentIds.length === 0))}

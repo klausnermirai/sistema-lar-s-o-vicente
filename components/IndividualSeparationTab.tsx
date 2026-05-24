@@ -140,7 +140,7 @@ export const IndividualSeparationTab: React.FC<IndividualSeparationTabProps> = (
                 <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mt-1">Conferência por Turno e Horário</p>
              </div>
           </div>
-          <button 
+          <button type="button" 
              onClick={() => setIsModalOpen(true)} 
              className="px-6 py-4 bg-[#004c99] text-white text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-[#003366] transition-all flex items-center gap-2 shadow-md shadow-[#004c99]/20"
           >
@@ -156,10 +156,10 @@ export const IndividualSeparationTab: React.FC<IndividualSeparationTabProps> = (
                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Visão completa</p>
              </div>
              <div className="flex gap-3">
-                <button onClick={handleExportPDF} className="px-5 py-3 bg-white text-gray-700 border border-gray-200 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-sm">
+                <button type="button" onClick={handleExportPDF} className="px-5 py-3 bg-white text-gray-700 border border-gray-200 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-sm">
                    Exportar PDF
                 </button>
-                <button onClick={() => setIsModalOpen(false)} className="px-5 py-3 bg-gray-100 text-gray-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-200 transition-colors">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-3 bg-gray-100 text-gray-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-200 transition-colors">
                    Fechar
                 </button>
              </div>
@@ -247,7 +247,7 @@ export const IndividualSeparationTab: React.FC<IndividualSeparationTabProps> = (
                          </div>
 
                          {!isSeparated && (
-                           <button 
+                           <button type="button" 
                              onClick={() => handleSeparateResident(r)}
                              className="w-full py-4 bg-[#004c99] text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-blue-800 transition-all flex items-center justify-center gap-2"
                            >

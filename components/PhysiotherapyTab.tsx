@@ -461,7 +461,7 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
     <div className="space-y-6">
       {/* Sub-tabs header Navigation */}
       <div className="flex border-b overflow-x-auto no-scrollbar">
-        <button
+        <button type="button"
           onClick={() => setActiveSubTab('avaliacao')}
           className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
             activeSubTab === 'avaliacao' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
@@ -469,7 +469,7 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
         >
           Primeiro Atendimento
         </button>
-        <button
+        <button type="button"
           onClick={() => setActiveSubTab('evolucao')}
           className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
             activeSubTab === 'evolucao' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
@@ -477,7 +477,7 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
         >
           Evolução
         </button>
-        <button
+        <button type="button"
           onClick={() => setActiveSubTab('atendimentos')}
           className={`px-6 py-4 text-[10px] font-black uppercase transition-colors border-b-2 whitespace-nowrap ${
             activeSubTab === 'atendimentos' ? 'border-[#004c99] text-[#004c99]' : 'border-transparent text-gray-400 hover:text-gray-600'
@@ -596,7 +596,7 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
           </div>
           
           <div className="flex justify-end pt-4 border-t mt-6">
-            <button 
+            <button type="button" 
               onClick={handleSaveAssessment}
               className="px-8 py-4 bg-[#004c99] text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-blue-800 shadow-xl shadow-blue-900/20 flex items-center gap-2 transition-all active:scale-95"
             >
@@ -684,7 +684,7 @@ evolutions: newEvolutions as any
                 <Printer size={16} /> Exportar PDF
               </button>
               {!isAddingAttendance && (
-                <button
+                <button type="button"
                   onClick={() => setIsAddingAttendance(true)}
                   className="flex-1 sm:flex-none px-6 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl flex justify-center items-center gap-2 hover:bg-blue-800 transition-all"
                 >
@@ -787,7 +787,7 @@ evolutions: newEvolutions as any
               </div>
 
               <div className="flex justify-end gap-3 pt-6 border-t mt-4">
-                <button 
+                <button type="button" 
                   onClick={() => setIsAddingAttendance(false)}
                   className="px-6 py-3 text-[10px] font-black uppercase text-gray-500 hover:bg-gray-100 rounded-xl transition-all"
                 >
@@ -801,7 +801,7 @@ evolutions: newEvolutions as any
                   <Printer size={16} />
                   Exportar PDF
                 </button>
-                <button 
+                <button type="button" 
                   onClick={handleAddAttendance}
                   className="px-8 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 shadow-xl flex items-center gap-2 transition-all"
                 >
@@ -831,7 +831,7 @@ evolutions: newEvolutions as any
                         </div>
                       </div>
                     </div>
-                    <button
+                    <button type="button"
                       onClick={() => handleExportIndividualAttendancePDF(attendance)}
                       className="p-2 text-gray-400 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border"
                       title="Exportar Atendimento"

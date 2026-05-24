@@ -85,7 +85,7 @@ export const SosProtocolsTab: React.FC<{ residents: Resident[], session: any }> 
          </div>
          <div className="flex-1 overflow-y-auto p-2">
            {filteredResidents.map(r => (
-             <button
+             <button type="button"
                key={r.id}
                onClick={() => setSelectedResidentId(r.id)}
                className={`w-full text-left p-4 rounded-2xl transition-colors mb-1 ${selectedResidentId === r.id ? 'bg-[#004c99] text-white' : 'hover:bg-gray-50 text-gray-700'}`}
@@ -110,7 +110,7 @@ export const SosProtocolsTab: React.FC<{ residents: Resident[], session: any }> 
                     <h2 className="text-xl font-black text-gray-800 uppercase tracking-tighter">{selectedResident.name}</h2>
                     <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Condutas SOS / Medicações Eventuais Autorizadas</p>
                  </div>
-                 <button 
+                 <button type="button" 
                    onClick={() => {
                      setEditingProtocol({
                        estoquePreferencial: 'qualquer',
@@ -141,8 +141,8 @@ export const SosProtocolsTab: React.FC<{ residents: Resident[], session: any }> 
                            </div>
                            <div className="flex items-center gap-2">
                               {p.status === 'inativo' && <span className="text-[10px] bg-gray-200 text-gray-600 px-2 py-1 rounded font-black uppercase tracking-widest">Inativo</span>}
-                              <button onClick={() => { setEditingProtocol(p); setIsModalOpen(true); }} className="p-2 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-lg transition-colors"><Edit3 size={16} /></button>
-                              {p.status === 'ativo' && <button onClick={() => handleInactivate(p)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>}
+                              <button type="button" onClick={() => { setEditingProtocol(p); setIsModalOpen(true); }} className="p-2 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-lg transition-colors"><Edit3 size={16} /></button>
+                              {p.status === 'ativo' && <button type="button" onClick={() => handleInactivate(p)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>}
                            </div>
                         </div>
 
@@ -181,7 +181,7 @@ export const SosProtocolsTab: React.FC<{ residents: Resident[], session: any }> 
                     <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter">Conduta SOS</h3>
                     <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{selectedResident?.name}</p>
                  </div>
-                 <button onClick={() => setIsModalOpen(false)} className="p-2 bg-gray-50 text-gray-400 hover:bg-gray-100 rounded-full">
+                 <button type="button" onClick={() => setIsModalOpen(false)} className="p-2 bg-gray-50 text-gray-400 hover:bg-gray-100 rounded-full">
                     <X size={20} />
                  </button>
               </div>
@@ -240,8 +240,8 @@ export const SosProtocolsTab: React.FC<{ residents: Resident[], session: any }> 
               </div>
               
               <div className="pt-6 shrink-0 flex gap-4">
-                 <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 bg-gray-100 text-gray-700 font-black uppercase tracking-widest text-xs rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
-                 <button disabled={!editingProtocol.sintomaOuQueixa || !editingProtocol.medicamentoAutorizado} onClick={handleSave} className="flex-1 py-4 bg-[#004c99] text-white font-black uppercase tracking-widest text-xs rounded-xl hover:bg-blue-800 transition-colors shadow-lg disabled:opacity-50">Salvar Conduta</button>
+                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 bg-gray-100 text-gray-700 font-black uppercase tracking-widest text-xs rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
+                 <button type="button" disabled={!editingProtocol.sintomaOuQueixa || !editingProtocol.medicamentoAutorizado} onClick={handleSave} className="flex-1 py-4 bg-[#004c99] text-white font-black uppercase tracking-widest text-xs rounded-xl hover:bg-blue-800 transition-colors shadow-lg disabled:opacity-50">Salvar Conduta</button>
               </div>
            </div>
         </div>

@@ -112,15 +112,15 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogi
   };
 
   return (
-    <div className="fixed inset-0 bg-[#004c99] flex items-center justify-center p-6 z-[200]">
+    <div className="fixed inset-0 bg-[#004c99] flex items-center justify-center p-6 z-[200] overflow-y-auto">
       {/* Background Decor */}
       <div className="absolute inset-0 opacity-10 overflow-hidden pointer-events-none">
         <div className="absolute -top-48 -left-48 w-[600px] h-[600px] bg-white rounded-full blur-3xl"></div>
         <div className="absolute -bottom-48 -right-48 w-[600px] h-[600px] bg-red-600 rounded-full blur-3xl"></div>
       </div>
 
-      <div className="bg-white w-full max-w-2xl rounded-[48px] shadow-2xl overflow-hidden relative animate-in fade-in zoom-in duration-500">
-        <div className="flex flex-col md:flex-row h-full">
+      <div className="bg-white w-full max-w-2xl rounded-[48px] shadow-2xl overflow-hidden relative animate-in fade-in zoom-in duration-500 max-h-[90vh] flex flex-col">
+        <div className="flex flex-col md:flex-row h-full overflow-hidden">
           {/* Sidebar de Progresso */}
           <div className="bg-gray-50 md:w-64 p-10 flex flex-col justify-between border-r border-gray-100">
             <div className="space-y-8">
@@ -159,7 +159,7 @@ const SetupScreen: React.FC<SetupScreenProps> = ({ onSetupComplete, onBackToLogi
           </div>
 
           {/* Área do Formulário */}
-          <div className="flex-1 p-10 md:p-14">
+          <div className="flex-1 p-10 md:p-14 overflow-y-auto">
             {step === 1 ? (
               <form onSubmit={handleNextStep} className="space-y-8 animate-in slide-in-from-right duration-300">
                 <div>

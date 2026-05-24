@@ -14,7 +14,8 @@ import {
   User,
   AlertCircle,
   Square,
-  CheckSquare
+  CheckSquare,
+  X
 } from 'lucide-react';
 import { Resident, VitalSignEntry } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -54,10 +55,39 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
 
   const [tabletStep, setTabletStep] = useState<'checklist' | 'form'>('checklist');
   const [selectedVitalSigns, setSelectedVitalSigns] = useState<string[]>([]);
+  const [isFullHistoryModalOpen, setIsFullHistoryModalOpen] = useState(false);
+  const [historyFilterPeriod, setHistoryFilterPeriod] = useState<'15_dias' | '30_dias' | 'personalizado' | 'tudo'>('15_dias');
+  const [historyStartDate, setHistoryStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 15);
+    return d.toISOString().split('T')[0];
+  });
+  const [historyEndDate, setHistoryEndDate] = useState(() => new Date().toISOString().split('T')[0]);
 
-  const history = resident.per?.vitalSignsHistory || [];
+  // Reset state when resident changes
+  React.useEffect(() => {
+    setIsRecording(false);
+    setTabletStep('checklist');
+    setSelectedVitalSigns([]);
+    
+    // Auto-select the most recent date in history so the user sees some data
+    if (resident?.per?.vitalSignsHistory?.length) {
+      const historySorted = [...resident.per.vitalSignsHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      if (historySorted[0]?.date) {
+        setSelectedDate(new Date(historySorted[0].date).toISOString().split('T')[0]);
+      } else {
+        setSelectedDate(new Date().toISOString().split('T')[0]);
+      }
+    } else {
+      setSelectedDate(new Date().toISOString().split('T')[0]);
+    }
+  }, [resident?.id]);
+
+  const history = [...(resident?.per?.vitalSignsHistory || [])].filter(h => h && h.date).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const latest = history[0];
   const filteredHistory = history.filter(h => new Date(h.date).toISOString().split('T')[0] === selectedDate);
+
+  // Logs temporários para diagnóstico
 
   const handleSave = () => {
     let newEntry: VitalSignEntry = {
@@ -149,7 +179,7 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
               </p>
             </div>
             {selectedVitalSigns.length > 0 && (
-              <button 
+              <button type="button" 
                 onClick={() => setTabletStep('form')}
                 className="px-8 py-4 bg-[#004c99] text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-md"
               >
@@ -164,7 +194,7 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
               const lastRecords = getLastRecords(item.id);
 
               return (
-                <button
+                <button type="button"
                   key={item.id}
                   onClick={() => handleToggleVitalSign(item.id)}
                   className={`w-full flex items-center p-6 rounded-3xl transition-all border-2 text-left relative overflow-hidden ${
@@ -205,7 +235,7 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
       <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in duration-500">
         <div className="flex items-center justify-between mb-6 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 shrink-0">
           <div className="flex items-center gap-4">
-            <button 
+            <button type="button" 
               onClick={() => setTabletStep('checklist')}
               className="w-14 h-14 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl flex items-center justify-center transition-all"
             >
@@ -218,7 +248,7 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
               </p>
             </div>
           </div>
-          <button 
+          <button type="button" 
             onClick={handleSave}
             className="px-8 py-4 bg-green-600 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-green-700 transition-all shadow-md flex items-center gap-2"
           >
@@ -273,13 +303,13 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
                       <div>
                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Estado</label>
                         <div className="flex gap-2 h-[60px]">
-                          <button 
+                          <button type="button" 
                             onClick={() => setFormData({...formData, hgtType: 'jejum'})}
                             className={`flex-[1] h-full rounded-xl text-xs font-black uppercase transition-all border ${(!formData.hgtType || formData.hgtType === 'jejum') ? 'bg-[#004c99] text-white border-[#004c99]' : 'bg-gray-50 text-gray-500 border-gray-200'}`}
                           >
                             Jejum
                           </button>
-                           <button 
+                           <button type="button" 
                             onClick={() => setFormData({...formData, hgtType: 'pos-prandial'})}
                             className={`flex-[1.5] h-full rounded-xl text-xs font-black uppercase transition-all border ${formData.hgtType === 'pos-prandial' ? 'bg-[#004c99] text-white border-[#004c99]' : 'bg-gray-50 text-gray-500 border-gray-200'}`}
                           >
@@ -377,6 +407,37 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
     );
   }
 
+  const getFilteredFullHistory = () => {
+    if (historyFilterPeriod === 'tudo') return history;
+    
+    let startD = new Date(historyStartDate);
+    let endD = new Date(historyEndDate);
+    endD.setHours(23, 59, 59, 999);
+
+    if (historyFilterPeriod === '15_dias') {
+      const d = new Date();
+      endD = new Date(d);
+      endD.setHours(23, 59, 59, 999);
+      d.setDate(d.getDate() - 15);
+      startD = new Date(d);
+      startD.setHours(0,0,0,0);
+    } else if (historyFilterPeriod === '30_dias') {
+      const d = new Date();
+      endD = new Date(d);
+      endD.setHours(23, 59, 59, 999);
+      d.setDate(d.getDate() - 30);
+      startD = new Date(d);
+      startD.setHours(0,0,0,0);
+    }
+
+    return history.filter(entry => {
+      const entryD = new Date(entry.date);
+      return entryD >= startD && entryD <= endD;
+    });
+  };
+
+  const currentFullHistory = getFilteredFullHistory();
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header com Ação */}
@@ -385,7 +446,7 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
           <h2 className="text-xl font-black text-gray-900 uppercase tracking-tighter">Controle de Sinais Vitais</h2>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Monitoramento clínico e biometria</p>
         </div>
-        <button 
+        <button type="button" 
           onClick={() => setIsRecording(!isRecording)}
           className="bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-2xl flex items-center gap-2 shadow-lg transition-all font-black text-xs uppercase"
         >
@@ -473,7 +534,7 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Estado Glicemia</label>
                   <div className="flex gap-2">
                     {['jejum', 'pos-prandial'].map((type) => (
-                      <button 
+                      <button type="button" 
                         key={type}
                         onClick={() => setFormData({...formData, hgtType: type as any})}
                         className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase transition-all border ${formData.hgtType === type ? 'bg-[#004c99] text-white border-[#004c99]' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
@@ -506,7 +567,7 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
               </div>
               
               <div className="flex justify-end pt-4 border-t border-dashed border-gray-100">
-                <button 
+                <button type="button" 
                   onClick={handleSave}
                   className="bg-green-600 hover:bg-green-700 text-white px-10 py-4 rounded-2xl flex items-center gap-2 shadow-lg transition-all font-black text-xs uppercase"
                 >
@@ -609,60 +670,73 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
             )}
           </div>
 
-          {/* Tabela das Últimas Marcações */}
-          {history.length > 0 && (
-            <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm p-8 mt-6 overflow-hidden">
-              <h3 className="text-sm font-black uppercase text-gray-800 tracking-widest mb-6">Últimas 5 Medições</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-gray-50/80">
-                      <th className="p-3 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">Indicador</th>
-                      {history.slice(0, 5).map((h, i) => (
-                        <th key={i} className="p-3 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 whitespace-nowrap">
-                          {new Date(h.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50 text-xs font-bold text-gray-700">
-                    <tr className="hover:bg-gray-50/50 transition-colors">
-                      <td className="p-3">Glicose</td>
-                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.hgtValue || '-'}</td>)}
-                    </tr>
-                    <tr className="hover:bg-gray-50/50 transition-colors">
-                      <td className="p-3">Peso</td>
-                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.weight ? `${h.weight} kg` : '-'}</td>)}
-                    </tr>
-                    <tr className="hover:bg-gray-50/50 transition-colors">
-                      <td className="p-3">Altura</td>
-                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.height ? `${h.height} cm` : '-'}</td>)}
-                    </tr>
-                    <tr className="hover:bg-gray-50/50 transition-colors">
-                      <td className="p-3">Pressão máxima</td>
-                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.paSystolic || '-'}</td>)}
-                    </tr>
-                    <tr className="hover:bg-gray-50/50 transition-colors">
-                      <td className="p-3">Pressão mínima</td>
-                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.paDiastolic || '-'}</td>)}
-                    </tr>
-                    <tr className="hover:bg-gray-50/50 transition-colors">
-                      <td className="p-3">Frequência cardíaca</td>
-                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.fc || '-'}</td>)}
-                    </tr>
-                    <tr className="hover:bg-gray-50/50 transition-colors">
-                      <td className="p-3">Saturação</td>
-                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.spo2 ? `${h.spo2}%` : '-'}</td>)}
-                    </tr>
-                    <tr className="hover:bg-gray-50/50 transition-colors">
-                      <td className="p-3">Temperatura</td>
-                      {history.slice(0, 5).map((h, i) => <td key={i} className="p-3">{h.temperature ? `${h.temperature}°C` : '-'}</td>)}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+          {/* Resumo de Histórico por Indicador */}
+          <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm p-8 mt-6 overflow-hidden">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-sm font-black uppercase text-gray-800 tracking-widest">Últimos Registros por Indicador</h3>
+              <button 
+                type="button"
+                onClick={() => setIsFullHistoryModalOpen(true)}
+                className="px-5 py-2.5 bg-gray-50 border border-gray-200 text-gray-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white hover:shadow-md transition-all flex items-center gap-2"
+              >
+                <History size={16} />
+                Ver Histórico Completo
+              </button>
             </div>
-          )}
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50/80">
+                    <th className="p-3 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">Indicador</th>
+                    <th className="p-3 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 whitespace-nowrap">Último Registro</th>
+                    <th className="p-3 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 whitespace-nowrap">Penúltimo Registro</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 text-xs font-bold text-gray-700">
+                  {[
+                    { label: 'Glicemia', key: 'hgtValue', format: (h: any) => `${h.hgtValue} ${h.hgtType === 'jejum' ? '(J)' : h.hgtType === 'pos-prandial' ? '(PP)' : ''}` },
+                    { label: 'Pressão Máxima', key: 'paSystolic', format: (h: any) => `${h.paSystolic}` },
+                    { label: 'Pressão Mínima', key: 'paDiastolic', format: (h: any) => `${h.paDiastolic}` },
+                    { label: 'Frequência Cardíaca', key: 'fc', format: (h: any) => `${h.fc} bpm` },
+                    { label: 'Saturação SpO2', key: 'spo2', format: (h: any) => `${h.spo2}%` },
+                    { label: 'Temperatura', key: 'temperature', format: (h: any) => `${h.temperature}°C` },
+                    { label: 'Peso', key: 'weight', format: (h: any) => `${h.weight} kg` },
+                    { label: 'Altura', key: 'height', format: (h: any) => `${h.height} cm` },
+                  ].map(ind => {
+                    const records = history.filter(h => h[ind.key as keyof typeof h] !== undefined && h[ind.key as keyof typeof h] !== null && h[ind.key as keyof typeof h] !== '');
+                    return { ...ind, last: records[0], penu: records[1] };
+                  }).map(ind => (
+                    <tr key={ind.key} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="p-3 flex items-center gap-2">
+                        <span>{ind.label}</span>
+                      </td>
+                      <td className="p-3">
+                        {ind.last ? (
+                          <div className="flex flex-col">
+                            <span>{ind.format(ind.last)}</span>
+                            <span className="text-[10px] font-medium text-emerald-600/80">{new Date(ind.last.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-300">Sem registros</span>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        {ind.penu ? (
+                          <div className="flex flex-col">
+                            <span>{ind.format(ind.penu)}</span>
+                            <span className="text-[10px] font-medium text-gray-400">{new Date(ind.penu.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           {/* Mini Gráfico ou Destaque Biométrico aqui no futuro */}
         </div>
@@ -734,6 +808,145 @@ const VitalSignsTab: React.FC<VitalSignsTabProps> = ({ resident, onSave, isTable
           </div>
         </div>
       </div>
+
+      {/* Modal Histórico Completo */}
+      <AnimatePresence>
+        {isFullHistoryModalOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) setIsFullHistoryModalOpen(false); }}
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-white rounded-[30px] shadow-2xl p-8 w-full max-w-[90vw] max-h-[90vh] flex flex-col"
+            >
+              <div className="flex justify-between items-start mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-[#004c99]/10 text-[#004c99] rounded-2xl flex items-center justify-center">
+                    <History size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black uppercase tracking-tighter text-gray-800">Histórico Completo de Sinais Vitais</h2>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">{currentFullHistory.length} registros encontrados no período</p>
+                  </div>
+                </div>
+                
+                <div className="flex flex-col items-end gap-3">
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setHistoryFilterPeriod('15_dias')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${historyFilterPeriod === '15_dias' ? 'bg-[#004c99] text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>15 Dias</button>
+                    <button type="button" onClick={() => setHistoryFilterPeriod('30_dias')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${historyFilterPeriod === '30_dias' ? 'bg-[#004c99] text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>30 Dias</button>
+                    <button type="button" onClick={() => setHistoryFilterPeriod('personalizado')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${historyFilterPeriod === 'personalizado' ? 'bg-[#004c99] text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>Filtro de Datas</button>
+                    <button type="button" onClick={() => setHistoryFilterPeriod('tudo')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${historyFilterPeriod === 'tudo' ? 'bg-[#004c99] text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>Tudo</button>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    {historyFilterPeriod === 'personalizado' && (
+                      <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-xl border border-gray-200">
+                        <input type="date" value={historyStartDate} onChange={e => setHistoryStartDate(e.target.value)} className="p-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:border-[#004c99] text-gray-600" />
+                        <span className="text-gray-400 text-xs font-bold">até</span>
+                        <input type="date" value={historyEndDate} onChange={e => setHistoryEndDate(e.target.value)} className="p-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:border-[#004c99] text-gray-600" />
+                      </div>
+                    )}
+                    <button 
+                      type="button"
+                      onClick={() => setIsFullHistoryModalOpen(false)}
+                      className="p-2.5 bg-gray-50 hover:bg-gray-100 text-gray-400 hover:text-gray-600 rounded-xl transition-all border border-gray-200"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-auto border rounded-2xl custom-scrollbar bg-gray-50/30">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-white/95 backdrop-blur z-10 shadow-sm">
+                    <tr>
+                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-[#004c99] border-b border-gray-100 whitespace-nowrap">Data / Hora</th>
+                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-[#004c99] border-b border-gray-100 whitespace-nowrap">P.A. (mmHg)</th>
+                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-[#004c99] border-b border-gray-100 whitespace-nowrap">FC (bpm)</th>
+                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-[#004c99] border-b border-gray-100 whitespace-nowrap">Temp. (°C)</th>
+                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-[#004c99] border-b border-gray-100 whitespace-nowrap">Glicemia</th>
+                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-[#004c99] border-b border-gray-100 whitespace-nowrap">SpO2 (%)</th>
+                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-[#004c99] border-b border-gray-100 whitespace-nowrap">Resp. (irpm)</th>
+                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-[#004c99] border-b border-gray-100 whitespace-nowrap">Peso / Alt.</th>
+                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-[#004c99] border-b border-gray-100 whitespace-nowrap">Profissional</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-xs font-bold text-gray-700 bg-white">
+                    {currentFullHistory.length > 0 ? currentFullHistory.map((entry, idx) => (
+                      <tr key={entry.id || idx} className="hover:bg-blue-50/40 transition-colors group">
+                        <td className="p-4 whitespace-nowrap border-r border-gray-50">
+                          <div className="flex flex-col">
+                            <span className="text-gray-900">{new Date(entry.date).toLocaleDateString('pt-BR')}</span>
+                            <span className="text-gray-400 text-[10px] group-hover:text-[#004c99] transition-colors">{new Date(entry.date).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</span>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          {entry.paSystolic ? (
+                            <span className="px-2 py-1 bg-red-50 text-red-600 rounded-lg">{entry.paSystolic}/{entry.paDiastolic}</span>
+                          ) : <span className="text-gray-300">-</span>}
+                        </td>
+                        <td className="p-4">
+                          {entry.fc ? (
+                            <span className="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg">{entry.fc}</span>
+                          ) : <span className="text-gray-300">-</span>}
+                        </td>
+                        <td className="p-4">
+                          {entry.temperature ? (
+                            <span className="px-2 py-1 bg-orange-50 text-orange-600 rounded-lg">{entry.temperature}</span>
+                          ) : <span className="text-gray-300">-</span>}
+                        </td>
+                        <td className="p-4">
+                          {entry.hgtValue ? (
+                            <div className="flex flex-col items-start gap-0.5">
+                              <span className="px-2 py-1 bg-purple-50 text-purple-600 rounded-lg">{entry.hgtValue}</span>
+                              <span className="text-[9px] text-gray-400 uppercase tracking-widest ml-1">{entry.hgtType || '-'}</span>
+                            </div>
+                          ) : <span className="text-gray-300">-</span>}
+                        </td>
+                        <td className="p-4">
+                          {entry.spo2 ? (
+                            <span className="px-2 py-1 bg-teal-50 text-teal-600 rounded-lg">{entry.spo2}</span>
+                          ) : <span className="text-gray-300">-</span>}
+                        </td>
+                        <td className="p-4">
+                          {entry.fr ? (
+                            <span className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg">{entry.fr}</span>
+                          ) : <span className="text-gray-300">-</span>}
+                        </td>
+                        <td className="p-4">
+                          {entry.weight || entry.height ? (
+                            <div className="flex flex-col gap-0.5">
+                              {entry.weight ? <span className="text-gray-600">{entry.weight} kg</span> : <span className="text-gray-300">-</span>}
+                              {entry.height ? <span className="text-[10px] text-gray-400">{entry.height} cm</span> : null}
+                            </div>
+                          ) : <span className="text-gray-300">-</span>}
+                        </td>
+                        <td className="p-4">
+                          <span className="px-2 py-1 bg-gray-50 text-gray-500 rounded-lg text-[10px] uppercase tracking-widest whitespace-nowrap">
+                            {entry.professionalName || 'S/ Assinatura'}
+                          </span>
+                        </td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan={9} className="p-12 text-center">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <History size={32} className="text-gray-300" />
+                            <p className="text-gray-400 uppercase tracking-widest text-[10px]">Nenhum registro encontrado no histórico.</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

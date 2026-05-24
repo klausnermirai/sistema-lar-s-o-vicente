@@ -75,7 +75,7 @@ const CompanionsTab: React.FC<CompanionsTabProps> = ({
               />
             </div>
             {!isEditing && (
-              <button
+              <button type="button"
                 onClick={() => setIsEditing(true)}
                 className="px-6 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-xl flex items-center gap-2 whitespace-nowrap"
               >
@@ -94,7 +94,7 @@ const CompanionsTab: React.FC<CompanionsTabProps> = ({
               <h3 className="text-[11px] font-black uppercase tracking-widest text-gray-400">
                 {formData.id ? 'Editar Acompanhante' : 'Cadastro de Acompanhante'}
               </h3>
-              <button onClick={handleCancel} className="p-2 hover:bg-gray-100 rounded-lg text-gray-400">
+              <button type="button" onClick={handleCancel} className="p-2 hover:bg-gray-100 rounded-lg text-gray-400">
                 <X size={20} />
               </button>
             </div>
@@ -197,14 +197,14 @@ const CompanionsTab: React.FC<CompanionsTabProps> = ({
                         </div>
                       </div>
                       <div className="flex flex-col gap-2">
-                        <button 
+                        <button type="button" 
                           onClick={() => handleEdit(companion)}
                           className="p-3 text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
                           title="Editar"
                         >
                           <Edit3 size={18} />
                         </button>
-                        <button 
+                        <button type="button" 
                           onClick={() => onDeleteCompanion(companion.id)}
                           className="p-3 text-red-400 hover:bg-red-50 rounded-xl transition-all"
                           title="Remover"
@@ -226,7 +226,7 @@ const CompanionsTab: React.FC<CompanionsTabProps> = ({
                    {searchTerm ? 'Nenhum resultado para sua busca' : 'O banco de acompanhantes está vazio'}
                  </p>
                  {!isEditing && (
-                   <button 
+                   <button type="button" 
                      onClick={() => setIsEditing(true)}
                      className="mt-8 px-8 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all"
                    >

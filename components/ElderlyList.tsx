@@ -45,16 +45,7 @@ const ElderlyList: React.FC<ElderlyListProps> = ({ residents, activeSubTab, onAd
   };
 
   const getActionText = () => {
-    switch(activeSubTab) {
-      case 'familiares-visitantes': return 'Gerenciar Visitas';
-      case 'financeiro': return 'Lançar Financeiro';
-      case 'itens': return 'Ver Itens';
-      case 'prontuario': return 'Ver Prontuário Multidisciplinar';
-      case 'prontuario-medico': return 'Ver Prontuário Clínico';
-      case 'medicamentos': return 'Gerenciar Medicamentos';
-      case 'pia': return 'Ver PIA';
-      default: return 'Abrir Ficha Geral';
-    }
+    return 'Abrir Ficha Geral';
   };
 
   const renderModuleSummary = (resident: Resident) => {

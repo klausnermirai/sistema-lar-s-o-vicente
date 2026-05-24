@@ -9,6 +9,7 @@ export interface AgendaEvent {
   time: string; // HH:mm
   description?: string;
   professionalName: string;
+  actions?: { id: string, timestamp: number, user: string, text: string }[];
   professionalRole: string;
   residentId?: string; // Optional related resident
   type?: 'comum' | 'consulta_exame' | 'atividade_grupo' | 'triagem' | 'salao_festas' | string;
@@ -348,6 +349,7 @@ export interface NursingScreening {
   };
 
   professionalName: string;
+  actions?: { id: string, timestamp: number, user: string, text: string }[];
   signatureDate: string;
 }
 
@@ -950,6 +952,7 @@ export interface IncidentReport {
   conduct: string;
   visibilidade?: string[];
   professionalName: string;
+  actions?: { id: string, timestamp: number, user: string, text: string }[];
 }
 
 export interface ShiftHandover {
@@ -965,6 +968,7 @@ export interface ShiftHandover {
   pendingTasks: string;
   visibilidade?: string[];
   professionalName: string;
+  actions?: { id: string, timestamp: number, user: string, text: string }[];
 }
 
 export interface VitalSignEntry {
@@ -987,6 +991,7 @@ export interface ClinicalProgressEntry {
   id: string;
   date: string;
   professionalName: string;
+  actions?: { id: string, timestamp: number, user: string, text: string }[];
   crm?: string;
   note: string;
 }
@@ -1109,7 +1114,8 @@ export enum AppRoute {
   MEDICAMENTOS = 'medicamentos',
   GUIAS = 'guias',
   VISITANTES = 'visitantes',
-  EMPLOYEES = 'employees'
+  EMPLOYEES = 'employees',
+  STOCK = 'compras'
 }
 
 export interface OperationalShift {
@@ -1331,3 +1337,28 @@ export interface SosProtocol {
   criadoEm: string;
   atualizadoEm: string;
 }
+
+export interface ProductStockItem {
+  id: string;
+  institutionId: string;
+  name: string;
+  unit: string;
+  category: string;
+  currentStock: number;
+  minStock: number;
+  status: 'Disponível' | 'Comprar' | 'Alerta' | string;
+  updatedAt?: string;
+}
+
+export interface StockMovement {
+  id?: string;
+  institutionId: string;
+  productId: string;
+  productName: string;
+  type: 'entrada' | 'saida';
+  quantity: number;
+  date: string;
+  userName: string;
+  notes?: string;
+}
+

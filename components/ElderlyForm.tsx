@@ -56,6 +56,7 @@ interface ElderlyFormProps {
   settings: InstitutionSettings | null;
   onSave: (data: Resident) => void;
   onCancel: () => void;
+  accessLevel?: string;
 }
 
 const SectionHeader: React.FC<{ title: string; icon?: any }> = ({ title, icon: Icon }) => (
@@ -106,7 +107,7 @@ const FormField: React.FC<{
   </div>
 );
 
-const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'geral', settings, onSave, onCancel }) => {
+const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'geral', settings, onSave, onCancel, accessLevel }) => {
   const [formData, setFormData] = React.useState<Resident>(initialData);
   const [activeTab, setActiveTab] = React.useState<SubTab>(initialTab);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -281,7 +282,7 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     onSave(formData);
   };
 
-  const tabs: { id: SubTab; label: string; icon: any }[] = [
+  let tabs: { id: SubTab; label: string; icon: any }[] = [
     { id: 'geral', label: 'Dados Gerais', icon: ImageIcon },
     { id: 'familiares-visitantes', label: 'Familiares e Visitantes', icon: Users },
     { id: 'financeiro', label: 'Financeiro', icon: DollarSign },
@@ -293,12 +294,21 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     { id: 'pia', label: 'PIA', icon: ClipboardList },
   ];
 
+  const allowedFinanceiro = ['administrador', 'gerencial', 'assistente_social', 'auxiliar_administrativo'];
+  if (!allowedFinanceiro.includes(accessLevel || '')) {
+    tabs = tabs.filter(t => t.id !== 'financeiro');
+  }
+
+  if (accessLevel === 'auxiliar_administrativo') {
+    tabs = tabs.filter(t => t.id === 'geral' || t.id === 'financeiro');
+  }
+
   return (
     <div className="space-y-6">
       {/* Header with Export/Print Button */}
       <div className="flex items-center justify-between bg-white p-6 rounded-2xl border border-gray-200 shadow-sm no-print">
         <div className="flex items-center gap-6">
-          <button onClick={onCancel} className="p-2.5 text-gray-500 hover:bg-gray-100 rounded-xl transition-colors border">
+          <button type="button" onClick={onCancel} className="p-2.5 text-gray-500 hover:bg-gray-100 rounded-xl transition-colors border">
             <ArrowLeft size={24} />
           </button>
           <div className="flex items-center gap-4">
@@ -326,7 +336,7 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
              Exportar PDF
            </button>
            <button type="button" onClick={onCancel} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50">Sair</button>
-           <button onClick={handleSubmit} className="bg-[#004c99] hover:bg-blue-800 text-white px-8 py-2 rounded-lg flex items-center gap-2 shadow-lg transition-all font-bold text-xs uppercase">
+           <button type="button" onClick={handleSubmit} className="bg-[#004c99] hover:bg-blue-800 text-white px-8 py-2 rounded-lg flex items-center gap-2 shadow-lg transition-all font-bold text-xs uppercase">
              <Save size={18} />
              <span>Salvar Tudo</span>
            </button>
@@ -498,7 +508,7 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
 
       <div className="flex border-b border-gray-200 bg-white rounded-t-xl px-4 overflow-x-auto custom-scrollbar no-print">
         {tabs.map(tab => (
-          <button 
+          <button type="button" 
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-4 text-[10px] font-black uppercase transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
@@ -954,7 +964,10 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
         )}
 
         {activeTab === 'intercorrencias' && (
-          <IntercurrenceHistoryTab resident={formData} settings={settings} />
+          <IntercurrenceHistoryTab 
+            resident={formData} 
+            onUpdateIncidents={(newIncidents) => setFormData({...formData, incidents: newIncidents})}
+          />
         )}
 
         {activeTab === 'medicamentos' && (
@@ -984,7 +997,7 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
           >
             <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <h3 className="text-sm font-black uppercase text-gray-700">Ajustar Foto</h3>
-              <button onClick={() => setCroppingImage(null)} className="p-2 hover:bg-gray-200 rounded-full">
+              <button type="button" onClick={() => setCroppingImage(null)} className="p-2 hover:bg-gray-200 rounded-full">
                 <X size={20} />
               </button>
             </div>
@@ -1060,13 +1073,13 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
             </div>
             
             <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-3">
-              <button 
+              <button type="button" 
                 onClick={() => setCroppingImage(null)}
                 className="flex-1 py-3 text-[10px] font-black uppercase text-gray-500 hover:bg-gray-200 rounded-xl transition-all"
               >
                 Cancelar
               </button>
-              <button 
+              <button type="button" 
                 onClick={handleCropSave}
                 className="flex-1 py-3 text-[10px] font-black uppercase bg-[#004c99] text-white rounded-xl shadow-lg hover:bg-[#003366] transition-all"
               >

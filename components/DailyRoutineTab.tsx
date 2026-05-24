@@ -196,7 +196,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
         <div className="flex-1 w-full max-w-5xl mx-auto overflow-y-auto custom-scrollbar pb-8 pr-2">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {ROUTINE_TASKS.map(task => (
-              <button
+              <button type="button"
                 key={task.id}
                 onClick={() => {
                   setSelectedTaskId(task.id);
@@ -212,7 +212,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{task.category}</p>
               </button>
             ))}
-            <button
+            <button type="button"
                onClick={() => setTabletStep('summary')}
                className="col-span-2 md:col-span-3 lg:col-span-4 flex flex-col items-center justify-center p-8 bg-blue-50 border-2 border-blue-200 rounded-[32px] hover:border-[#004c99] hover:shadow-xl transition-all duration-300 group hover:-translate-y-1"
             >
@@ -343,7 +343,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
         <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in zoom-in-95 duration-500">
           <div className="flex items-center gap-4 mb-8 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 shrink-0">
             
-              <button 
+              <button type="button" 
                 onClick={() => setTabletStep('menu')}
                 className="w-14 h-14 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl flex items-center justify-center transition-all"
               >
@@ -361,7 +361,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                 const hasRecords = procedureLogs.some(l => l.tipoProcedimento === 'alimentacao' && l.refeicaoId === meal.id);
                 
                 return (
-                  <button
+                  <button type="button"
                     key={meal.id}
                     onClick={() => {
                       setSelectedMeal(meal);
@@ -398,7 +398,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
         <div className="flex flex-col h-full bg-gray-50 p-6 animate-in fade-in zoom-in-95 duration-500">
           <div className="flex flex-col lg:flex-row items-center gap-4 mb-8 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 shrink-0">
             <div className="flex items-center gap-4 w-full lg:w-auto">
-              <button 
+              <button type="button" 
                 onClick={() => setSelectedMeal(null)}
                 className="w-14 h-14 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl flex items-center justify-center transition-all shrink-0"
               >
@@ -421,7 +421,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                 <span className="text-gray-500">Data</span>
                 <span>{operationalDate.split('-').reverse().join('/')}</span>
               </div>
-              <button 
+              <button type="button" 
                   onClick={handleProcedureLog}
                   className="w-full md:w-auto md:ml-4 py-3 md:py-4 px-6 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-md flex justify-center items-center gap-2 mt-2 md:mt-0"
                 >
@@ -465,10 +465,10 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                     </div>
                     
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                      <button onClick={() => setStatus('comeu')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'comeu' ? 'bg-green-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Comeu</button>
-                      <button onClick={() => setStatus('comeu_pouco')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'comeu_pouco' ? 'bg-yellow-400 text-yellow-900 shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Pouco</button>
-                      <button onClick={() => setStatus('nao_comeu')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'nao_comeu' ? 'bg-red-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Não</button>
-                      <button onClick={() => setStatus('recusou')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'recusou' ? 'bg-orange-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Recusou</button>
+                      <button type="button" onClick={() => setStatus('comeu')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'comeu' ? 'bg-green-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Comeu</button>
+                      <button type="button" onClick={() => setStatus('comeu_pouco')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'comeu_pouco' ? 'bg-yellow-400 text-yellow-900 shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Pouco</button>
+                      <button type="button" onClick={() => setStatus('nao_comeu')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'nao_comeu' ? 'bg-red-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Não</button>
+                      <button type="button" onClick={() => setStatus('recusou')} className={`py-2 px-1 rounded-lg text-[9px] font-black uppercase tracking-tighter text-center transition-all ${currentStatus === 'recusou' ? 'bg-orange-500 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Recusou</button>
                     </div>
                   </div>
                 );
@@ -484,7 +484,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
         <div className="flex flex-col lg:flex-row items-center gap-4 mb-8 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 shrink-0">
           <div className="flex items-center gap-4 w-full lg:w-auto">
             
-              <button 
+              <button type="button" 
                 onClick={() => setTabletStep('menu')}
                 className="w-14 h-14 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl flex items-center justify-center transition-all shrink-0"
               >
@@ -505,7 +505,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
               <span className="text-gray-500">Data e Turno</span>
               <span>{operationalDate.split('-').reverse().join('/')} - {selectedShift || '--'}</span>
             </div>
-            <button 
+            <button type="button" 
                 onClick={handleProcedureLog}
                 className="w-full md:w-auto md:ml-4 py-3 md:py-4 px-6 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-md flex justify-center items-center gap-2 mt-2 md:mt-0"
               >
@@ -526,7 +526,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Turno Operacional</label>
                   <div className="grid grid-cols-1 gap-3">
                     {(shifts.length > 0 ? shifts.map(s => s.nomeTurno) : ['Manhã', 'Tarde', 'Noite']).map(s => (
-                      <button
+                      <button type="button"
                         key={s}
                         onClick={() => setSelectedShift(s)}
                         className={`py-4 rounded-xl text-sm font-black uppercase tracking-widest transition-all text-left px-6 ${
@@ -550,7 +550,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
             )}
             <div className="p-6 border-b bg-gray-50 flex items-center justify-between">
               <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Lista de Residentes</h3>
-              <button 
+              <button type="button" 
                 onClick={() => {
                   const isDaily = (selectedTask as any).occurrenceType === 'daily';
                   const selectableCount = residents.filter(r => {
@@ -583,7 +583,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
                 const isSelected = selectedResidentIds.includes(r.id);
 
                 return (
-                  <button
+                  <button type="button"
                     key={r.id}
                     disabled={!isSelectable}
                     onClick={() => handleToggleSelect(r.id)}
@@ -809,7 +809,7 @@ const DailyRoutineTab: React.FC<DailyRoutineTabProps> = ({ residents, onSaveLogs
               </p>
             </div>
             
-              <button 
+              <button type="button" 
                 onClick={() => setTabletStep('menu')}
                 className="w-12 h-12 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl flex items-center justify-center transition-all"
               >

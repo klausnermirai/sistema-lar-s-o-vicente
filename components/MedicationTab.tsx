@@ -101,7 +101,7 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
             Gestão de prescrições e horários de administração
           </p>
         </div>
-        <button
+        <button type="button"
           onClick={() => handleOpenModal()}
           className="px-6 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-xl flex items-center gap-2"
         >
@@ -174,7 +174,7 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
                         </div>
                         <div className="flex items-center gap-2 ml-14 sm:ml-0">
                           {med.reviewed === false && (
-                            <button 
+                            <button type="button" 
                               onClick={() => {
                                 const newMeds = (resident.medications || []).map(m => 
                                   m.id === med.id ? { ...m, reviewed: true, reviewedAt: new Date().toISOString() } : m
@@ -187,10 +187,10 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
                             </button>
                           )}
                           <div className={`flex items-center gap-2 transition-opacity ${med.reviewed === false ? 'opacity-100' : 'sm:opacity-0 group-hover:opacity-100'}`}>
-                            <button onClick={() => handleOpenModal(med)} className="p-2.5 bg-white shadow-sm hover:bg-blue-50 text-blue-600 rounded-xl transition-colors border">
+                            <button type="button" onClick={() => handleOpenModal(med)} className="p-2.5 bg-white shadow-sm hover:bg-blue-50 text-blue-600 rounded-xl transition-colors border">
                               <Edit2 size={14} />
                             </button>
-                            <button onClick={() => handleDelete(med.id)} className="p-2.5 bg-white shadow-sm hover:bg-red-50 text-red-600 rounded-xl transition-colors border">
+                            <button type="button" onClick={() => handleDelete(med.id)} className="p-2.5 bg-white shadow-sm hover:bg-red-50 text-red-600 rounded-xl transition-colors border">
                               <Trash2 size={14} />
                             </button>
                           </div>
@@ -223,7 +223,7 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
                   </p>
                 </div>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setIsModalOpen(false)}
                 className="p-3 hover:bg-white/10 rounded-2xl transition-all"
               >
@@ -290,13 +290,13 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
                    <div>
                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">Tipo de Uso</label>
                      <div className="flex gap-2">
-                       <button 
+                       <button type="button" 
                          onClick={() => setFormData({ ...formData, type: 'continuo' })}
                          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border-2 transition-all ${formData.type === 'continuo' ? 'bg-[#004c99] border-[#004c99] text-white' : 'bg-white border-gray-100 text-gray-400'}`}
                        >
                          Contínuo
                        </button>
-                       <button 
+                       <button type="button" 
                          onClick={() => setFormData({ ...formData, type: 'temporario' })}
                          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border-2 transition-all ${formData.type === 'temporario' ? 'bg-orange-600 border-orange-600 text-white' : 'bg-white border-gray-100 text-gray-400'}`}
                        >
@@ -437,13 +437,13 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
                 </label>
               </div>
               <div className="flex gap-4">
-                <button
+                <button type="button"
                   onClick={() => setIsModalOpen(false)}
                   className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400 hover:bg-gray-100 rounded-2xl transition-all"
                 >
                   Cancelar
                 </button>
-                <button
+                <button type="button"
                   onClick={handleSave}
                   className="flex-1 py-4 bg-[#004c99] text-white rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-blue-800 transition-all flex items-center justify-center gap-3"
                 >

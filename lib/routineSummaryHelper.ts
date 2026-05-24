@@ -1,4 +1,4 @@
-import { Resident, ShiftProcedureLog } from './types';
+import { Resident, ShiftProcedureLog } from '../types';
 
 // Omesmos ROUTINE_TASKS_DEFS para manter consistência sem precisar circular dependências
 export const ROUTINE_TASKS_DEFS = [

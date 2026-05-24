@@ -197,8 +197,8 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
     <div className="flex flex-col h-full max-w-5xl mx-auto w-full relative pb-20">
       
       <div className="flex bg-white rounded-3xl p-1 mb-6 border shadow-sm shrink-0">
-         <button onClick={() => setActiveTab('fixa')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-2xl transition-all ${activeTab === 'fixa' ? 'bg-[#004c99] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>Medicação Fixa</button>
-         <button onClick={() => setActiveTab('sos')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-2xl transition-all ${activeTab === 'sos' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>Medicação Eventual / SOS</button>
+         <button type="button" onClick={() => setActiveTab('fixa')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-2xl transition-all ${activeTab === 'fixa' ? 'bg-[#004c99] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>Medicação Fixa</button>
+         <button type="button" onClick={() => setActiveTab('sos')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-2xl transition-all ${activeTab === 'sos' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>Medicação Eventual / SOS</button>
       </div>
 
       <div className="bg-white rounded-[32px] shadow-sm border p-6 flex flex-col md:flex-row gap-6 items-center shrink-0 mb-6">
@@ -292,7 +292,7 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
                                     <span className="text-[9px] text-gray-400 font-bold uppercase">Resp: {log.responsavelNome}</span>
                                   </div>
                                ) : (
-                                  <button 
+                                  <button type="button" 
                                     onClick={() => setActiveAction({resident: r, med: m, time: shift})}
                                     className="w-full sm:w-auto px-6 py-3 bg-white border border-purple-200 text-purple-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-purple-50 transition-colors flex items-center justify-center gap-2"
                                   >
@@ -330,13 +330,13 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
                          {protocols.length === 0 ? (
                            <div className="text-center py-6">
                               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sem condutas SOS cadastradas</p>
-                              <button onClick={() => setActiveSosAction({resident: r, protocol: null})} className="mt-4 px-4 py-2 bg-gray-50 border rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-500 hover:bg-gray-100 transition-colors w-full">
+                              <button type="button" onClick={() => setActiveSosAction({resident: r, protocol: null})} className="mt-4 px-4 py-2 bg-gray-50 border rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-500 hover:bg-gray-100 transition-colors w-full">
                                 Apenas Registrar Intercorrência
                               </button>
                            </div>
                          ) : (
                            protocols.map(p => (
-                             <button
+                             <button type="button"
                                key={p.id}
                                onClick={() => setActiveSosAction({resident: r, protocol: p})}
                                className="w-full p-4 bg-white border border-purple-100 rounded-2xl hover:bg-purple-50 hover:border-purple-200 transition-all text-left flex flex-col gap-2 group"
@@ -350,7 +350,7 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
                            ))
                          )}
                          {protocols.length > 0 && (
-                            <button onClick={() => setActiveSosAction({resident: r, protocol: null})} className="mt-2 px-4 py-2 bg-transparent text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors w-full">
+                            <button type="button" onClick={() => setActiveSosAction({resident: r, protocol: null})} className="mt-2 px-4 py-2 bg-transparent text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors w-full">
                               Intercorrência s/ Medicação SOS
                             </button>
                          )}
@@ -377,7 +377,7 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
                      <h4 className="text-xl font-black text-gray-900 tracking-tight uppercase leading-none mt-2">{activeAction.resident.name}</h4>
                    </div>
                 </div>
-                <button onClick={() => setActiveAction(null)} className="p-2 bg-gray-50 text-gray-400 hover:bg-gray-100 rounded-full">
+                <button type="button" onClick={() => setActiveAction(null)} className="p-2 bg-gray-50 text-gray-400 hover:bg-gray-100 rounded-full">
                   <X size={20} />
                 </button>
               </div>
@@ -402,7 +402,7 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
                        { v: 'em_falta', l: 'Em Falta', bg: 'bg-gray-50 focus:ring-gray-500 border-gray-300 text-gray-800' },
                        { v: 'suspenso', l: 'Suspenso', bg: 'bg-blue-50 focus:ring-blue-500 border-blue-200 text-blue-800' },
                      ].map(opt => (
-                        <button
+                        <button type="button"
                           key={opt.v}
                           onClick={() => setStatus(opt.v as any)}
                           className={`p-4 border rounded-2xl text-xs font-black uppercase tracking-widest transition-all
@@ -424,7 +424,7 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
                    ></textarea>
                  </div>
 
-                 <button disabled={isLoading || (status !== 'administrado' && !observation)} onClick={handleAdminister} className="w-full py-5 text-xs font-black uppercase tracking-widest text-white bg-[#004c99] rounded-2xl hover:bg-blue-800 transition-colors shadow-xl shadow-[#004c99]/20 disabled:opacity-50 flex items-center justify-center gap-2">
+                 <button type="button" disabled={isLoading || (status !== 'administrado' && !observation)} onClick={handleAdminister} className="w-full py-5 text-xs font-black uppercase tracking-widest text-white bg-[#004c99] rounded-2xl hover:bg-blue-800 transition-colors shadow-xl shadow-[#004c99]/20 disabled:opacity-50 flex items-center justify-center gap-2">
                    {isLoading ? 'Salvando...' : 'Confirmar Registro no Prontuário'}
                  </button>
               </div>
@@ -446,7 +446,7 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
                      <h4 className="text-xl font-black text-gray-900 tracking-tight uppercase leading-none mt-2">{activeSosAction.resident.name}</h4>
                    </div>
                 </div>
-                <button onClick={() => setActiveSosAction(null)} className="p-2 bg-gray-50 text-gray-400 hover:bg-gray-100 rounded-full">
+                <button type="button" onClick={() => setActiveSosAction(null)} className="p-2 bg-gray-50 text-gray-400 hover:bg-gray-100 rounded-full">
                   <X size={20} />
                 </button>
               </div>
@@ -482,7 +482,7 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
                            { v: 'nao_administrado', l: 'Não Administrado', bg: 'bg-orange-50 focus:ring-orange-500 border-orange-200 text-orange-800' },
                            { v: 'em_falta', l: 'Em Falta', bg: 'bg-gray-50 focus:ring-gray-500 border-gray-300 text-gray-800' }
                          ].map(opt => (
-                            <button
+                            <button type="button"
                               key={opt.v}
                               onClick={() => setStatus(opt.v as any)}
                               className={`p-4 border rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all
@@ -504,7 +504,7 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
                        ></textarea>
                      </div>
     
-                     <button disabled={isLoading || (status !== 'administrado' && !observation)} onClick={handleAdministerSos} className="w-full py-5 text-xs font-black uppercase tracking-widest text-white bg-purple-600 rounded-[20px] hover:bg-purple-800 transition-colors shadow-xl shadow-purple-600/20 disabled:opacity-50 flex items-center justify-center gap-2">
+                     <button type="button" disabled={isLoading || (status !== 'administrado' && !observation)} onClick={handleAdministerSos} className="w-full py-5 text-xs font-black uppercase tracking-widest text-white bg-purple-600 rounded-[20px] hover:bg-purple-800 transition-colors shadow-xl shadow-purple-600/20 disabled:opacity-50 flex items-center justify-center gap-2">
                        {isLoading ? 'Registrando...' : 'Confirmar Registro SOS'}
                      </button>
                   </div>
@@ -523,7 +523,7 @@ export const OperationalAdministrationTab: React.FC<{ residents: Resident[], ses
                        placeholder="Descreva a intercorrência ou observação..."
                      ></textarea>
                    </div>
-                   <button disabled={isLoading || !observation} onClick={handleAdministerSos} className="w-full py-5 text-xs font-black uppercase tracking-widest text-white bg-blue-600 rounded-[20px] hover:bg-blue-800 transition-colors shadow-xl shadow-blue-600/20 disabled:opacity-50 flex items-center justify-center gap-2">
+                   <button type="button" disabled={isLoading || !observation} onClick={handleAdministerSos} className="w-full py-5 text-xs font-black uppercase tracking-widest text-white bg-blue-600 rounded-[20px] hover:bg-blue-800 transition-colors shadow-xl shadow-blue-600/20 disabled:opacity-50 flex items-center justify-center gap-2">
                      {isLoading ? 'Registrando...' : 'Salvar Intercorrência'}
                    </button>
                 </div>

@@ -293,7 +293,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
     <div className="space-y-6">
       {/* Sub-tabs */}
       <div className="flex gap-4 border-b border-gray-200">
-        <button
+        <button type="button"
           onClick={() => setActiveSubTab('avaliacao')}
           className={`pb-3 px-2 text-sm font-bold uppercase tracking-wider transition-colors border-b-2 ${
             activeSubTab === 'avaliacao'
@@ -303,7 +303,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         >
           Primeira Avaliação
         </button>
-        <button
+        <button type="button"
           onClick={() => setActiveSubTab('evolucao')}
           className={`pb-3 px-2 text-sm font-bold uppercase tracking-wider transition-colors border-b-2 ${
             activeSubTab === 'evolucao'
@@ -313,7 +313,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
         >
           Evolução
         </button>
-        <button
+        <button type="button"
           onClick={() => setActiveSubTab('atendimentos')}
           className={`pb-3 px-2 text-sm font-bold uppercase tracking-wider transition-colors border-b-2 ${
             activeSubTab === 'atendimentos'
@@ -596,7 +596,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
             </div>
             
             <div className="flex justify-end pt-4 border-t mt-6">
-              <button 
+              <button type="button" 
                 onClick={handleSaveAssessment}
                 className="bg-[#004c99] hover:bg-blue-800 text-white px-8 py-4 rounded-2xl flex items-center gap-2 shadow-xl shadow-blue-900/20 transition-all font-black text-xs uppercase"
               >
@@ -838,7 +838,7 @@ const OccupationalTherapyTab: React.FC<OccupationalTherapyTabProps> = ({ residen
                         <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">
                         {att.attendanceType}
                         </span>
-                        <button
+                        <button type="button"
                         onClick={() => handleExportIndividualAttendancePDF(att)}
                         className="p-2 text-gray-400 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border"
                         title="Exportar Atendimento"

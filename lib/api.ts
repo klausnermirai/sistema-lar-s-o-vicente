@@ -456,3 +456,58 @@ export const saveSosProtocol = async (protocol: any) => {
   return response.json();
 };
 
+export const fetchStockProducts = async () => {
+  const response = await fetch('/api/stock-products', {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar produtos do estoque');
+  return response.json();
+};
+
+export const saveStockProduct = async (item: any) => {
+  const response = await fetch('/api/stock-products', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(item)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar produto no estoque');
+  return response.json();
+};
+
+export const deleteStockProduct = async (id: string) => {
+  const response = await fetch(`/api/stock-products/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao excluir produto do estoque');
+  return response.json();
+};
+
+export const bootstrapStockProducts = async (items: any[]) => {
+  const response = await fetch('/api/stock-products/bulk-bootstrap', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ items })
+  });
+  if (!response.ok) throw new Error('Erro ao carregar catálogo de produtos');
+  return response.json();
+};
+
+export const fetchStockMovements = async () => {
+  const response = await fetch('/api/stock-movements', {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar histórico de movimentações');
+  return response.json();
+};
+
+export const registerStockMovement = async (movement: any) => {
+  const response = await fetch('/api/stock-movements', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(movement)
+  });
+  if (!response.ok) throw new Error('Erro ao registrar movimentação de estoque');
+  return response.json();
+};
+

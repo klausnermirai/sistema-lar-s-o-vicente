@@ -673,7 +673,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
                         <div className="flex items-center gap-1"><User size={14} /> {ev.professional}</div>
                       </div>
                     </div>
-                    <button 
+                    <button type="button" 
                       onClick={() => toggleExpand(ev.id)}
                       className="text-[#004c99] hover:bg-blue-50 p-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold uppercase"
                     >

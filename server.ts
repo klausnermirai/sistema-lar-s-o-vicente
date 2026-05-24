@@ -442,7 +442,7 @@ async function startServer() {
   });
 
   // CRUD for Residents
-  app.get('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'administrador']), async (req, res) => {
+  app.get('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'administrador', 'auxiliar_administrativo']), async (req, res) => {
     const { institutionId, type } = req.query;
     if (!institutionId) return res.status(400).json({ error: 'institutionId requerido' });
     
@@ -504,7 +504,7 @@ async function startServer() {
   });
 
   
-  app.get('/api/residents/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'administrador']), async (req, res) => {
+  app.get('/api/residents/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'administrador', 'auxiliar_administrativo']), async (req, res) => {
     try {
       const doc = await db.collection('residents').doc(req.params.id).get();
       if (!doc.exists) return res.status(404).json({ error: 'Residente não encontrado' });
@@ -525,7 +525,7 @@ async function startServer() {
   });
 
 
-  app.post('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico']), async (req, res) => {
+  app.post('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'auxiliar_administrativo']), async (req, res) => {
     const data = req.body;
     try {
       const auditEntry = {
@@ -1082,7 +1082,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/employees', requireRole(['administrador', 'gerencial']), async (req, res) => {
+  app.post('/api/employees', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
     const data = req.body;
     try {
       const realId = await getRealInstitutionId((req as any).user.institutionId);
@@ -1108,7 +1108,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/employees/bulk', requireRole(['administrador', 'gerencial']), async (req, res) => {
+  app.post('/api/employees/bulk', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
     const employees = req.body;
     try {
       const realId = await getRealInstitutionId((req as any).user.institutionId);
@@ -1138,7 +1138,7 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/employees/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
+  app.delete('/api/employees/:id', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
     const { id } = req.params;
     try {
       await db.collection('employees').doc(id).update({
@@ -1226,7 +1226,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/shifts', requireRole(['administrador', 'gerencial']), async (req, res) => {
+  app.post('/api/shifts', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
     const payload = req.body;
     try {
       if (!payload.institutionId) return res.status(400).json({ error: 'Falta institutionId' });
@@ -1258,7 +1258,7 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/shifts/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
+  app.delete('/api/shifts/:id', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
     try {
       await db.collection('shifts').doc(req.params.id).update({
         status: 'inativo',
@@ -1991,6 +1991,212 @@ async function startServer() {
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
       res.status(500).json({ error: 'Erro ao arquivar acompanhante.' });
+    }
+  });
+  
+  // --- CUSTOM PRODUCT STOCK & MOVEMENT MODULE ---
+  app.get('/api/stock-products', requireRole(['administrador', 'gerencial', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      const snapshot = await db.collection('product_stock')
+        .where('institutionId', '==', institutionId)
+        .get();
+      
+      const items = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      res.json(items);
+    } catch (error: any) {
+      console.error('Error fetching stock products:', error);
+      res.status(500).json({ error: 'Erro ao buscar produtos em estoque.' });
+    }
+  });
+
+  app.post('/api/stock-products', requireRole(['administrador', 'gerencial', 'nutricionista', 'enfermeira', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      const item = req.body;
+      const itemId = item.id || Date.now().toString();
+      
+      const data: any = {
+        name: item.name || '',
+        unit: item.unit || '',
+        category: (item.category || 'ALIMENTAÇÃO').toUpperCase(),
+        currentStock: Number(item.currentStock) || 0,
+        minStock: Number(item.minStock) || 0,
+        status: item.status || 'Disponível',
+        institutionId,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (data.currentStock === 0) {
+        data.status = 'Comprar';
+      } else if (data.currentStock < data.minStock) {
+        data.status = 'Alerta';
+      } else {
+        data.status = 'Disponível';
+      }
+
+      await db.collection('product_stock').doc(itemId).set(data, { merge: true });
+      res.json({ success: true, item: { id: itemId, ...data } });
+    } catch (error: any) {
+      console.error('Error saving stock product:', error);
+      res.status(500).json({ error: 'Erro ao salvar produto em estoque.' });
+    }
+  });
+
+  app.delete('/api/stock-products/:id', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      await db.collection('product_stock').doc(req.params.id).delete();
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error deleting stock product:', error);
+      res.status(500).json({ error: 'Erro ao excluir produto do estoque.' });
+    }
+  });
+
+  app.post('/api/stock-products/bulk-bootstrap', requireRole(['administrador', 'gerencial', 'nutricionista', 'enfermeira', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      const { items } = req.body;
+      if (!Array.isArray(items)) return res.status(400).json({ error: 'Formato de itens inválido.' });
+      
+      const batchSize = 100;
+      let batch = db.batch();
+      let count = 0;
+      
+      for (const item of items) {
+        const id = item.id || `prod_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const ref = db.collection('product_stock').doc(id);
+        
+        const currentStock = Number(item.currentStock) || 0;
+        const minStock = Number(item.minStock) || 0;
+        let status = item.status || 'Disponível';
+        if (currentStock === 0) {
+          status = 'Comprar';
+        } else if (currentStock < minStock) {
+          status = 'Alerta';
+        } else {
+          status = 'Disponível';
+        }
+
+        const data = {
+          name: item.name || '',
+          unit: item.unit || '',
+          category: (item.category || 'ALIMENTAÇÃO').toUpperCase(),
+          currentStock,
+          minStock,
+          status,
+          institutionId,
+          updatedAt: new Date().toISOString()
+        };
+        
+        batch.set(ref, data, { merge: true });
+        count++;
+        
+        if (count % batchSize === 0) {
+          await batch.commit();
+          batch = db.batch();
+        }
+      }
+      
+      if (count % batchSize !== 0) {
+        await batch.commit();
+      }
+      
+      res.json({ success: true, count });
+    } catch (error: any) {
+      console.error('Error bootstrapping stock products:', error);
+      res.status(500).json({ error: 'Erro ao carregar catálogo de produtos.' });
+    }
+  });
+
+  app.get('/api/stock-movements', requireRole(['administrador', 'gerencial', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      // Attempt ordered fetch; if index missing, retry without ordering and sort in memory
+      try {
+        const snapshot = await db.collection('stock_movements')
+          .where('institutionId', '==', institutionId)
+          .orderBy('date', 'desc')
+          .limit(200)
+          .get();
+        const movements = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+        return res.json(movements);
+      } catch (idxError) {
+        const snapshot = await db.collection('stock_movements')
+          .where('institutionId', '==', institutionId)
+          .get();
+        const movements = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+        movements.sort((a: any, b: any) => b.date.localeCompare(a.date));
+        res.json(movements.slice(0, 200));
+      }
+    } catch (error: any) {
+      console.error('Error fetching stock movements:', error);
+      res.status(500).json({ error: 'Erro ao buscar movimentações de estoque.' });
+    }
+  });
+
+  app.post('/api/stock-movements', requireRole(['administrador', 'gerencial', 'nutricionista', 'enfermeira', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      const mv = req.body;
+      const prodRef = db.collection('product_stock').doc(mv.productId);
+      const prodDoc = await prodRef.get();
+      
+      if (!prodDoc.exists) {
+        return res.status(404).json({ error: 'Produto não encontrado.' });
+      }
+      
+      const prodData = prodDoc.data();
+      const change = Number(mv.quantity) || 0;
+      let newStock = Number(prodData.currentStock) || 0;
+      
+      if (mv.type === 'entrada') {
+        newStock += change;
+      } else {
+        newStock = Math.max(0, newStock - change);
+      }
+      
+      let newStatus = 'Disponível';
+      if (newStock === 0) {
+        newStatus = 'Comprar';
+      } else if (newStock < Number(prodData.minStock || 0)) {
+        newStatus = 'Alerta';
+      }
+      
+      await prodRef.update({
+        currentStock: newStock,
+        status: newStatus,
+        updatedAt: new Date().toISOString()
+      });
+      
+      const movementDoc = {
+        productId: mv.productId,
+        productName: prodData.name,
+        type: mv.type,
+        quantity: change,
+        date: mv.date || new Date().toISOString().split('T')[0],
+        userName: mv.userName || 'Sistema',
+        notes: mv.notes || '',
+        institutionId,
+        createdAt: new Date().toISOString()
+      };
+      
+      const mvRef = await db.collection('stock_movements').add(movementDoc);
+      
+      res.json({ success: true, movement: { id: mvRef.id, ...movementDoc }, newStock, newStatus });
+    } catch (error: any) {
+      console.error('Error registering stock movement:', error);
+      res.status(500).json({ error: 'Erro ao registrar movimentação de estoque.' });
     }
   });
   

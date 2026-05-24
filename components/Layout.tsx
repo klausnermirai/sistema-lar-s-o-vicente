@@ -45,7 +45,7 @@ const Layout: React.FC<LayoutProps> = ({
   const [isTeamChatOpen, setIsTeamChatOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
-  const hasGestaoAccess = accessLevel === 'administrador' || accessLevel === 'gerencial';
+  const hasGestaoAccess = accessLevel === 'administrador' || accessLevel === 'gerencial' || accessLevel === 'auxiliar_administrativo';
   
   // Specific restrictions
   const isEnfermeira = accessLevel === 'enfermeira';
@@ -57,6 +57,7 @@ const Layout: React.FC<LayoutProps> = ({
   const isNutricionista = accessLevel === 'nutricionista';
   const isMedico = accessLevel === 'medico';
   const isCuidados = accessLevel === 'cuidados';
+  const isAuxiliarAdministrativo = accessLevel === 'auxiliar_administrativo';
 
   useEffect(() => {
     // Mural real-time unread count
@@ -190,7 +191,16 @@ const Layout: React.FC<LayoutProps> = ({
       { id: AppRoute.MEDICAMENTOS, label: 'Medicamentos', icon: Pill },
       { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     ];
-  } else if (isPsicologia || isTerapeutaOcupacional || isFisioterapeuta || isNutricionista) {
+  } else if (isPsicologia) {
+    atendimentoItems = [
+      { id: AppRoute.HOME, label: 'Página Inicial', icon: Home },
+      { id: AppRoute.SCREENING, label: 'Triagens', icon: FileSearch },
+      { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
+      { id: AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES, label: 'Atendimento Multidisciplinar', icon: Activity },
+      { id: AppRoute.AGENDA, label: 'Agenda', icon: Calendar },
+      { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+    ];
+  } else if (isTerapeutaOcupacional || isFisioterapeuta || isNutricionista) {
     atendimentoItems = [
       { id: AppRoute.HOME, label: 'Página Inicial', icon: Home },
       { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
@@ -198,16 +208,30 @@ const Layout: React.FC<LayoutProps> = ({
       { id: AppRoute.AGENDA, label: 'Agenda', icon: Calendar },
       { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     ];
+  } else if (isAuxiliarAdministrativo) {
+    atendimentoItems = [
+      { id: AppRoute.HOME, label: 'Página Inicial', icon: Home },
+      { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
+      { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+    ];
   }
 
-  const gestaoItems = [
+  let gestaoItems = [
     { id: AppRoute.AMENDMENTS, label: 'Planejamento de Emendas', icon: BarChart3 },
     { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     { id: AppRoute.EMPLOYEES, label: 'Funcionários (RH)', icon: Users },
+    { id: AppRoute.STOCK, label: 'Estoque e Compras', icon: Package },
     // Placeholders for future modules
     { id: 'financeiro' as any, label: 'Gestão Financeira', icon: DollarSign, disabled: true },
-    { id: 'compras' as any, label: 'Compras e Estoque', icon: Package, disabled: true },
   ];
+
+  if (isAuxiliarAdministrativo) {
+    gestaoItems = [
+      { id: AppRoute.EMPLOYEES, label: 'Funcionários (RH)', icon: Users },
+      { id: AppRoute.STOCK, label: 'Estoque e Compras', icon: Package },
+      { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+    ];
+  }
 
   const menuItems = activeCategory === 'atendimento' ? atendimentoItems : gestaoItems;
 
@@ -355,6 +379,9 @@ const Layout: React.FC<LayoutProps> = ({
                activeRoute === AppRoute.ATENDIMENTOS_MULTIDISCIPLINARES ? 'Atendimento Multidisciplinar' :
                activeRoute === AppRoute.CONSULTAS_MEDICAS ? 'Consulta Médica' :
                activeRoute === AppRoute.AGENDA ? 'Agenda Multidisciplinar' :
+               activeRoute === AppRoute.STOCK ? 'Estoque e Compras' :
+               activeRoute === AppRoute.AMENDMENTS ? 'Planejamento de Emendas' :
+               activeRoute === AppRoute.EMPLOYEES ? 'Gestão de Funcionários' :
                'Configurações do Sistema'}
             </span>
           </div>

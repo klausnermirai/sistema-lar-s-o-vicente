@@ -258,7 +258,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button 
+            <button type="button" 
               onClick={() => setIsFormOpen(false)}
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
             >
@@ -268,7 +268,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
               {editingId ? 'Editar Atividade' : 'Nova Atividade em Grupo'}
             </h3>
           </div>
-          <button
+          <button type="button"
             onClick={handleSave}
             className="flex items-center gap-2 px-4 py-2 bg-[#004c99] text-white rounded-xl font-bold text-sm hover:bg-blue-800 transition-colors"
           >
@@ -283,7 +283,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
               <div className="mb-4">
                 <label className="block text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1">Status da Atividade</label>
                 <div className="flex gap-2">
-                  <button
+                  <button type="button"
                     onClick={() => setFormData({ ...formData, status: 'agendada' })}
                     className={`flex-1 py-2 text-xs font-bold rounded-lg border flex items-center justify-center gap-2 transition-all ${
                       formData.status === 'agendada' ? 'bg-yellow-50 border-yellow-200 text-yellow-700' : 'bg-white text-gray-500 hover:bg-gray-50'
@@ -291,7 +291,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
                   >
                     Agendada
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => setFormData({ ...formData, status: 'realizada' })}
                     className={`flex-1 py-2 text-xs font-bold rounded-lg border flex items-center justify-center gap-2 transition-all ${
                       formData.status === 'realizada' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white text-gray-500 hover:bg-gray-50'
@@ -299,7 +299,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
                   >
                     Realizada
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => setFormData({ ...formData, status: 'cancelada' })}
                     className={`flex-1 py-2 text-xs font-bold rounded-lg border flex items-center justify-center gap-2 transition-all ${
                       formData.status === 'cancelada' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white text-gray-500 hover:bg-gray-50'
@@ -476,7 +476,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
                     placeholder="Nome do profissional..."
                     className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm font-medium"
                   />
-                  <button
+                  <button type="button"
                     onClick={handleAddInvolved}
                     className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-bold"
                   >
@@ -488,7 +488,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
                     {formData.involvedProfessionals.map((prof, idx) => (
                       <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-bold">
                         {prof}
-                        <button onClick={() => handleRemoveInvolved(idx)} className="hover:text-red-500 ml-1">&times;</button>
+                        <button type="button" onClick={() => handleRemoveInvolved(idx)} className="hover:text-red-500 ml-1">&times;</button>
                       </span>
                     ))}
                   </div>
@@ -536,7 +536,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
           <Users size={20} className="text-[#004c99]" />
           Atividades em Grupo
         </h3>
-        <button
+        <button type="button"
           onClick={handleOpenCreate}
           className="flex items-center gap-2 px-4 py-2 bg-[#004c99] text-white rounded-xl font-bold text-sm hover:bg-blue-800 transition-colors"
         >
@@ -584,14 +584,14 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
                       {activity.result}
                     </span>
                   )}
-                  <button 
+                  <button type="button" 
                     onClick={() => handleOpenEdit(activity)}
                     className="p-1.5 text-gray-400 hover:text-[#004c99] hover:bg-blue-50 rounded-lg bg-white shadow-sm border border-gray-100 transition-colors"
                     title="Editar Atividade"
                   >
                     <Edit size={16} />
                   </button>
-                  <button 
+                  <button type="button" 
                     onClick={() => handleDeleteActivity(activity.id)}
                     className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg bg-white shadow-sm border border-gray-100 transition-colors"
                     title="Arquivar Atividade"

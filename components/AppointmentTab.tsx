@@ -129,7 +129,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
           </p>
         </div>
         <div className="flex gap-4">
-          <button
+          <button type="button"
             onClick={handleOpenModal}
             className="px-6 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-xl flex items-center gap-2"
           >
@@ -180,7 +180,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
                   </div>
 
                   <div className="flex flex-col gap-2 justify-center">
-                    <button 
+                    <button type="button" 
                       onClick={() => {
                         setSelectedAppointment(app);
                         setIsNotesModalOpen(true);
@@ -245,7 +245,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
                   <p className="text-[10px] font-bold uppercase opacity-80">Planejamento de rotina médica</p>
                 </div>
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="p-3 hover:bg-white/10 rounded-2xl transition-all"><X size={28} /></button>
+              <button type="button" onClick={() => setIsModalOpen(false)} className="p-3 hover:bg-white/10 rounded-2xl transition-all"><X size={28} /></button>
             </div>
 
             <div className="p-8 space-y-6">
@@ -338,8 +338,8 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
             </div>
 
             <div className="p-8 border-t bg-gray-50 flex gap-4">
-              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400">Cancelar</button>
-              <button 
+              <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400">Cancelar</button>
+              <button type="button" 
                 onClick={handleSaveAppointment}
                 className="flex-1 py-4 bg-[#004c99] text-white rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-blue-800 transition-all"
               >
@@ -364,7 +364,7 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
                   <p className="text-[10px] font-bold uppercase opacity-80">Compartilhamento de informações</p>
                 </div>
               </div>
-              <button onClick={() => setIsNotesModalOpen(false)} className="p-3 hover:bg-white/10 rounded-2xl transition-all"><X size={28} /></button>
+              <button type="button" onClick={() => setIsNotesModalOpen(false)} className="p-3 hover:bg-white/10 rounded-2xl transition-all"><X size={28} /></button>
             </div>
 
             <div className="p-8 space-y-6">
@@ -415,8 +415,8 @@ const AppointmentTab: React.FC<AppointmentTabProps> = ({
                 </label>
               </div>
               <div className="flex gap-4">
-                <button onClick={() => setIsNotesModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400">Pular Notas</button>
-                <button 
+                <button type="button" onClick={() => setIsNotesModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400">Pular Notas</button>
+                <button type="button" 
                   onClick={handleCompleteAppointment}
                   disabled={!notes.trim()}
                   className="flex-1 py-4 bg-green-600 text-white rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-green-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"

@@ -17,6 +17,7 @@ import AgendaModule from './components/AgendaModule';
 import { VisitorPortal } from './components/VisitorPortal';
 import LoginScreen from './components/LoginScreen';
 import SetupScreen from './components/SetupScreen';
+import StockModule from './components/StockModule';
 import { AppRoute, Resident, SubTab, Candidate, InstitutionSettings, MuralMessage } from './types';
 import { DUMMY_RESIDENTS, INITIAL_RESIDENT, DUMMY_CANDIDATES } from './constants';
 import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Pill, Briefcase, FileSearch, FileText, ClipboardList } from 'lucide-react';
@@ -358,8 +359,17 @@ const App: React.FC = () => {
     { id: 'pia', label: 'PIA', icon: ClipboardList },
   ];
 
+  const allowedFinanceiro = ['administrador', 'gerencial', 'assistente_social', 'auxiliar_administrativo'];
+  if (!allowedFinanceiro.includes(session?.accessLevel || '')) {
+    tabs = tabs.filter(t => t.id !== 'financeiro');
+  }
+
   if (session?.accessLevel === 'psicologia' || session?.accessLevel === 'terapeuta_ocupacional' || session?.accessLevel === 'fisioterapeuta' || session?.accessLevel === 'nutricionista') {
     tabs = tabs.filter(t => t.id !== 'financeiro' && t.id !== 'itens');
+  }
+
+  if (session?.accessLevel === 'auxiliar_administrativo') {
+    tabs = tabs.filter(t => t.id === 'geral' || t.id === 'financeiro');
   }
 
   // Ordem de precedência: Setup -> Login -> App
@@ -436,7 +446,8 @@ const App: React.FC = () => {
       {activeRoute === AppRoute.RESIDENTS && (
         <div className="space-y-6">
           {/* Sub-navigation Tabs */}
-          <div className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-1 overflow-x-auto custom-scrollbar">
+          {!editingResident && (
+            <div className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-1 overflow-x-auto custom-scrollbar">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -452,6 +463,7 @@ const App: React.FC = () => {
               </button>
             ))}
           </div>
+          )}
 
           {editingResident ? (
             <ElderlyForm 
@@ -460,6 +472,7 @@ const App: React.FC = () => {
               settings={settings}
               onSave={handleSaveResident} 
               onCancel={() => setEditingResident(null)} 
+              accessLevel={session?.accessLevel}
             />
           ) : (
             <ElderlyList 
@@ -646,6 +659,13 @@ const App: React.FC = () => {
 
       {activeRoute === AppRoute.EMPLOYEES && session && (
         <EmployeesModule 
+          session={session}
+          settings={settings}
+        />
+      )}
+
+      {activeRoute === AppRoute.STOCK && session && (
+        <StockModule 
           session={session}
           settings={settings}
         />

@@ -368,7 +368,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                        accessLevel === 'nutricionista' ? 'Nutricionista' : 
                        accessLevel === 'medico' ? 'Médico' :
                        accessLevel === 'cuidados' ? 'Cuidados (Cuidadores)' :
-                       accessLevel === 'fisioterapeuta' ? 'Fisioterapeuta' : accessLevel}
+                       accessLevel === 'fisioterapeuta' ? 'Fisioterapeuta' : 
+                       accessLevel === 'auxiliar_administrativo' ? 'Auxiliar Administrativo' : accessLevel}
                     </p>
                   </div>
                   <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
@@ -902,7 +903,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                              user.accessLevel === 'nutricionista' ? 'Nutricionista' : 
                              user.accessLevel === 'medico' ? 'Médico' :
                              user.accessLevel === 'cuidados' ? 'Cuidados' :
-                             user.accessLevel === 'fisioterapeuta' ? 'Fisioterapeuta' : user.accessLevel}
+                             user.accessLevel === 'fisioterapeuta' ? 'Fisioterapeuta' : 
+                             user.accessLevel === 'auxiliar_administrativo' ? 'Auxiliar Administrativo' : user.accessLevel}
                           </span>
                         </div>
                         {user.funcionarioId && employees.find(e => e.id === user.funcionarioId) && (() => {
@@ -1020,6 +1022,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ institutionId, onLogout
                     className="w-full p-4 border rounded-xl text-xs font-bold uppercase outline-none focus:ring-2 focus:ring-blue-100 bg-white max-h-48"
                   >
                     <option value="administrador">Administrador (Total)</option>
+                    <option value="auxiliar_administrativo">Auxiliar Administrativo</option>
                     <option value="enfermeira">Enfermeira</option>
                     <option value="visitante">Visitante</option>
                     <option value="assistente_social">Assistente Social</option>

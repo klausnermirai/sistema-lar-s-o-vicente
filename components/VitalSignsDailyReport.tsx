@@ -15,6 +15,10 @@ export const VitalSignsDailyReport: React.FC<VitalSignsDailyReportProps> = ({ re
   ).filter(r => new Date(r.date).toISOString().split('T')[0] === selectedDate)
    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+  // Logs temporários para diagnóstico
+  console.log("Data do relatório diário:", selectedDate);
+  console.log("Registros do relatório diário:", allRecords);
+
   return (
     <div className="flex flex-col h-full bg-gray-50/10">
       <div className="p-8 border-b bg-white shrink-0">

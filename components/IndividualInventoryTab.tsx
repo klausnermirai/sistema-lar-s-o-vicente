@@ -331,10 +331,10 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
          {!hideActions && (
          <td className="p-4">
              <div className="flex flex-wrap gap-2">
-               <button onClick={() => { setSelectedMedContext(context); setCriticalLevel(stats.lastCritical || ''); setIsEntryModalOpen(true); }} className="px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-green-200 flex items-center gap-1"><TrendingUp size={12}/> Entrada</button>
-               <button onClick={() => { setSelectedMedContext(context); setCriticalLevel(stats.lastCritical || ''); setIsExitModalOpen(true); }} className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-red-200 flex items-center gap-1"><TrendingDown size={12}/> Saída</button>
-               <button onClick={() => { setSelectedMedContext(context); setCriticalLevel(stats.lastCritical || ''); setIsAdjustModalOpen(true); }} className="px-3 py-1.5 bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-orange-200 flex items-center gap-1"><AlertCircle size={12}/> Ajuste</button>
-               <button onClick={() => { setSelectedMedContext(context); setIsHistoryModalOpen(true); }} className="px-3 py-1.5 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-gray-200 flex items-center gap-1"><FileText size={12}/> Histórico</button>
+               <button type="button" onClick={() => { setSelectedMedContext(context); setCriticalLevel(stats.lastCritical || ''); setIsEntryModalOpen(true); }} className="px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-green-200 flex items-center gap-1"><TrendingUp size={12}/> Entrada</button>
+               <button type="button" onClick={() => { setSelectedMedContext(context); setCriticalLevel(stats.lastCritical || ''); setIsExitModalOpen(true); }} className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-red-200 flex items-center gap-1"><TrendingDown size={12}/> Saída</button>
+               <button type="button" onClick={() => { setSelectedMedContext(context); setCriticalLevel(stats.lastCritical || ''); setIsAdjustModalOpen(true); }} className="px-3 py-1.5 bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-orange-200 flex items-center gap-1"><AlertCircle size={12}/> Ajuste</button>
+               <button type="button" onClick={() => { setSelectedMedContext(context); setIsHistoryModalOpen(true); }} className="px-3 py-1.5 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-gray-200 flex items-center gap-1"><FileText size={12}/> Histórico</button>
              </div>
          </td>
          )}
@@ -355,7 +355,7 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                 <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mt-1">Conferência e Movimentação</p>
              </div>
           </div>
-          <button 
+          <button type="button" 
              onClick={() => setIsGeneralListModalOpen(true)} 
              className="px-6 py-4 bg-[#004c99] text-white text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-[#003366] transition-all flex items-center gap-2 shadow-md shadow-[#004c99]/20"
           >
@@ -379,7 +379,7 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
               {searchTermResident && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border overflow-hidden max-h-60 overflow-y-auto">
                   {filteredResidents.map(r => (
-                    <button
+                    <button type="button"
                       key={r.id}
                       onClick={() => {
                         setSelectedResidentId(r.id);
@@ -403,7 +403,7 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                        {getResidentMergedMeds(selectedResident).length} Itens monitorados
                     </p>
                   </div>
-                  <button 
+                  <button type="button" 
                     onClick={() => {
                       setSelectedMedContext({ ownerType: 'resident', ownerId: selectedResident.id, name: '', isNew: true });
                       setIsEntryModalOpen(true);
@@ -418,7 +418,7 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                   <div className="p-8 text-center bg-gray-50 rounded-3xl border border-dashed flex flex-col items-center">
                     <Package size={32} className="text-gray-400 mb-3" />
                     <p className="text-sm font-bold text-gray-600 uppercase mb-4">Nenhum medicamento encontrado para este residente</p>
-                    <button 
+                    <button type="button" 
                       onClick={() => {
                         setSelectedMedContext({ ownerType: 'resident', ownerId: selectedResident.id, name: '', isNew: true });
                         setIsEntryModalOpen(true);
@@ -469,10 +469,10 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                   <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Visão completa e relatórios</p>
                </div>
                <div className="flex gap-3">
-                  <button onClick={exportToPdf} className="px-5 py-3 bg-white text-gray-700 border border-gray-200 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-sm">
+                  <button type="button" onClick={exportToPdf} className="px-5 py-3 bg-white text-gray-700 border border-gray-200 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-sm">
                      <FileText size={16} /> Exportar PDF
                   </button>
-                  <button onClick={() => setIsGeneralListModalOpen(false)} className="px-5 py-3 bg-gray-100 text-gray-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-200 transition-colors">
+                  <button type="button" onClick={() => setIsGeneralListModalOpen(false)} className="px-5 py-3 bg-gray-100 text-gray-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-200 transition-colors">
                      Fechar
                   </button>
                </div>
@@ -492,12 +492,12 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                        <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
                      </div>
                      <div className="flex bg-gray-50 p-1 rounded-[20px] shrink-0 border border-gray-100">
-                        <button onClick={() => setFilterGeneral('todos')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-colors ${filterGeneral === 'todos' ? 'bg-white shadow text-gray-800' : 'text-gray-400 hover:text-gray-600'}`}>Todos</button>
-                        <button onClick={() => setFilterGeneral('critico')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-colors flex items-center gap-1 ${filterGeneral === 'critico' ? 'bg-red-50 text-red-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+                        <button type="button" onClick={() => setFilterGeneral('todos')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-colors ${filterGeneral === 'todos' ? 'bg-white shadow text-gray-800' : 'text-gray-400 hover:text-gray-600'}`}>Todos</button>
+                        <button type="button" onClick={() => setFilterGeneral('critico')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-colors flex items-center gap-1 ${filterGeneral === 'critico' ? 'bg-red-50 text-red-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
                           <AlertCircle size={12} /> Crítico
                         </button>
-                        <button onClick={() => setFilterGeneral('zerado')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-colors ${filterGeneral === 'zerado' ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Zerados</button>
-                        <button onClick={() => setFilterGeneral('institucional')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-colors flex items-center gap-1 ${filterGeneral === 'institucional' ? 'bg-[#004c99] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+                        <button type="button" onClick={() => setFilterGeneral('zerado')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-colors ${filterGeneral === 'zerado' ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Zerados</button>
+                        <button type="button" onClick={() => setFilterGeneral('institucional')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-colors flex items-center gap-1 ${filterGeneral === 'institucional' ? 'bg-[#004c99] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
                           <Building2 size={12} /> Instituição
                         </button>
                      </div>
@@ -558,7 +558,7 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Uso geral do Residencial</p>
                             </div>
                           </div>
-                          <button 
+                          <button type="button" 
                             onClick={() => {
                               setSelectedMedContext({ ownerType: 'institution', ownerId: session?.institutionId || '', name: '', isNew: true });
                               setIsEntryModalOpen(true);
@@ -624,10 +624,10 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                                       </td>
                                       <td className="p-4">
                                           <div className="flex flex-wrap gap-2">
-                                            <button onClick={() => { setSelectedMedContext(ctx); setCriticalLevel(instMed.lastCritical || ''); setIsEntryModalOpen(true); }} className="px-3 py-1.5 bg-green-500/10 text-green-400 hover:bg-green-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-green-500/20 flex items-center gap-1"><TrendingUp size={12}/> Entrada</button>
-                                            <button onClick={() => { setSelectedMedContext(ctx); setCriticalLevel(instMed.lastCritical || ''); setIsExitModalOpen(true); }} className="px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-red-500/20 flex items-center gap-1"><TrendingDown size={12}/> Saída</button>
-                                            <button onClick={() => { setSelectedMedContext(ctx); setCriticalLevel(instMed.lastCritical || ''); setIsAdjustModalOpen(true); }} className="px-3 py-1.5 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-orange-500/20 flex items-center gap-1"><AlertCircle size={12}/> Ajuste</button>
-                                            <button onClick={() => { setSelectedMedContext(ctx); setIsHistoryModalOpen(true); }} className="px-3 py-1.5 bg-gray-500/10 text-gray-300 hover:bg-gray-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-gray-500/20 flex items-center gap-1"><FileText size={12}/> Histórico</button>
+                                            <button type="button" onClick={() => { setSelectedMedContext(ctx); setCriticalLevel(instMed.lastCritical || ''); setIsEntryModalOpen(true); }} className="px-3 py-1.5 bg-green-500/10 text-green-400 hover:bg-green-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-green-500/20 flex items-center gap-1"><TrendingUp size={12}/> Entrada</button>
+                                            <button type="button" onClick={() => { setSelectedMedContext(ctx); setCriticalLevel(instMed.lastCritical || ''); setIsExitModalOpen(true); }} className="px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-red-500/20 flex items-center gap-1"><TrendingDown size={12}/> Saída</button>
+                                            <button type="button" onClick={() => { setSelectedMedContext(ctx); setCriticalLevel(instMed.lastCritical || ''); setIsAdjustModalOpen(true); }} className="px-3 py-1.5 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-orange-500/20 flex items-center gap-1"><AlertCircle size={12}/> Ajuste</button>
+                                            <button type="button" onClick={() => { setSelectedMedContext(ctx); setIsHistoryModalOpen(true); }} className="px-3 py-1.5 bg-gray-500/10 text-gray-300 hover:bg-gray-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors border border-gray-500/20 flex items-center gap-1"><FileText size={12}/> Histórico</button>
                                           </div>
                                       </td>
                                     </tr>
@@ -702,8 +702,8 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                   </div>
 
                   <div className="flex gap-3 pt-4 border-t border-gray-100">
-                     <button onClick={() => setIsEntryModalOpen(false)} className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-gray-500 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
-                     <button disabled={isLoading} onClick={() => handleSaveMovement('entrada')} className="flex-[2] py-4 text-xs font-black uppercase tracking-widest text-white bg-green-600 rounded-xl hover:bg-green-700 transition-shadow shadow-md shadow-green-600/20 disabled:opacity-50">
+                     <button type="button" onClick={() => setIsEntryModalOpen(false)} className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-gray-500 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
+                     <button type="button" disabled={isLoading} onClick={() => handleSaveMovement('entrada')} className="flex-[2] py-4 text-xs font-black uppercase tracking-widest text-white bg-green-600 rounded-xl hover:bg-green-700 transition-shadow shadow-md shadow-green-600/20 disabled:opacity-50">
                        {isLoading ? 'Salvando...' : 'Confirmar'}
                      </button>
                   </div>
@@ -750,8 +750,8 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                   </div>
 
                   <div className="flex gap-3 pt-4 border-t border-gray-100">
-                     <button onClick={() => setIsExitModalOpen(false)} className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-gray-500 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
-                     <button disabled={isLoading} onClick={() => handleSaveMovement('saida')} className="flex-[2] py-4 text-xs font-black uppercase tracking-widest text-white bg-red-600 rounded-xl hover:bg-red-700 transition-shadow shadow-md shadow-red-600/20 disabled:opacity-50">
+                     <button type="button" onClick={() => setIsExitModalOpen(false)} className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-gray-500 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
+                     <button type="button" disabled={isLoading} onClick={() => handleSaveMovement('saida')} className="flex-[2] py-4 text-xs font-black uppercase tracking-widest text-white bg-red-600 rounded-xl hover:bg-red-700 transition-shadow shadow-md shadow-red-600/20 disabled:opacity-50">
                        {isLoading ? 'Salvando...' : 'Confirmar Baixa'}
                      </button>
                   </div>
@@ -778,8 +778,8 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Tipo de Ajuste</label>
                     <div className="flex gap-2">
-                       <button onClick={() => setAdjustType('positivo')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${adjustType === 'positivo' ? 'bg-green-100 text-green-700 shadow-inner border border-green-200' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>Positivo (+)</button>
-                       <button onClick={() => setAdjustType('negativo')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${adjustType === 'negativo' ? 'bg-red-100 text-red-700 shadow-inner border border-red-200' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>Negativo (-)</button>
+                       <button type="button" onClick={() => setAdjustType('positivo')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${adjustType === 'positivo' ? 'bg-green-100 text-green-700 shadow-inner border border-green-200' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>Positivo (+)</button>
+                       <button type="button" onClick={() => setAdjustType('negativo')} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${adjustType === 'negativo' ? 'bg-red-100 text-red-700 shadow-inner border border-red-200' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>Negativo (-)</button>
                     </div>
                   </div>
                   
@@ -794,8 +794,8 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                   </div>
 
                   <div className="flex gap-3 pt-4 border-t border-gray-100">
-                     <button onClick={() => setIsAdjustModalOpen(false)} className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-gray-500 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
-                     <button disabled={isLoading || !observation} onClick={() => { setReason('Ajuste Manual'); handleSaveMovement('ajuste'); }} className={`flex-[2] py-4 text-xs font-black uppercase tracking-widest text-white rounded-xl transition-shadow shadow-md disabled:opacity-50 ${adjustType === 'positivo' ? 'bg-green-600 hover:bg-green-700 shadow-green-600/20' : 'bg-red-600 hover:bg-red-700 shadow-red-600/20'}`}>
+                     <button type="button" onClick={() => setIsAdjustModalOpen(false)} className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-gray-500 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
+                     <button type="button" disabled={isLoading || !observation} onClick={() => { setReason('Ajuste Manual'); handleSaveMovement('ajuste'); }} className={`flex-[2] py-4 text-xs font-black uppercase tracking-widest text-white rounded-xl transition-shadow shadow-md disabled:opacity-50 ${adjustType === 'positivo' ? 'bg-green-600 hover:bg-green-700 shadow-green-600/20' : 'bg-red-600 hover:bg-red-700 shadow-red-600/20'}`}>
                        {isLoading ? 'Salvando...' : 'Confirmar Ajuste'}
                      </button>
                   </div>
@@ -815,7 +815,7 @@ export const IndividualInventoryTab: React.FC<{ residents: Resident[], session: 
                       <h3 className="text-sm font-black uppercase text-[#004c99]">Histórico de Movimentações</h3>
                       <p className="text-xs text-gray-600 font-bold mt-1 line-clamp-1">{selectedMedContext.name}</p>
                     </div>
-                    <button onClick={() => setIsHistoryModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-xl text-xs font-black text-gray-500 uppercase tracking-widest hover:bg-gray-200">Fechar</button>
+                    <button type="button" onClick={() => setIsHistoryModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-xl text-xs font-black text-gray-500 uppercase tracking-widest hover:bg-gray-200">Fechar</button>
                   </div>
 
                   <div className="flex-1 overflow-auto border border-gray-100 rounded-2xl relative">

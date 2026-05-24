@@ -187,7 +187,7 @@ const DependenciesTab: React.FC<DependenciesTabProps> = ({ residents, onBulkSave
             />
           </div>
           
-          <button 
+          <button type="button" 
             onClick={() => setFilterActive(!filterActive)}
             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
               filterActive ? 'bg-blue-50 text-[#004c99] border-blue-200' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
@@ -198,13 +198,13 @@ const DependenciesTab: React.FC<DependenciesTabProps> = ({ residents, onBulkSave
 
           {hasChanges && (
             <>
-              <button 
+              <button type="button" 
                 onClick={handleCancel}
                 className="px-4 py-2 bg-white text-red-600 border border-red-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition-all font-bold"
               >
                 Cancelar
               </button>
-              <button 
+              <button type="button" 
                 onClick={handleSave}
                 className="px-6 py-2 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-md flex items-center gap-2"
               >
@@ -241,7 +241,7 @@ const DependenciesTab: React.FC<DependenciesTabProps> = ({ residents, onBulkSave
                   const val = getCareValue(r, careKey);
                   return (
                     <td className="p-2 border-b border-gray-50">
-                      <button
+                      <button type="button"
                         onClick={() => handleCheckboxChange(r.id, careKey, !val)}
                         className={`w-full h-12 rounded-xl flex items-center justify-center transition-all ${
                           val 

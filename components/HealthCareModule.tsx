@@ -104,6 +104,11 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
   );
 
   const selectedResident = residents.find(r => r.id === selectedResidentId);
+  
+  // Logs temporários para diagnóstico
+  console.log("Residente selecionado:", selectedResident);
+  console.log("ID do residente selecionado:", selectedResidentId);
+
 
   // Close dropdown when clicking outside
   React.useEffect(() => {
@@ -365,6 +370,7 @@ const HealthCareModule: React.FC<HealthCareModuleProps> = ({ residents, onSaveRe
                          setSelectedResidentId(r.id);
                          setSearchTerm(r.name);
                          setIsDropdownOpen(false);
+                         setShowVitalSignsDailyReport(false);
                        }}
                        className="w-full px-5 py-4 text-left hover:bg-emerald-50 rounded-2xl flex items-center gap-5 transition-all group"
                      >
