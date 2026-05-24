@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity, MessageCircle, LogOut, DollarSign, Package, BarChart3, HelpCircle, Key, Calendar, Pill, FileText, Home } from 'lucide-react';
+import { Users, ChevronRight, Menu, FileSearch, Settings, HeartPulse, Stethoscope, Activity, MessageCircle, LogOut, DollarSign, Package, BarChart3, HelpCircle, Key, Calendar, Pill, FileText, Home, Building2, Layers } from 'lucide-react';
 import { AppRoute } from '../types';
 import { getLastReadTimestamp } from '../lib/muralStore';
 import { SupportChat } from './SupportChat';
@@ -22,6 +22,7 @@ interface LayoutProps {
   userId?: string;
   onLogout?: () => void;
   accessLevel?: string;
+  entityType?: 'nacional' | 'metropolitano' | 'central' | 'particular' | 'conferencia' | 'obra_unida';
 }
 
 const Layout: React.FC<LayoutProps> = ({ 
@@ -36,7 +37,8 @@ const Layout: React.FC<LayoutProps> = ({
   cnpj,
   userId, 
   onLogout, 
-  accessLevel 
+  accessLevel,
+  entityType
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(accessLevel !== 'medico');
   const [unreadMural, setUnreadMural] = useState(0);
@@ -233,7 +235,20 @@ const Layout: React.FC<LayoutProps> = ({
     ];
   }
 
-  const menuItems = activeCategory === 'atendimento' ? atendimentoItems : gestaoItems;
+  // Override menu items for central council
+  const isCentral = entityType === 'central';
+  if (isCentral) {
+    atendimentoItems = [
+      { id: AppRoute.CENTRAL_INFO, label: 'Informações Gerais', icon: Home },
+      { id: AppRoute.CENTRAL_BOARD, label: 'Diretoria Atual', icon: Users },
+      { id: AppRoute.CENTRAL_CONSELHOS, label: 'Conselhos Particulares', icon: Layers },
+      { id: AppRoute.CENTRAL_OBRAS, label: 'Obras Unidas', icon: Building2 },
+      { id: AppRoute.SETTINGS, label: 'Acessos / Usuários', icon: Settings },
+    ];
+    gestaoItems = [];
+  }
+
+  const menuItems = activeCategory === 'atendimento' || isCentral ? atendimentoItems : gestaoItems;
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden print:h-auto print:overflow-visible print:block">
@@ -264,7 +279,7 @@ const Layout: React.FC<LayoutProps> = ({
         </div>
 
         {/* Sidebar Category Tabs - Only show Gestão if user has access */}
-        {isSidebarOpen && hasGestaoAccess && (
+        {isSidebarOpen && hasGestaoAccess && !isCentral && (
           <div className="mt-8 px-4 flex gap-1">
             <button 
               onClick={() => {
@@ -302,10 +317,18 @@ const Layout: React.FC<LayoutProps> = ({
           </div>
         )}
 
-        {isSidebarOpen && !hasGestaoAccess && (
+        {isSidebarOpen && !hasGestaoAccess && !isCentral && (
           <div className="mt-8 px-4 flex gap-1">
             <div className="flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-t-xl bg-white text-[#004c99] shadow-inner text-center">
               Atendimento
+            </div>
+          </div>
+        )}
+
+        {isSidebarOpen && isCentral && (
+          <div className="mt-8 px-4 flex gap-1">
+            <div className="flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-t-xl bg-white text-[#004c99] shadow-inner text-center">
+              Conselho Central
             </div>
           </div>
         )}

@@ -50,6 +50,7 @@ export interface InstitutionSettings {
   cnpj: string;
   city?: string;
   agendaCentralEmail?: string;
+  conselhosParticulares?: ConselhoParticular[];
   
   // Hierarchy
   nacionalId?: string;
@@ -1115,7 +1116,11 @@ export enum AppRoute {
   GUIAS = 'guias',
   VISITANTES = 'visitantes',
   EMPLOYEES = 'employees',
-  STOCK = 'compras'
+  STOCK = 'compras',
+  CENTRAL_INFO = 'central-info',
+  CENTRAL_BOARD = 'central-board',
+  CENTRAL_OBRAS = 'central-obras',
+  CENTRAL_CONSELHOS = 'central-conselhos'
 }
 
 export interface OperationalShift {
@@ -1360,5 +1365,74 @@ export interface StockMovement {
   date: string;
   userName: string;
   notes?: string;
+}
+
+export interface ConselhoCustomRole {
+  id: string;
+  roleName: string;
+  name: string;
+  phone: string;
+}
+
+export interface ConselhoMember {
+  name: string;
+  phone: string;
+}
+
+export interface ConselhoPastMandate {
+  id: string;
+  startDate: string;
+  endDate: string;
+  presidente: ConselhoMember;
+  vicePresidente: ConselhoMember;
+  secretario: ConselhoMember;
+  tesoureiro: ConselhoMember;
+  ecafo: ConselhoMember;
+  coordenadorCCA: ConselhoMember;
+  customRoles?: ConselhoCustomRole[];
+  archivedAt: string;
+}
+
+export interface ConferenciaPastMandate {
+  id: string;
+  startDate: string;
+  endDate: string;
+  presidente: ConselhoMember;
+  confradesCount: number;
+  consociasCount: number;
+  aspirantesCount: number;
+  archivedAt: string;
+}
+
+export interface ConferenciaSubordinada {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  presidente: ConselhoMember;
+  confradesCount: number;
+  consociasCount: number;
+  aspirantesCount: number;
+  lastMembersUpdate?: string;
+  mandateHistory?: ConferenciaPastMandate[];
+}
+
+export interface ConselhoParticular {
+  id: string;
+  name: string;
+  city?: string;
+  phone?: string;
+  email?: string;
+  startDate: string;
+  endDate: string;
+  presidente: ConselhoMember;
+  vicePresidente: ConselhoMember;
+  secretario: ConselhoMember;
+  tesoureiro: ConselhoMember;
+  ecafo: ConselhoMember;
+  coordenadorCCA: ConselhoMember;
+  customRoles?: ConselhoCustomRole[];
+  mandateHistory?: ConselhoPastMandate[];
+  conferencias?: ConferenciaSubordinada[];
 }
 

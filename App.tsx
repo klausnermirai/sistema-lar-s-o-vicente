@@ -18,6 +18,9 @@ import { VisitorPortal } from './components/VisitorPortal';
 import LoginScreen from './components/LoginScreen';
 import SetupScreen from './components/SetupScreen';
 import StockModule from './components/StockModule';
+import { CentralCouncilModule } from './components/CentralCouncilModule';
+import { ObrasUnidasModule } from './components/ObrasUnidasModule';
+import { ConselhosParticularesModule } from './components/ConselhosParticularesModule';
 import { AppRoute, Resident, SubTab, Candidate, InstitutionSettings, MuralMessage } from './types';
 import { DUMMY_RESIDENTS, INITIAL_RESIDENT, DUMMY_CANDIDATES } from './constants';
 import { ImageIcon, Users, DollarSign, Package, HeartPulse, Stethoscope, Pill, Briefcase, FileSearch, FileText, ClipboardList } from 'lucide-react';
@@ -64,12 +67,22 @@ const App: React.FC = () => {
       setActiveRoute(AppRoute.VISITANTES);
     }
   }, [session?.accessLevel]);
+
   const [activeSubTab, setActiveSubTab] = React.useState<SubTab>('geral');
   const [residents, setResidents] = React.useState<Resident[]>([]);
   const [candidates, setCandidates] = React.useState<Candidate[]>([]);
   const [editingResident, setEditingResident] = React.useState<Resident | null>(null);
   const [settings, setSettings] = React.useState<InstitutionSettings | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (settings) {
+      const isCentral = settings.entityType === 'central' || settings.type === 'central';
+      if (isCentral && activeRoute !== AppRoute.CENTRAL_INFO && activeRoute !== AppRoute.CENTRAL_BOARD && activeRoute !== AppRoute.CENTRAL_OBRAS && activeRoute !== AppRoute.CENTRAL_CONSELHOS && activeRoute !== AppRoute.SETTINGS) {
+        setActiveRoute(AppRoute.CENTRAL_INFO);
+      }
+    }
+  }, [settings, activeRoute]);
 
   React.useEffect(() => {
     if (session && view === 'app') {
@@ -418,6 +431,7 @@ const App: React.FC = () => {
       userId={session?.id}
       onLogout={handleLogout}
       accessLevel={session?.accessLevel}
+      entityType={settings?.entityType || settings?.type}
     >
       
       {activeRoute === AppRoute.HOME && (
@@ -668,6 +682,31 @@ const App: React.FC = () => {
         <StockModule 
           session={session}
           settings={settings}
+        />
+      )}
+
+      {(activeRoute === AppRoute.CENTRAL_INFO || activeRoute === AppRoute.CENTRAL_BOARD) && session && (
+        <CentralCouncilModule 
+          activeRoute={activeRoute}
+          settings={settings}
+          onSettingsChange={(newSettings) => setSettings(newSettings)}
+          institutionId={session.institutionId || session.cnpj || ''}
+        />
+      )}
+
+      {activeRoute === AppRoute.CENTRAL_OBRAS && session && (
+        <ObrasUnidasModule 
+          settings={settings}
+          onSettingsChange={(newSettings) => setSettings(newSettings)}
+          institutionId={session.institutionId || session.cnpj || ''}
+        />
+      )}
+
+      {activeRoute === AppRoute.CENTRAL_CONSELHOS && session && (
+        <ConselhosParticularesModule 
+          settings={settings}
+          onSettingsChange={(newSettings) => setSettings(newSettings)}
+          institutionId={session.institutionId || session.cnpj || ''}
         />
       )}
     </Layout>
