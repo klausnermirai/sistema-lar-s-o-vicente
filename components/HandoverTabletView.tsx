@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Resident, IncidentReport, ShiftHandover, MuralMessage, InstitutionSettings, OperationalShift, ShiftProcedureLog } from '../types';
 import { getCurrentShift, getOperationalDate } from '../lib/shiftUtils';
 import { generateRoutinesSummaryText } from '../lib/routineSummaryHelper';
-import { fetchProcedureLogs } from '../lib/api';
+import { fetchProcedureLogs, getProfessionalSignature } from '../lib/api';
 import { Clock, CheckSquare, Activity, AlertTriangle, FileText, ChevronRight, ChevronDown, ChevronUp, Save, User, Calendar, Plus, Search, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -109,8 +109,12 @@ const HandoverTabletView: React.FC<HandoverTabletViewProps> = ({
 
   const handlePrintPrevHandover = async () => {
     if (!prevHandover) return;
-    const { getProfessionalSignature } = await import('../lib/api');
-    const sigAuth = getProfessionalSignature() as { name: string, role: string, doc: string };
+    const sig = getProfessionalSignature() as any;
+    const sigAuth = {
+      name: sig.profissionalNome || '',
+      role: sig.profissionalFuncao || '',
+      doc: sig.profissionalAssinaturaTexto ? sig.profissionalAssinaturaTexto.split('\n')[2] || '' : ''
+    };
     const { printHandoverHtmlPdf } = await import('../lib/printHandover');
     await printHandoverHtmlPdf(prevHandover, prevLogs, prevVitalSigns, prevIncidents, settings, sigAuth, residents);
   };
@@ -127,6 +131,7 @@ const HandoverTabletView: React.FC<HandoverTabletViewProps> = ({
     }
 
     if (summary.trim()) {
+      const sig = getProfessionalSignature() as any;
       const handover: ShiftHandover = {
         id: Math.random().toString(36).substr(2, 9),
         timestamp: Date.now(),
@@ -138,7 +143,8 @@ const HandoverTabletView: React.FC<HandoverTabletViewProps> = ({
         summary,
         pendingTasks,
         visibilidade,
-        professionalName: 'Profissional Logado'
+        ...sig,
+        professionalName: sig.profissionalNome || 'Supervisor de Turno'
       };
       onSaveHandover(handover);
 
@@ -170,6 +176,7 @@ const HandoverTabletView: React.FC<HandoverTabletViewProps> = ({
         // To be safe, we'll keep `incOpDate = opDate` (the user is registering in the current shift)
       }
 
+      const sig = getProfessionalSignature() as any;
       const incident: IncidentReport = {
         id: Math.random().toString(36).substr(2, 9),
         timestamp: incidentTimestamp,
@@ -182,7 +189,8 @@ const HandoverTabletView: React.FC<HandoverTabletViewProps> = ({
         description,
         conduct,
         visibilidade,
-        professionalName: 'Profissional Logado'
+        ...sig,
+        professionalName: sig.profissionalNome || 'Equipe de Enfermagem'
       };
       onSaveIncident(incident);
 

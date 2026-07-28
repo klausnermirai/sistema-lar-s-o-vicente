@@ -45,7 +45,7 @@ import {
 } from "../types";
 import { INITIAL_CANDIDATE, INITIAL_NURSING_SCREENING } from "../constants";
 import { saveAgendaEvent } from "../lib/agendaStore";
-import { getHtmlPrintHeader, getHtmlPrintStyles, getHtmlPrintFooter } from '../lib/pdfHelpers';
+import { getHtmlPrintHeader, getHtmlPrintStyles, getHtmlPrintFooter, printHtml } from '../lib/pdfHelpers';
 
 interface ScreeningModuleProps {
   candidates: Candidate[];
@@ -492,9 +492,6 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
   ];
 
   const handleExportPDF = () => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
     const allStages = [
       ...stages,
       { id: "acolhido" as CandidateStage, label: "Acolhidos", color: "green" },
@@ -588,22 +585,8 @@ const ScreeningModule: React.FC<ScreeningModuleProps> = ({
         </body>
       </html>
     `;
-      printWindow.document.write(html);
-      printWindow.document.close();
-      
-      printWindow.onload = () => {
-        printWindow.focus();
-        printWindow.print();
-      };
-
-      // Fallback
-      setTimeout(() => {
-        if (printWindow) {
-          printWindow.focus();
-          printWindow.print();
-        }
-      }, 1000);
-    };
+    printHtml(html);
+  };
 
   const getStageCandidates = (stage: CandidateStage) =>
     allCandidates.filter((c) => {
@@ -2288,8 +2271,6 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
   const [isPrinting, setIsPrinting] = React.useState(false);
 
   const handlePrintCandidate = React.useCallback(async () => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
 
     const printDate = new Date().toLocaleDateString('pt-BR');
     
@@ -2559,13 +2540,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
       </html>
     `;
 
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-
-    setTimeout(() => {
-      printWindow.print();
-    }, 250);
+    printHtml(html);
   }, [data]);
 
   React.useEffect(() => {

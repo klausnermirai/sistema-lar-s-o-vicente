@@ -65,11 +65,8 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
   const [activeSubTab, setActiveSubTab] = useState<'avaliacao' | 'evolucao' | 'atendimentos'>('avaliacao');
   
   const handleExportAssessmentPDF = async () => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
     const title = 'PRIMEIRA AVALIAÇÃO DE FISIOTERAPIA';
-    const { getHtmlPrintHeader, getHtmlPrintFooter, getHtmlPrintStyles } = await import('../lib/pdfHelpers');
+    const { getHtmlPrintHeader, getHtmlPrintFooter, getHtmlPrintStyles, printHtml } = await import('../lib/pdfHelpers');
     
     const headerHtml = await getHtmlPrintHeader(settings, title);
     const sigData = getProfessionalSignature();
@@ -141,7 +138,7 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
     const footerHtml = getHtmlPrintFooter();
     const styles = getHtmlPrintStyles();
 
-    printWindow.document.write(`
+    printHtml(`
       <html>
         <head>
           <title>${title}</title>
@@ -157,16 +154,9 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
             ${contentHtml}
             ${footerHtml}
           </div>
-          <script>
-            setTimeout(() => {
-              window.print();
-              window.close();
-            }, 500);
-          </script>
         </body>
       </html>
     `);
-    printWindow.document.close();
   };
 
   const handleExportEvolutionPDF = () => {
@@ -352,6 +342,14 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
 
     const newEvolutions = [...(ptData.evolutions || []), evolutionToSave];
 
+    const updatedResident = {
+      ...resident,
+      physiotherapy: {
+        ...ptData,
+        evolutions: newEvolutions
+      }
+    };
+
     // Atualizar PIA automaticamente
     if (resident.pia) {
       const updatedPia = { ...resident.pia };
@@ -364,26 +362,10 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
           observation: `${updatedPia.goalsStatus.physiotherapy?.observation || ''}\n\nAtualização ${new Date().toLocaleDateString('pt-BR')}: ${evolutionToSave.treatmentResponse}`
         }
       };
-
-      onChange({
-        ...ptData,
-        evolutions: newEvolutions
-      });
-      
-      onSaveResident({
-        ...resident,
-        physiotherapy: {
-          ...ptData,
-          evolutions: newEvolutions
-        },
-        pia: updatedPia
-      });
-    } else {
-      onChange({
-        ...ptData,
-        evolutions: newEvolutions
-      });
+      updatedResident.pia = updatedPia;
     }
+
+    onSaveResident(updatedResident);
     
     setIsAddingEvolution(false);
     setNewEvolution({
@@ -412,11 +394,6 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
 
     const newAttendances = [...(ptData.attendances || []), attendanceToSave];
 
-    onChange({
-      ...ptData,
-      attendances: newAttendances
-    });
-
     if (Array.isArray(attendanceToSave.visibilidade) && !attendanceToSave.visibilidade.includes('privado') && onPostToMural) {
       let muralText = `[Fisio] Atendimento de ${resident.name} finalizado.\n\n${attendanceToSave.descricaoAtendimento}`;
       onPostToMural({
@@ -426,7 +403,7 @@ const PhysiotherapyTab: React.FC<PhysiotherapyTabProps> = ({ resident, settings,
       });
     }
     
-    // Also save in the common Prontuário
+    // Save in the common Prontuário and physiotherapy record in a single atomic write
     onSaveResident({
       ...resident,
       healthUpdates: [

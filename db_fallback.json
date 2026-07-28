@@ -1,0 +1,91 @@
+{
+  "institutions": {
+    "demo-institution-id": {
+      "id": "demo-institution-id",
+      "name": "Lar São Vicente de Paulo (Unidade de Demonstração)",
+      "cnpj": "00.111.222/0001-33",
+      "city": "Cidade Exemplo",
+      "entityType": "obra_unida",
+      "type": "obra_unida"
+    }
+  },
+  "users": {
+    "admin": {
+      "id": "admin",
+      "username": "admin",
+      "fullName": "Administrador Padrão",
+      "role": "TI / Gestão",
+      "accessLevel": "administrador",
+      "institutionId": "demo-institution-id"
+    },
+    "demo-u1": {
+      "id": "demo-u1",
+      "username": "Demonstração",
+      "fullName": "Demonstração",
+      "role": "TI / Gestão",
+      "accessLevel": "administrador",
+      "institutionId": "demo-institution-id"
+    }
+  },
+  "residents": {
+    "demo-1": {
+      "id": "demo-1",
+      "name": "Antônio Ferreira (Demo)",
+      "gender": "masculino",
+      "birthDate": "1945-05-12",
+      "admissionDate": "2020-01-15",
+      "status": "ativo",
+      "cpf": "111.222.333-44",
+      "institutionId": "demo-institution-id",
+      "medications": [
+        {
+          "id": "med-1",
+          "name": "Dipirona 500mg",
+          "dose": "1 comprimido",
+          "times": [
+            "08:00",
+            "20:00"
+          ],
+          "route": "Oral",
+          "type": "Contínuo",
+          "observation": "Se dor ou febre"
+        },
+        {
+          "id": "med-2",
+          "name": "Losartana 50mg",
+          "dose": "1 comprimido",
+          "times": [
+            "08:00"
+          ],
+          "route": "Oral",
+          "type": "Contínuo",
+          "observation": "Em jejum"
+        }
+      ]
+    },
+    "demo-2": {
+      "id": "demo-2",
+      "name": "Maria das Dores (Demo)",
+      "gender": "feminino",
+      "birthDate": "1938-11-22",
+      "admissionDate": "2019-06-10",
+      "status": "ativo",
+      "cpf": "555.666.777-88",
+      "institutionId": "demo-institution-id",
+      "medications": [
+        {
+          "id": "med-3",
+          "name": "Metformina 850mg",
+          "dose": "1 comprimido",
+          "times": [
+            "12:00",
+            "20:00"
+          ],
+          "route": "Oral",
+          "type": "Contínuo",
+          "observation": "Após as refeições"
+        }
+      ]
+    }
+  }
+}

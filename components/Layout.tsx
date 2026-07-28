@@ -223,14 +223,14 @@ const Layout: React.FC<LayoutProps> = ({
     { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     { id: AppRoute.EMPLOYEES, label: 'Funcionários (RH)', icon: Users },
     { id: AppRoute.STOCK, label: 'Estoque e Compras', icon: Package },
-    // Placeholders for future modules
-    { id: 'financeiro' as any, label: 'Gestão Financeira', icon: DollarSign, disabled: true },
+    { id: AppRoute.FINANCEIRO, label: 'Gestão Financeira', icon: DollarSign },
   ];
 
   if (isAuxiliarAdministrativo) {
     gestaoItems = [
       { id: AppRoute.EMPLOYEES, label: 'Funcionários (RH)', icon: Users },
       { id: AppRoute.STOCK, label: 'Estoque e Compras', icon: Package },
+      { id: AppRoute.FINANCEIRO, label: 'Gestão Financeira', icon: DollarSign },
       { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     ];
   }

@@ -110,6 +110,15 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
   const [historyLogs, setHistoryLogs] = useState<any[]>([]);
 
   useEffect(() => {
+    if (shifts && shifts.length > 0) {
+      const match = shifts.some(s => (s.id || s) === shift);
+      if (!match) {
+        setShift(shifts[0].id || shifts[0]);
+      }
+    }
+  }, [shifts, shift]);
+
+  useEffect(() => {
     if (viewMode === 'historico' && settings?.id) {
        fetchProcedureLogs(settings.id, selectedHistoryDate)
          .then(logs => setHistoryLogs(logs))
@@ -136,10 +145,11 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
 
     // 1. Save Handover
     if (summary.trim()) {
+      const sig = getProfessionalSignature() as any;
       const handover: ShiftHandover = {
         id: Math.random().toString(36).substr(2, 9),
         timestamp: now.getTime(), 
-        ...getProfessionalSignature(),
+        ...sig,
         shift: finalTurnoNome,
         turnoId: finalTurnoId,
         turnoNome: finalTurnoNome,
@@ -147,7 +157,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
         summary,
         pendingTasks,
         visibilidade,
-        professionalName: 'Supervisor de Turno' // Placeholder
+        professionalName: sig.profissionalNome || 'Supervisor de Turno'
       };
       onSaveHandover(handover);
 
@@ -175,10 +185,11 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
         incOpDate = getOperationalDateLocal(incDateTime);
       }
 
+      const sig = getProfessionalSignature() as any;
       const incident: IncidentReport = {
         id: Math.random().toString(36).substr(2, 9),
         timestamp: incidentTimestamp, 
-        ...getProfessionalSignature(),
+        ...sig,
         residentIds: selectedResidentIds,
         type: incidentType,
         description,
@@ -187,7 +198,7 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
         dataOperacional: incOpDate,
         turnoId: finalTurnoId,
         turnoNome: finalTurnoNome,
-        professionalName: 'Equipe de Enfermagem' // Placeholder
+        professionalName: sig.profissionalNome || 'Equipe de Enfermagem'
       };
       onSaveIncident(incident);
 
@@ -268,7 +279,12 @@ const HandoverTab: React.FC<HandoverTabProps> = ({
        return getOperationalDateLocal(new Date(inc.timestamp)) === opDate;
     });
 
-    const sigAuth = getProfessionalSignature() as { name: string, role: string, doc: string };
+    const sig = getProfessionalSignature() as any;
+    const sigAuth = {
+      name: sig.profissionalNome || '',
+      role: sig.profissionalFuncao || '',
+      doc: sig.profissionalAssinaturaTexto ? sig.profissionalAssinaturaTexto.split('\n')[2] || '' : ''
+    };
     
     // Import dynamically since it's inside an async handle
     const { printHandoverHtmlPdf } = await import('../lib/printHandover');

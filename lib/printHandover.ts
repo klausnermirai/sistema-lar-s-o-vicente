@@ -1,6 +1,6 @@
 import { generateRoutinesSummaryText } from './routineSummaryHelper';
 import { ShiftHandover, Resident, OperationalShift, InstitutionSettings, IncidentReport, ShiftProcedureLog } from '../types';
-import { getHtmlPrintHeader, getHtmlPrintStyles, getHtmlPrintFooter } from './pdfHelpers';
+import { getHtmlPrintHeader, getHtmlPrintStyles, getHtmlPrintFooter, printHtml } from './pdfHelpers';
 
 export const printHandoverHtmlPdf = async (
   handover: ShiftHandover,
@@ -11,8 +11,7 @@ export const printHandoverHtmlPdf = async (
   professionalSignature: { name: string, role: string, doc: string },
   residents: Resident[] = [] // added residents param with fallback
 ) => {
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) return;
+  // Removed direct window.open setup to use printHtml export
 
   const headerHtml = await getHtmlPrintHeader(settings, "Registro de Plantão e Intercorrências");
   
@@ -158,12 +157,5 @@ export const printHandoverHtmlPdf = async (
     </html>
   `;
 
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-  
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 500);
+  printHtml(html);
 };

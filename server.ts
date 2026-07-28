@@ -20,6 +20,8 @@ if (!admin.apps.length) {
   });
 }
 
+import { LocalDbFallback } from "./lib/local_db_fallback.ts";
+
 let activeDb: any = null;
 let isUsingFallback = false;
 
@@ -28,21 +30,33 @@ async function refreshDbInstance() {
   const targetId = (!isUsingFallback && namedDbId) ? namedDbId : "(default)";
   
   console.log(`Initializing database instance: ${targetId}`);
-  const newInst = getFirestore(admin.app(), targetId);
   
-  // Basic health check
   try {
+    const newInst = getFirestore(admin.app(), targetId);
     const healthRef = newInst.collection("_health").doc("check");
     await healthRef.get();
     activeDb = newInst;
+    console.log(`Successfully connected to Firestore database: ${targetId}`);
   } catch (err: any) {
-    console.warn(`Connection test failed for ${targetId}: ${err.message}`);
+    console.warn(`Connection test failed for Firestore ${targetId}: ${err.message}`);
     if (!isUsingFallback && namedDbId) {
       console.warn("Attempting fallback to (default)...");
       isUsingFallback = true;
-      activeDb = getFirestore(admin.app(), "(default)");
+      try {
+        const defaultInst = getFirestore(admin.app(), "(default)");
+        const healthRef = defaultInst.collection("_health").doc("check");
+        await healthRef.get();
+        activeDb = defaultInst;
+        console.log("Successfully connected to Firestore (default) database.");
+      } catch (defaultErr: any) {
+        console.warn(`Firestore (default) connection also failed: ${defaultErr.message}. Activating local JSON database fallback (Option B)...`);
+        isUsingFallback = true;
+        activeDb = new LocalDbFallback();
+      }
     } else {
-      activeDb = newInst; // If even fallback fails, just keep the instance and hope for the best
+      console.warn("Activating local JSON database fallback (Option B)...");
+      isUsingFallback = true;
+      activeDb = new LocalDbFallback();
     }
   }
 }
@@ -1167,7 +1181,7 @@ async function startServer() {
       shifts.sort((a: any, b: any) => (a.ordem || 0) - (b.ordem || 0));
       res.json(shifts);
     } catch (e: any) {
-      res.status(500).json({ error: 'Erro ao buscar turnos' });
+      res.status(500).json({ error: 'Erro ao buscar turnos', details: e.message, stack: e.stack });
     }
   });
 
@@ -1993,7 +2007,167 @@ async function startServer() {
       res.status(500).json({ error: 'Erro ao arquivar acompanhante.' });
     }
   });
-  
+
+  // --- DOANTES E BENFEITORES FINANCEIROS API ---
+  app.get('/api/benefactors', async (req: any, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string || req.query.institutionId as string;
+      if (!institutionId) return res.json([]);
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('benefactors')
+        .where('institutionId', '==', realId)
+        .get();
+      const items = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })).filter((item: any) => !item.archived);
+      res.json(items);
+    } catch (error) {
+      console.error('Error fetching benefactors:', error);
+      res.status(500).json({ error: 'Erro ao buscar benfeitores.' });
+    }
+  });
+
+  app.post('/api/benefactors', async (req: any, res) => {
+    const { id, ...data } = req.body;
+    try {
+      const institutionId = req.headers['x-institution-id'] as string || req.body.institutionId;
+      const realId = await getRealInstitutionId(institutionId);
+      if (id && id.length > 10) {
+        await db.collection('benefactors').doc(id).set({ ...data, institutionId: realId }, { merge: true });
+        res.json({ ...data, id, institutionId: realId });
+      } else {
+        const docRef = await db.collection('benefactors').add({ ...data, institutionId: realId, archived: false, createdAt: new Date().toISOString() });
+        res.json({ ...data, id: docRef.id, institutionId: realId });
+      }
+    } catch (error) {
+      console.error('Error saving benefactor:', error);
+      res.status(500).json({ error: 'Erro ao salvar benfeitor.' });
+    }
+  });
+
+  app.delete('/api/benefactors/:id', async (req: any, res) => {
+    try {
+      await db.collection('benefactors').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao inativar benfeitor.' });
+    }
+  });
+
+  // --- CATEGORIAS DE DOAÇÃO API ---
+  app.get('/api/donation-categories', async (req: any, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string || req.query.institutionId as string;
+      if (!institutionId) return res.json([]);
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('donation_categories')
+        .where('institutionId', '==', realId)
+        .get();
+      let items = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })).filter((item: any) => !item.archived);
+      
+      // If none exist, bootstrap the default ones
+      if (items.length === 0) {
+        const defaults = [
+          { name: 'Doação espontânea pessoa física', description: 'Doações voluntárias avulsas de pessoas físicas' },
+          { name: 'Doação espontânea pessoa jurídica', description: 'Doações voluntárias de empresas e parcerias PJ' },
+          { name: 'Carnês de mensalidade', description: 'Contribuições mensais recorrentes via carnê' },
+          { name: 'Telemarketing', description: 'Doações captadas pela equipe de telemarketing' },
+          { name: 'Outras Campanhas', description: 'Outros tipos de campanhas eventuais' }
+        ];
+        const batch = db.batch();
+        const created: any[] = [];
+        for (const cat of defaults) {
+          const ref = db.collection('donation_categories').doc();
+          const docData = { ...cat, institutionId: realId, archived: false };
+          batch.set(ref, docData);
+          created.push({ id: ref.id, ...docData });
+        }
+        await batch.commit();
+        items = created;
+      }
+      res.json(items);
+    } catch (error) {
+      console.error('Error fetching donation categories:', error);
+      res.status(500).json({ error: 'Erro ao buscar categorias.' });
+    }
+  });
+
+  app.post('/api/donation-categories', async (req: any, res) => {
+    const { id, ...data } = req.body;
+    try {
+      const institutionId = req.headers['x-institution-id'] as string || req.body.institutionId;
+      const realId = await getRealInstitutionId(institutionId);
+      if (id && id.length > 10) {
+        await db.collection('donation_categories').doc(id).set({ ...data, institutionId: realId }, { merge: true });
+        res.json({ ...data, id, institutionId: realId });
+      } else {
+        const docRef = await db.collection('donation_categories').add({ ...data, institutionId: realId, archived: false });
+        res.json({ ...data, id: docRef.id, institutionId: realId });
+      }
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao salvar categoria.' });
+    }
+  });
+
+  app.delete('/api/donation-categories/:id', async (req: any, res) => {
+    try {
+      await db.collection('donation_categories').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao excluir categoria de doação.' });
+    }
+  });
+
+  // --- DOAÇÕES FINANCEIRAS API ---
+  app.get('/api/donations', async (req: any, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string || req.query.institutionId as string;
+      if (!institutionId) return res.json([]);
+      const realId = await getRealInstitutionId(institutionId as string);
+      let queryRef: any = db.collection('finance_donations').where('institutionId', '==', realId);
+      
+      const { startDate, endDate } = req.query;
+      if (startDate) {
+        queryRef = queryRef.where('date', '>=', startDate);
+      }
+      if (endDate) {
+        queryRef = queryRef.where('date', '<=', endDate);
+      }
+
+      const snapshot = await queryRef.get();
+      const items = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })).filter((item: any) => !item.archived);
+      res.json(items);
+    } catch (error) {
+      console.error('Error fetching donations:', error);
+      res.status(500).json({ error: 'Erro ao buscar doações.' });
+    }
+  });
+
+  app.post('/api/donations', async (req: any, res) => {
+    const { id, ...data } = req.body;
+    try {
+      const institutionId = req.headers['x-institution-id'] as string || req.body.institutionId;
+      const realId = await getRealInstitutionId(institutionId);
+      if (id && id.length > 10) {
+        await db.collection('finance_donations').doc(id).set({ ...data, institutionId: realId }, { merge: true });
+        res.json({ ...data, id, institutionId: realId });
+      } else {
+        const docRef = await db.collection('finance_donations').add({ ...data, institutionId: realId, archived: false, createdAt: new Date().toISOString() });
+        res.json({ ...data, id: docRef.id, institutionId: realId });
+      }
+    } catch (error) {
+      console.error('Error saving finance donation:', error);
+      res.status(500).json({ error: 'Erro ao salvar doação financeira.' });
+    }
+  });
+
+  app.delete('/api/donations/:id', async (req: any, res) => {
+    try {
+      await db.collection('finance_donations').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao inativar doação.' });
+    }
+  });
+
   // --- CUSTOM PRODUCT STOCK & MOVEMENT MODULE ---
   app.get('/api/stock-products', requireRole(['administrador', 'gerencial', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'auxiliar_administrativo']), async (req, res) => {
     try {
@@ -2027,6 +2201,7 @@ async function startServer() {
         currentStock: Number(item.currentStock) || 0,
         minStock: Number(item.minStock) || 0,
         status: item.status || 'Disponível',
+        estimatedCost: item.estimatedCost !== undefined ? Number(item.estimatedCost) || null : null,
         institutionId,
         updatedAt: new Date().toISOString()
       };
@@ -2187,16 +2362,191 @@ async function startServer() {
         date: mv.date || new Date().toISOString().split('T')[0],
         userName: mv.userName || 'Sistema',
         notes: mv.notes || '',
+        reason: mv.reason || null,
+        price: Number(mv.price) || null,
+        invoiceNumber: mv.invoiceNumber || null,
+        supplierId: mv.supplierId || null,
+        supplierName: mv.supplierName || null,
+        donorId: mv.donorId || null,
+        donorName: mv.donorName || null,
+        donorPhone: mv.donorPhone || null,
         institutionId,
         createdAt: new Date().toISOString()
       };
       
       const mvRef = await db.collection('stock_movements').add(movementDoc);
+
+      // Conforme as compras forem sendo registradas, nesse cadastro fica visivel as categorias que correspondem a ele
+      if (mv.type === 'entrada' && mv.reason === 'compra' && mv.supplierId) {
+        try {
+          const suppRef = db.collection('suppliers').doc(mv.supplierId);
+          const suppDoc = await suppRef.get();
+          if (suppDoc.exists) {
+            const suppData = suppDoc.data();
+            const currentCategories = suppData.categories || [];
+            const prodCategory = prodData.category; // e.g. "ALIMENTAÇÃO", "HIGIENE"
+            if (prodCategory && !currentCategories.includes(prodCategory)) {
+              await suppRef.update({
+                categories: [...currentCategories, prodCategory]
+              });
+            }
+          }
+        } catch (suppErr) {
+          console.error('Erro ao atualizar categorias do fornecedor:', suppErr);
+        }
+      }
       
       res.json({ success: true, movement: { id: mvRef.id, ...movementDoc }, newStock, newStatus });
     } catch (error: any) {
       console.error('Error registering stock movement:', error);
       res.status(500).json({ error: 'Erro ao registrar movimentação de estoque.' });
+    }
+  });
+
+  // --- Suppliers Endpoints ---
+  app.get('/api/suppliers', requireRole(['administrador', 'gerencial', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      const snapshot = await db.collection('suppliers')
+        .where('institutionId', '==', institutionId)
+        .get();
+      const suppliers = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      res.json(suppliers);
+    } catch (error: any) {
+      console.error('Error fetching suppliers:', error);
+      res.status(500).json({ error: 'Erro ao buscar fornecedores.' });
+    }
+  });
+
+  app.post('/api/suppliers', requireRole(['administrador', 'gerencial', 'nutricionista', 'enfermeira', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      const sup = req.body;
+      if (!sup.name) {
+        return res.status(400).json({ error: 'Nome do fornecedor é obrigatório.' });
+      }
+
+      const supplierDoc = {
+        name: sup.name,
+        phone: sup.phone || '',
+        representative: sup.representative || '',
+        email: sup.email || '',
+        categories: sup.categories || [],
+        institutionId,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (sup.id) {
+        const docRef = db.collection('suppliers').doc(sup.id);
+        await docRef.set(supplierDoc, { merge: true });
+        res.json({ success: true, supplier: { id: sup.id, ...supplierDoc } });
+      } else {
+        (supplierDoc as any).createdAt = new Date().toISOString();
+        const docRef = await db.collection('suppliers').add(supplierDoc);
+        res.json({ success: true, supplier: { id: docRef.id, ...supplierDoc } });
+      }
+    } catch (error: any) {
+      console.error('Error saving supplier:', error);
+      res.status(500).json({ error: 'Erro ao salvar fornecedor.' });
+    }
+  });
+
+  app.delete('/api/suppliers/:id', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      const { id } = req.params;
+      const docRef = db.collection('suppliers').doc(id);
+      const doc = await docRef.get();
+      if (!doc.exists) {
+        return res.status(404).json({ error: 'Fornecedor não encontrado.' });
+      }
+      if (doc.data().institutionId !== institutionId) {
+        return res.status(403).json({ error: 'Não autorizado.' });
+      }
+      
+      await docRef.delete();
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error deleting supplier:', error);
+      res.status(500).json({ error: 'Erro ao excluir fornecedor.' });
+    }
+  });
+
+  // --- Donors Endpoints ---
+  app.get('/api/donors', requireRole(['administrador', 'gerencial', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      const snapshot = await db.collection('donors')
+        .where('institutionId', '==', institutionId)
+        .get();
+      const donors = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      res.json(donors);
+    } catch (error: any) {
+      console.error('Error fetching donors:', error);
+      res.status(500).json({ error: 'Erro ao buscar doadores.' });
+    }
+  });
+
+  app.post('/api/donors', requireRole(['administrador', 'gerencial', 'nutricionista', 'enfermeira', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      const donor = req.body;
+      if (!donor.name) {
+        return res.status(400).json({ error: 'Nome do doador é obrigatório.' });
+      }
+
+      const donorDoc = {
+        name: donor.name,
+        phone: donor.phone || '',
+        institutionId,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (donor.id) {
+        const docRef = db.collection('donors').doc(donor.id);
+        await docRef.set(donorDoc, { merge: true });
+        res.json({ success: true, donor: { id: donor.id, ...donorDoc } });
+      } else {
+        (donorDoc as any).createdAt = new Date().toISOString();
+        const docRef = await db.collection('donors').add(donorDoc);
+        res.json({ success: true, donor: { id: docRef.id, ...donorDoc } });
+      }
+    } catch (error: any) {
+      console.error('Error saving donor:', error);
+      res.status(500).json({ error: 'Erro ao salvar doador.' });
+    }
+  });
+
+  app.delete('/api/donors/:id', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string;
+      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
+      
+      const { id } = req.params;
+      const docRef = db.collection('donors').doc(id);
+      const doc = await docRef.get();
+      if (!doc.exists) {
+        return res.status(404).json({ error: 'Doador não encontrado.' });
+      }
+      if (doc.data().institutionId !== institutionId) {
+        return res.status(403).json({ error: 'Não autorizado.' });
+      }
+      
+      await docRef.delete();
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error deleting donor:', error);
+      res.status(500).json({ error: 'Erro ao excluir doador.' });
     }
   });
   

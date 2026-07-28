@@ -125,6 +125,20 @@
         "phone": { "type": "string" }
       },
       "required": ["institutionId", "name", "role", "phone"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Suppliers for products/stock.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "representative": { "type": "string" },
+        "email": { "type": "string" },
+        "categories": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["institutionId", "name"]
     }
   },
   "firestore": {
@@ -159,6 +173,10 @@
     "companions/{companionId}": {
       "schema": "Companion",
       "description": "Companions for residents."
+    },
+    "suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Product suppliers list."
     }
   }
 }

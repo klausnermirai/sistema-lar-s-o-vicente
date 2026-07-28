@@ -1117,6 +1117,7 @@ export enum AppRoute {
   VISITANTES = 'visitantes',
   EMPLOYEES = 'employees',
   STOCK = 'compras',
+  FINANCEIRO = 'financeiro',
   CENTRAL_INFO = 'central-info',
   CENTRAL_BOARD = 'central-board',
   CENTRAL_OBRAS = 'central-obras',
@@ -1353,6 +1354,7 @@ export interface ProductStockItem {
   minStock: number;
   status: 'Disponível' | 'Comprar' | 'Alerta' | string;
   updatedAt?: string;
+  estimatedCost?: number;
 }
 
 export interface StockMovement {
@@ -1365,6 +1367,33 @@ export interface StockMovement {
   date: string;
   userName: string;
   notes?: string;
+  reason?: 'compra' | 'doacao' | 'consumo' | 'descarte';
+  price?: number;
+  invoiceNumber?: string;
+  supplierId?: string;
+  supplierName?: string;
+  donorId?: string;
+  donorName?: string;
+  donorPhone?: string;
+}
+
+export interface Donor {
+  id?: string;
+  institutionId: string;
+  name: string;
+  phone: string;
+  createdAt?: string;
+}
+
+export interface Supplier {
+  id?: string;
+  institutionId: string;
+  name: string;
+  phone: string;
+  representative: string;
+  email: string;
+  categories?: string[];
+  createdAt?: string;
 }
 
 export interface ConselhoCustomRole {
@@ -1435,4 +1464,38 @@ export interface ConselhoParticular {
   mandateHistory?: ConselhoPastMandate[];
   conferencias?: ConferenciaSubordinada[];
 }
+
+export interface Benefactor {
+  id?: string;
+  name: string;
+  type: 'pf' | 'pj';
+  cpfCnpj?: string;
+  phone?: string;
+  email?: string;
+  defaultCategory?: string; // ID of the category
+  notes?: string;
+  institutionId?: string;
+}
+
+export interface DonationCategory {
+  id?: string;
+  name: string;
+  description?: string;
+  institutionId?: string;
+}
+
+export interface FinanceDonation {
+  id?: string;
+  benefactorId?: string;
+  benefactorName?: string;
+  categoryId: string;
+  categoryName: string;
+  value: number;
+  date: string; // YYYY-MM-DD
+  paymentMethod?: string; // Pix, Dinheiro, Boleto, Carnê, etc.
+  campaign?: string; // Telemarketing, Carnês, Doação Avulsa, etc.
+  notes?: string;
+  institutionId?: string;
+}
+
 

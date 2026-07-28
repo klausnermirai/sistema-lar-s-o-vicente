@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Resident, Candidate, Medication, ClinicalProgressEntry, ExamRequest, MuralMessage } from '../types';
+import { printHtml } from '../lib/pdfHelpers';
 import { 
   Stethoscope, 
   Search, 
@@ -81,13 +82,7 @@ const MedicalModule: React.FC<MedicalModuleProps> = ({ residents, onSaveResident
         </div>
       </div>
     `;
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => printWindow.print(), 500);
-    }
+    printHtml(printContent);
   };
 
   const handleSaveExamRequest = () => {

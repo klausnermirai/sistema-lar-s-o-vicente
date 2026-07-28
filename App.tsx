@@ -18,6 +18,7 @@ import { VisitorPortal } from './components/VisitorPortal';
 import LoginScreen from './components/LoginScreen';
 import SetupScreen from './components/SetupScreen';
 import StockModule from './components/StockModule';
+import { FinanceiroModule } from './components/FinanceiroModule';
 import { CentralCouncilModule } from './components/CentralCouncilModule';
 import { ObrasUnidasModule } from './components/ObrasUnidasModule';
 import { ConselhosParticularesModule } from './components/ConselhosParticularesModule';
@@ -680,6 +681,13 @@ const App: React.FC = () => {
 
       {activeRoute === AppRoute.STOCK && session && (
         <StockModule 
+          session={session}
+          settings={settings}
+        />
+      )}
+
+      {activeRoute === AppRoute.FINANCEIRO && session && (
+        <FinanceiroModule 
           session={session}
           settings={settings}
         />

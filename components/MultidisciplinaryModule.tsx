@@ -143,6 +143,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
   const handleSaveEntity = (updatedData: Resident | (Candidate & Resident)) => {
     if (targetType === 'resident') {
       onSaveResident(updatedData as Resident);
+      setFullResident(updatedData as Resident);
     } else if (onSaveCandidate) {
       onSaveCandidate(updatedData as Candidate);
     }
@@ -690,7 +691,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
               onPostToMural={onPostToMural}
               onChange={(data) => handleSaveEntity({ ...selectedResident, physiotherapy: data })}
               residents={residents}
-              onSaveResident={onSaveResident}
+              onSaveResident={handleSaveEntity}
             />
           )}
           
@@ -869,7 +870,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                   handleSaveEntity(updatedResident);
                 }}
                 residents={residents}
-                onSaveResident={onSaveResident}
+                onSaveResident={handleSaveEntity}
               />
             </div>
           )}

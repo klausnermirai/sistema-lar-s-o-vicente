@@ -511,3 +511,144 @@ export const registerStockMovement = async (movement: any) => {
   return response.json();
 };
 
+export const fetchSuppliers = async () => {
+  const response = await fetch('/api/suppliers', {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar fornecedores');
+  return response.json();
+};
+
+export const saveSupplier = async (supplier: any) => {
+  const response = await fetch('/api/suppliers', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(supplier)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar fornecedor');
+  return response.json();
+};
+
+export const deleteSupplier = async (id: string) => {
+  const response = await fetch(`/api/suppliers/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao excluir fornecedor');
+  return response.json();
+};
+
+export const fetchDonors = async () => {
+  const response = await fetch('/api/donors', {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar doadores');
+  return response.json();
+};
+
+export const saveDonor = async (donor: any) => {
+  const response = await fetch('/api/donors', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(donor)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar doador');
+  return response.json();
+};
+
+export const deleteDonor = async (id: string) => {
+  const response = await fetch(`/api/donors/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao excluir doador');
+  return response.json();
+};
+
+export const fetchBenefactors = async () => {
+  const response = await fetch('/api/benefactors', {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar benfeitores');
+  return response.json();
+};
+
+export const saveBenefactor = async (benefactor: any) => {
+  const response = await fetch('/api/benefactors', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(benefactor)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar benfeitor');
+  return response.json();
+};
+
+export const deleteBenefactor = async (id: string) => {
+  const response = await fetch(`/api/benefactors/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao excluir benfeitor');
+  return response.json();
+};
+
+export const fetchDonationCategories = async () => {
+  const response = await fetch('/api/donation-categories', {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar categorias de doação');
+  return response.json();
+};
+
+export const saveDonationCategory = async (category: any) => {
+  const response = await fetch('/api/donation-categories', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(category)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar categoria de doação');
+  return response.json();
+};
+
+export const deleteDonationCategory = async (id: string) => {
+  const response = await fetch(`/api/donation-categories/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao excluir categoria de doação');
+  return response.json();
+};
+
+export const fetchDonations = async (startDate?: string, endDate?: string) => {
+  let url = '/api/donations';
+  const params: string[] = [];
+  if (startDate) params.push(`startDate=${startDate}`);
+  if (endDate) params.push(`endDate=${endDate}`);
+  if (params.length > 0) url += `?${params.join('&')}`;
+  
+  const response = await fetch(url, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao buscar doações');
+  return response.json();
+};
+
+export const saveDonation = async (donation: any) => {
+  const response = await fetch('/api/donations', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(donation)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar doação');
+  return response.json();
+};
+
+export const deleteDonation = async (id: string) => {
+  const response = await fetch(`/api/donations/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao excluir doação');
+  return response.json();
+};
+

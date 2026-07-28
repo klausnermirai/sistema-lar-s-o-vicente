@@ -452,13 +452,50 @@ export const printAttendanceHtmlPdf = async (
     </html>
   `;
 
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-  
+  printHtml(html);
+};
+
+export const printHtml = (html: string) => {
+  const printWindow = window.open("", "_blank");
+  if (printWindow) {
+    try {
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 500);
+      return;
+    } catch (e) {
+      console.warn("window.open written blocked or failed, falling back to iframe:", e);
+    }
+  }
+
+  // Fallback using dynamic iframe for iframe sandboxed/pop-up blocked environments
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.style.zIndex = '-1000';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document || iframe.contentDocument;
+  if (doc) {
+    doc.open();
+    doc.write(html);
+    doc.close();
+  }
+
   setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 500);
+    if (iframe.contentWindow) {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    }
+    document.body.removeChild(iframe);
+  }, 800);
 };
 
