@@ -2150,6 +2150,7 @@ async function startServer() {
 
       let firestoreTimestampQuery = applyInstitutionScope(db.collection('muralMessages'))
         .where('timestamp', '>=', timestampFloor)
+        .where('timestamp', '<', '')
         .orderBy('timestamp', 'desc');
 
       if (validBefore !== null) {
