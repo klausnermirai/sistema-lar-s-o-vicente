@@ -2082,6 +2082,17 @@ async function startServer() {
   const recentMuralPosts = new Map<string, { timestamp: number; result: any }>();
 
   // Mural Messages
+  const normalizeMuralTimestamp = (value: any): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (value?.toMillis && typeof value.toMillis === 'function') return value.toMillis();
+    if (value?.toDate && typeof value.toDate === 'function') return value.toDate().getTime();
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return 0;
+  };
+
   app.get('/api/mural', requireAuth, async (req: any, res) => {
     const { institutionId } = req.query;
     const accessLevel = req.user?.accessLevel;
@@ -2095,37 +2106,113 @@ async function startServer() {
       return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
     }
 
-    const cacheKey = `mural:${institutionId}:${accessLevel || 'guest'}:${username || 'anon'}`;
+    const requestedLimit = Number(req.query.limit || 50);
+    const pageSize = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 100)
+      : 50;
+
+    const beforeRaw = req.query.before;
+    const before = typeof beforeRaw === 'string' && beforeRaw.trim() !== ''
+      ? Number(beforeRaw)
+      : null;
+    const validBefore = before !== null && Number.isFinite(before) && before > 0 ? before : null;
+
+    const seenAtBefore = new Set(
+      typeof req.query.seenAtBefore === 'string'
+        ? req.query.seenAtBefore.split(',').map((id: string) => id.trim()).filter(Boolean).slice(0, 200)
+        : []
+    );
+
+    const cacheKey = `mural:${institutionId}:${accessLevel || 'guest'}:${username || 'anon'}:${pageSize}:${validBefore || 'latest'}:${Array.from(seenAtBefore).join('|')}`;
     const cached = getFromCache(cacheKey);
     if (cached) return res.json(cached);
 
     try {
       const isMonte = isMonteAltoUnit(institutionId as string);
-      let query: any = db.collection('muralMessages');
+      const applyInstitutionScope = (baseQuery: any) => {
+        if (isMonte) {
+          return baseQuery.where('institutionId', 'in', getMonteAltoQueryIds());
+        }
+        return baseQuery.where('institutionId', '==', institutionId);
+      };
 
-      if (isMonte) {
-        query = query.where('institutionId', 'in', getMonteAltoQueryIds());
-      } else {
-        query = query.where('institutionId', '==', institutionId);
+      // O histórico legado mistura number (ms) e Firestore Timestamp.
+      // Consultamos os dois grupos separadamente ANTES do limit e só então
+      // normalizamos/mesclamos, evitando o salto de datas causado pela
+      // ordenação por tipo do Firestore.
+      const timestampFloor = admin.firestore.Timestamp.fromMillis(0);
+      const scanLimit = Math.min(500, pageSize + seenAtBefore.size + 75);
+
+      let numericQuery = applyInstitutionScope(db.collection('muralMessages'))
+        .where('timestamp', '>=', 0)
+        .where('timestamp', '<', timestampFloor)
+        .orderBy('timestamp', 'desc');
+
+      let firestoreTimestampQuery = applyInstitutionScope(db.collection('muralMessages'))
+        .where('timestamp', '>=', timestampFloor)
+        .orderBy('timestamp', 'desc');
+
+      if (validBefore !== null) {
+        numericQuery = numericQuery.where('timestamp', '<=', validBefore);
+        firestoreTimestampQuery = firestoreTimestampQuery.where(
+          'timestamp',
+          '<=',
+          admin.firestore.Timestamp.fromMillis(validBefore)
+        );
       }
 
-      // Retorna apenas as 50 mensagens mais recentes
-      const snapshot = await query
-        .orderBy('timestamp', 'desc')
-        .limit(50)
-        .get();
-        
-      let messages = snapshot.docs
-        .map(doc => ({ ...doc.data(), id: doc.id }))
-        .filter((item: any) => !item.archived)
-        .reverse(); // Ordena cronologicamente do mais antigo ao mais recente para exibição
-      
-      // Filtra mensagens do mural baseado na visibilidade compartilhada e no usuário
-      const filteredMessages = messages.filter((msg: any) => isUserAuthorizedToViewMuralMessage(req.user, msg));
+      const [numericSnapshot, timestampSnapshot] = await Promise.all([
+        numericQuery.limit(scanLimit).get(),
+        firestoreTimestampQuery.limit(scanLimit).get()
+      ]);
 
-      // Elimina N+1: Usa dados gravados na mensagem ou faz busca em lote única para autores ausentes
+      const scanned = [...numericSnapshot.docs, ...timestampSnapshot.docs]
+        .map(doc => {
+          const raw = doc.data();
+          return {
+            ...raw,
+            id: doc.id,
+            timestamp: normalizeMuralTimestamp(raw.timestamp)
+          };
+        })
+        .filter((item: any) => !item.archived && item.timestamp > 0)
+        .filter((item: any) => isUserAuthorizedToViewMuralMessage(req.user, item))
+        .filter((item: any) => {
+          if (validBefore === null || item.timestamp !== validBefore) return true;
+          return !seenAtBefore.has(item.id);
+        });
+
+      const deduped = Array.from(
+        new Map(scanned.map((item: any) => [item.id, item])).values()
+      ) as any[];
+
+      deduped.sort((a: any, b: any) => {
+        if (b.timestamp !== a.timestamp) return b.timestamp - a.timestamp;
+        return String(a.id).localeCompare(String(b.id));
+      });
+
+      const pageDesc = deduped.slice(0, pageSize);
+      const oldestTimestamp = pageDesc.length > 0
+        ? pageDesc[pageDesc.length - 1].timestamp
+        : null;
+
+      const previousBoundaryIds = validBefore !== null && oldestTimestamp === validBefore
+        ? Array.from(seenAtBefore)
+        : [];
+      const currentBoundaryIds = oldestTimestamp !== null
+        ? pageDesc.filter((msg: any) => msg.timestamp === oldestTimestamp).map((msg: any) => msg.id)
+        : [];
+
+      const nextSeenAtBefore = Array.from(new Set([...previousBoundaryIds, ...currentBoundaryIds]));
+      const hasMore =
+        deduped.length > pageSize ||
+        numericSnapshot.size === scanLimit ||
+        timestampSnapshot.size === scanLimit;
+
+      // Elimina N+1: usa dados gravados na mensagem ou faz uma única busca
+      // em lote para autores ainda sem identificação.
       const missingAuthorUserIds = new Set<string>();
-      filteredMessages.forEach((msg: any) => {
+      pageDesc.forEach((msg: any) => {
         if (!msg.authorDisplayName && !msg.authorName && msg.authorUserId) {
           missingAuthorUserIds.add(msg.authorUserId);
         }
@@ -2135,14 +2222,13 @@ async function startServer() {
         const authorMap = new Map<string, any>();
         const idsArray = Array.from(missingAuthorUserIds).slice(0, 30);
         try {
-          // Busca em lote única
           const usersSnap = await db.collection('users').where(FieldPath.documentId(), 'in', idsArray).get();
           usersSnap.docs.forEach(doc => authorMap.set(doc.id, doc.data()));
         } catch (err) {
-          console.warn("Aviso ao buscar autores em lote:", err);
+          console.warn('Aviso ao buscar autores em lote:', err);
         }
 
-        filteredMessages.forEach((msg: any) => {
+        pageDesc.forEach((msg: any) => {
           if (!msg.authorDisplayName && !msg.authorName && msg.authorUserId) {
             const uData = authorMap.get(msg.authorUserId);
             if (uData) {
@@ -2155,16 +2241,26 @@ async function startServer() {
         });
       }
 
-      if (filteredMessages) {
-        setToCache(cacheKey, filteredMessages);
-      }
-      res.json(filteredMessages);
+      const result = {
+        // O frontend exibe do mais antigo para o mais recente.
+        messages: [...pageDesc].reverse(),
+        hasMore: hasMore && oldestTimestamp !== null,
+        nextCursor: hasMore && oldestTimestamp !== null
+          ? {
+              before: oldestTimestamp,
+              seenAtBefore: nextSeenAtBefore
+            }
+          : null
+      };
+
+      setToCache(cacheKey, result);
+      return res.json(result);
     } catch (error) {
       if (isQuotaError(error)) {
         return res.status(503).json({ error: 'Cota de requisições do banco de dados excedida (RESOURCE_EXHAUSTED). Tente novamente mais tarde.', code: 'RESOURCE_EXHAUSTED' });
       }
       console.error('Error fetching mural:', error);
-      return sendDatabaseError(res, error, );
+      return sendDatabaseError(res, error, 'Erro ao buscar mural.');
     }
   });
 
