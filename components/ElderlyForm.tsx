@@ -220,15 +220,33 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     setFormData(prev => ({
       ...prev,
       relatives: prev.relatives.map(r => {
-        if (r.id === id) return { ...r, [field]: value };
+        if (r.id === id) {
+          if (field === 'deceased' && value === true) {
+            return { ...r, deceased: true, isResponsible: false };
+          }
+          if (field === 'isResponsible' && value === true && r.deceased) {
+            return r;
+          }
+          return { ...r, [field]: value };
+        }
         if (field === 'isResponsible' && value === true) return { ...r, isResponsible: false };
         return r;
       })
     }));
   };
 
+  const updateResidesWith = (value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      interview: {
+        ...(prev.interview || {}),
+        residesWith: value
+      } as any
+    }));
+  };
+
   const addRelative = () => {
-    const newRel: Relative = { id: Date.now().toString(), ...getProfessionalSignature(), name: '', kinship: '', phone: '', observation: '', isResponsible: formData.relatives.length === 0 };
+    const newRel: Relative = { id: Date.now().toString(), ...getProfessionalSignature(), name: '', kinship: '', phone: '', observation: '', isResponsible: formData.relatives.length === 0, deceased: false };
     setFormData(prev => ({ ...prev, relatives: [...prev.relatives, newRel] }));
   };
 
@@ -471,8 +489,12 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
               <div className="space-y-2">
                  {formData.relatives.map(rel => (
                     <div key={rel.id} className="flex justify-between border-b border-gray-100 pb-1">
-                       <div className="text-[10px] font-bold uppercase">{rel.name} ({rel.kinship})</div>
-                       <div className="text-[10px] font-bold">{rel.phone} {rel.isResponsible && ' [RESPONSÁVEL]'}</div>
+                       <div className="text-[10px] font-bold uppercase">
+                         {rel.name} ({rel.kinship}) {rel.deceased && ' [FALECIDO]'}
+                       </div>
+                       <div className="text-[10px] font-bold">
+                         {rel.deceased ? 'Contato não ativo' : rel.phone} {!rel.deceased && rel.isResponsible && ' [RESPONSÁVEL]'}
+                       </div>
                     </div>
                  ))}
                  {formData.relatives.length === 0 && <div className="text-[10px] text-gray-400 uppercase italic">Nenhum familiar cadastrado.</div>}
@@ -817,6 +839,21 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
         {activeTab === 'familiares-visitantes' && (
           <div className="p-8 animate-in slide-in-from-right duration-300 space-y-12">
             <section>
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+                <h3 className="text-sm font-black text-gray-800 uppercase tracking-tight mb-1">Contexto de Moradia / Procedência</h3>
+                <p className="text-[10px] font-bold text-gray-400 uppercase mb-4">Informação social anterior ao acolhimento</p>
+                <FormField
+                  label="Com quem residia antes do acolhimento?"
+                  name="interview-resides-with"
+                  type="select"
+                  value={formData.interview?.residesWith || ''}
+                  onChange={(e) => updateResidesWith(e.target.value)}
+                  options={["Sozinho", "Filhos", "Familiares", "Instituição de acolhimento / clínica", "Outros"]}
+                />
+              </div>
+            </section>
+
+            <section>
               <div className="flex justify-between items-center mb-8">
                  <div>
                     <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">1. Cadastro de Familiares e Contatos</h3>
@@ -828,16 +865,29 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
               </div>
               <div className="grid grid-cols-1 gap-6">
                  {formData.relatives.map((rel) => (
-                   <div key={rel.id} className={`relative p-8 border rounded-2xl transition-all shadow-sm ${rel.isResponsible ? 'border-[#004c99] bg-blue-50/30 ring-2 ring-blue-100' : 'border-gray-200 bg-white'}`}>
-                      {rel.isResponsible && <div className="absolute -top-3 left-8 bg-[#004c99] text-white text-[10px] font-black uppercase px-4 py-1.5 rounded-full flex items-center gap-2 shadow-md"><ShieldCheck size={14} /> Contato Responsável</div>}
+                   <div key={rel.id} className={`relative p-8 border rounded-2xl transition-all shadow-sm ${rel.deceased ? 'border-gray-300 bg-gray-50' : rel.isResponsible ? 'border-[#004c99] bg-blue-50/30 ring-2 ring-blue-100' : 'border-gray-200 bg-white'}`}>
+                      {rel.isResponsible && !rel.deceased && <div className="absolute -top-3 left-8 bg-[#004c99] text-white text-[10px] font-black uppercase px-4 py-1.5 rounded-full flex items-center gap-2 shadow-md"><ShieldCheck size={14} /> Contato Responsável</div>}
+                      {rel.deceased && <div className="absolute -top-3 left-8 bg-gray-600 text-white text-[10px] font-black uppercase px-4 py-1.5 rounded-full shadow-md">Falecido</div>}
                       <div className="flex flex-col md:flex-row gap-8">
-                        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-6">
                           <FormField label="Nome Completo" name={`rel-name-${rel.id}`} value={rel.name} onChange={(e) => handleRelativeChange(rel.id, 'name', e.target.value)} />
                           <FormField label="Vínculo" name={`rel-kinship-${rel.id}`} value={rel.kinship} onChange={(e) => handleRelativeChange(rel.id, 'kinship', e.target.value)} />
                           <FormField label="Telefone" name={`rel-phone-${rel.id}`} value={rel.phone} onChange={(e) => handleRelativeChange(rel.id, 'phone', e.target.value)} />
+                          <div className="space-y-1">
+                            <span className="block text-[10px] font-black text-gray-500 uppercase tracking-tighter">Situação</span>
+                            <label className="h-[38px] px-3 border border-gray-300 rounded-lg bg-white flex items-center gap-2 text-xs font-black uppercase text-gray-600">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(rel.deceased)}
+                                onChange={(e) => handleRelativeChange(rel.id, 'deceased', e.target.checked)}
+                                className="w-4 h-4 rounded text-[#004c99]"
+                              />
+                              Falecido
+                            </label>
+                          </div>
                         </div>
                         <div className="flex flex-row md:flex-col gap-3 justify-center">
-                           {!rel.isResponsible && (
+                           {!rel.isResponsible && !rel.deceased && (
                              <button type="button" onClick={() => handleRelativeChange(rel.id, 'isResponsible', true)} className="px-4 py-2 text-[10px] font-black uppercase border-2 border-blue-600 text-blue-600 rounded-xl hover:bg-blue-50 transition-colors">Responsável</button>
                            )}
                            <button type="button" onClick={() => removeFromList('relatives', rel.id)} className="p-2.5 text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"><Trash2 size={20} /></button>
