@@ -49,6 +49,7 @@ import PiaTab from './PiaTab';
 import PerTab from './PerTab';
 import MedicationTab from './MedicationTab';
 import IntercurrenceHistoryTab from './IntercurrenceHistoryTab';
+import { INITIAL_CANDIDATE } from '../constants';
 
 interface ElderlyFormProps {
   initialData: Resident;
@@ -239,9 +240,9 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     setFormData(prev => ({
       ...prev,
       interview: {
-        ...(prev.interview || {}),
+        ...(prev.interview || INITIAL_CANDIDATE.interview),
         residesWith: value
-      } as any
+      }
     }));
   };
 
