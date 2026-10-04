@@ -303,6 +303,13 @@ export default function SocialWorkerTab({
 
   const handlePrintSingleAction = (evo: SocialWorkEvolution) => {
     const config = ACTION_TYPE_CONFIG[evo.type] || ACTION_TYPE_CONFIG.outro;
+    const unlocked = getVisibleContent(evo);
+    const printDescription = isConfidential(evo) && !unlocked
+      ? '[CONTEÚDO SIGILOSO - PROTEGIDO POR SIGILO PROFISSIONAL]'
+      : (unlocked?.description || evo.description || '');
+    const printReferrals = isConfidential(evo) && !unlocked
+      ? ''
+      : (unlocked?.referrals || evo.referrals || '');
     const headerHtml = getHtmlPrintHeader(settings, "RELATÓRIO DE AÇÃO DO SERVIÇO SOCIAL");
 
     const html = `
@@ -375,13 +382,13 @@ export default function SocialWorkerTab({
 
           <h2 class="section-title">3. Relato da Intervenção Social</h2>
           <div class="paragraph" style="white-space: pre-wrap; line-height: 1.6; text-align: justify;">
-            ${evo.description}
+            ${printDescription}
           </div>
 
-          ${evo.referrals ? `
+          ${printReferrals ? `
           <h2 class="section-title">4. Encaminhamentos e Providências</h2>
           <div class="paragraph" style="white-space: pre-wrap; line-height: 1.6; background-color: #f8fafc; padding: 12px; border-left: 3px solid #004c99; font-weight: 500;">
-            ${evo.referrals}
+            ${printReferrals}
           </div>
           ` : ''}
 
@@ -429,9 +436,9 @@ export default function SocialWorkerTab({
             </div>
           ` : ''}
           <div style="font-size: 12px; line-height: 1.5; color: #1e293b; margin-top: 6px; white-space: pre-wrap;">
-            <strong>Relato:</strong> ${evo.description}
+            <strong>Relato:</strong> ${evo.visibility === 'confidential' ? '[REGISTRO SIGILOSO - CONTEÚDO NÃO INCLUÍDO NO HISTÓRICO GERAL]' : (evo.description || '')}
           </div>
-          ${evo.referrals ? `
+          ${evo.visibility !== 'confidential' && evo.referrals ? `
             <div style="font-size: 11px; line-height: 1.4; color: #0f172a; margin-top: 6px; background-color: #f8fafc; padding: 6px 8px; border-left: 2px solid #004c99;">
               <strong>Encaminhamentos:</strong> ${evo.referrals}
             </div>
@@ -513,9 +520,12 @@ export default function SocialWorkerTab({
       });
       if (recentSocial.length > 0) {
         updates.push(`*Serviço Social:*`);
-        recentSocial.forEach(e => {
-          updates.push(`- ${formatDateToBR(e.date)}: *${e.title}* - ${e.description.substring(0, 90)}...`);
-        });
+        recentSocial
+          .filter(e => e.visibility !== 'confidential')
+          .forEach(e => {
+            const summary = (e.description || 'Atendimento registrado').slice(0, 90);
+            updates.push(`- ${formatDateToBR(e.date)}: *${e.title}* - ${summary}${summary.length >= 90 ? '...' : ''}`);
+          });
       }
     }
 
@@ -611,14 +621,18 @@ export default function SocialWorkerTab({
 
   // Filtered evolutions
   const filteredEvolutions = evolutions.filter(evo => {
-    if (filterType !== 'todos' && evo.type !== filterType) {
-      return false;
-    }
+    const visibility = evo.visibility === 'confidential' ? 'confidential' : 'institutional';
+    if (filterType !== 'todos' && evo.type !== filterType) return false;
+    if (filterVisibility !== 'todos' && visibility !== filterVisibility) return false;
+    if (filterDateFrom && evo.date < filterDateFrom) return false;
+    if (filterDateTo && evo.date > filterDateTo) return false;
+
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
+      const unlocked = getVisibleContent(evo);
       const matchTitle = evo.title?.toLowerCase().includes(term);
-      const matchDesc = evo.description?.toLowerCase().includes(term);
-      const matchRef = evo.referrals?.toLowerCase().includes(term);
+      const matchDesc = unlocked?.description?.toLowerCase().includes(term);
+      const matchRef = unlocked?.referrals?.toLowerCase().includes(term);
       const matchTarget = evo.targetPersonOrEntity?.toLowerCase().includes(term);
       if (!matchTitle && !matchDesc && !matchRef && !matchTarget) return false;
     }
