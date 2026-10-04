@@ -16,6 +16,11 @@ export interface AuthTokenPayload {
   exp: number; // Timestamp Unix em segundos (deve ser finito)
 }
 
+export interface ReauthTokenPayload extends AuthTokenPayload {
+  purpose: 'reauth';
+  iat: number;
+}
+
 export const isSecretRequired =
   process.env.NODE_ENV === 'production' ||
   Boolean(process.env.K_SERVICE) ||
@@ -146,5 +151,85 @@ export function verifyAuthToken(token: string): { valid: boolean; userId?: strin
     return { valid: true, userId: payload.userId, username: payload.username };
   } catch (err: any) {
     return { valid: false, error: 'Falha ao decodificar payload da credencial' };
+  }
+}
+
+
+/**
+ * Credencial curta e específica para confirmação recente de identidade.
+ * Só é emitida após uma autenticação de login bem-sucedida.
+ */
+export function createReauthToken(userId: string, username: string, expiresInMinutes = 5): string {
+  if (!userId || !username) throw new Error('Usuário inválido para reautenticação.');
+
+  const secret = getAuthSecret();
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const payload: ReauthTokenPayload = {
+    userId: userId.trim(),
+    username: username.trim(),
+    purpose: 'reauth',
+    iat: now,
+    exp: now + Math.max(1, expiresInMinutes) * 60
+  };
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(`${header}.${payloadB64}`)
+    .digest('base64url');
+
+  return `${header}.${payloadB64}.${signature}`;
+}
+
+export function verifyReauthToken(token: string): { valid: boolean; userId?: string; username?: string; error?: string } {
+  if (!token || typeof token !== 'string') {
+    return { valid: false, error: 'Credencial de reautenticação ausente.' };
+  }
+
+  const parts = token.trim().split('.');
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+    return { valid: false, error: 'Credencial de reautenticação inválida.' };
+  }
+
+  const [headerB64, payloadB64, signatureB64] = parts;
+  let secret: string;
+  try {
+    secret = getAuthSecret();
+  } catch {
+    return { valid: false, error: 'Erro de configuração do servidor de autenticação.' };
+  }
+
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(`${headerB64}.${payloadB64}`)
+    .digest('base64url');
+
+  const sigBuffer = Buffer.from(signatureB64);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
+    return { valid: false, error: 'Assinatura da reautenticação inválida.' };
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8')) as ReauthTokenPayload;
+    const now = Math.floor(Date.now() / 1000);
+
+    if (
+      payload?.purpose !== 'reauth' ||
+      !payload.userId ||
+      !payload.username ||
+      typeof payload.iat !== 'number' ||
+      typeof payload.exp !== 'number' ||
+      !Number.isFinite(payload.iat) ||
+      !Number.isFinite(payload.exp) ||
+      now >= payload.exp ||
+      payload.iat > now + 30
+    ) {
+      return { valid: false, error: 'Credencial de reautenticação inválida ou expirada.' };
+    }
+
+    return { valid: true, userId: payload.userId, username: payload.username };
+  } catch {
+    return { valid: false, error: 'Falha ao validar reautenticação.' };
   }
 }
