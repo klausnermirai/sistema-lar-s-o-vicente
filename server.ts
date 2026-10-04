@@ -3596,6 +3596,341 @@ async function startServer() {
     }
   });
 
+  // Serviço Social — atendimentos institucionais e registros sigilosos
+  const isStrictSocialWorker = (user: any): boolean =>
+    normalizeAccessLevel(user?.accessLevel || user?.role) === 'assistente_social';
+
+  const getSocialWorkRecordIndex = (evolutions: any[], recordId: string): number =>
+    evolutions.findIndex((item: any) => item?.id === recordId);
+
+  const sanitizeSocialText = (value: any): string => String(value || '').trim();
+
+  const buildSocialMuralPayload = (residentName: string, record: any, institutionId: string, user: any) => ({
+    institutionId,
+    author: user?.username || 'Assistência Social',
+    authorName: user?.fullName || user?.username || 'Assistência Social',
+    authorRole: user?.role || 'Serviço Social',
+    authorUserId: user?.id,
+    authorEmail: user?.username,
+    text:
+      `🤝 Atendimento do Serviço Social - ${residentName}\n` +
+      `Tipo: ${record.type === 'contato_familia' ? 'Atendimento Familiar' : 'Atendimento Individual'}\n` +
+      `Data: ${record.date}${record.time ? ` às ${record.time}` : ''}\n` +
+      (record.targetPersonOrEntity ? `Envolvido: ${record.targetPersonOrEntity}\n` : '') +
+      `Resumo: ${String(record.description || '').slice(0, 240)}${String(record.description || '').length > 240 ? '...' : ''}`,
+    visibilidade: ['publico'],
+    isPublic: true,
+    timestamp: Date.now()
+  });
+
+  app.post('/api/social-work/records', requireAuth, async (req: any, res) => {
+    if (!isStrictSocialWorker(req.user)) {
+      return res.status(403).json({ error: 'Acesso restrito ao Serviço Social.' });
+    }
+
+    const data = req.body || {};
+    const residentId = String(data.residentId || '').trim();
+    if (!residentId) return res.status(400).json({ error: 'residentId é obrigatório.' });
+
+    try {
+      const residentRef = db.collection('residents').doc(residentId);
+      const residentDoc = await residentRef.get();
+      if (!residentDoc.exists) return res.status(404).json({ error: 'Residente não encontrado.' });
+
+      const resident: any = residentDoc.data();
+      if (!isAuthorizedForDocument(req.user, resident)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+
+      const institutionId = await getRealInstitutionId(resident.institutionId || data.institutionId || '');
+      if (!institutionId || !isUserAuthorizedForInstitution(req.user, institutionId)) {
+        return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
+      }
+
+      const visibility = data.visibility === 'confidential' ? 'confidential' : 'institutional';
+      const type = data.type === 'contato_familia' ? 'contato_familia' : 'atendimento_individual';
+      const description = sanitizeSocialText(data.description);
+      if (!description) return res.status(400).json({ error: 'Descrição do atendimento é obrigatória.' });
+
+      const recordId = db.collection('social_confidential_records').doc().id;
+      const now = Date.now();
+      const professionalName = req.user?.fullName || req.user?.username || 'Assistente Social';
+      const professionalRole = req.user?.role || 'Serviço Social';
+
+      const metadata: any = {
+        id: recordId,
+        date: sanitizeSocialText(data.date) || new Date().toISOString().slice(0, 10),
+        time: sanitizeSocialText(data.time),
+        type,
+        subtype: type === 'atendimento_individual' && ['conversation', 'specific_demand'].includes(data.subtype)
+          ? data.subtype
+          : undefined,
+        title: sanitizeSocialText(data.title) || (type === 'contato_familia' ? 'Atendimento Familiar' : 'Atendimento Individual'),
+        targetPersonOrEntity: sanitizeSocialText(data.targetPersonOrEntity),
+        contactPhone: sanitizeSocialText(data.contactPhone),
+        professionalName,
+        professionalRole,
+        cress: req.user?.professionalRegistration || '',
+        professionalSignature: professionalName,
+        postToMural: visibility === 'institutional',
+        visibility,
+        hasConfidentialContent: visibility === 'confidential',
+        authorUserId: req.user?.id,
+        authorUsername: req.user?.username,
+        timestamp: now
+      };
+
+      if (visibility === 'institutional') {
+        metadata.description = description;
+        metadata.referrals = sanitizeSocialText(data.referrals);
+      }
+
+      const evolutions = Array.isArray(resident.socialWork?.evolutions)
+        ? [...resident.socialWork.evolutions]
+        : [];
+      const updatedEvolutions = [metadata, ...evolutions];
+      const updatedSocialWork = { ...(resident.socialWork || {}), evolutions: updatedEvolutions };
+
+      const batch = db.batch();
+      batch.set(residentRef, { socialWork: updatedSocialWork }, { merge: true });
+
+      if (visibility === 'confidential') {
+        batch.set(db.collection('social_confidential_records').doc(recordId), {
+          institutionId,
+          residentId,
+          recordId,
+          description,
+          referrals: sanitizeSocialText(data.referrals),
+          authorUserId: req.user?.id,
+          authorUsername: req.user?.username,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        batch.set(
+          db.collection('muralMessages').doc(),
+          buildSocialMuralPayload(resident.name || 'Residente', { ...metadata, description }, institutionId, req.user)
+        );
+      }
+
+      await batch.commit();
+      invalidateCache('residents');
+      invalidateCache('mural');
+
+      await logAudit('create', 'social_work', recordId, req, institutionId,
+        `Novo atendimento do Serviço Social para ${resident.name || 'residente'}`,
+        { residentId, visibility, type });
+
+      return res.json({ success: true, record: metadata, socialWork: updatedSocialWork });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao registrar atendimento do Serviço Social.');
+    }
+  });
+
+  app.put('/api/social-work/records/:recordId', requireAuth, async (req: any, res) => {
+    if (!isStrictSocialWorker(req.user)) {
+      return res.status(403).json({ error: 'Acesso restrito ao Serviço Social.' });
+    }
+
+    const data = req.body || {};
+    const residentId = String(data.residentId || '').trim();
+    if (!residentId) return res.status(400).json({ error: 'residentId é obrigatório.' });
+
+    try {
+      const residentRef = db.collection('residents').doc(residentId);
+      const residentDoc = await residentRef.get();
+      if (!residentDoc.exists) return res.status(404).json({ error: 'Residente não encontrado.' });
+
+      const resident: any = residentDoc.data();
+      if (!isAuthorizedForDocument(req.user, resident)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+
+      const evolutions = Array.isArray(resident.socialWork?.evolutions)
+        ? [...resident.socialWork.evolutions]
+        : [];
+      const index = getSocialWorkRecordIndex(evolutions, req.params.recordId);
+      if (index < 0) return res.status(404).json({ error: 'Atendimento não encontrado.' });
+
+      const current = evolutions[index] || {};
+      if (current.authorUserId && current.authorUserId !== req.user?.id) {
+        return res.status(403).json({ error: 'Apenas a profissional autora pode editar este registro.' });
+      }
+
+      const institutionId = await getRealInstitutionId(resident.institutionId || '');
+      if (!institutionId || !isUserAuthorizedForInstitution(req.user, institutionId)) {
+        return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
+      }
+
+      const currentVisibility = current.visibility === 'confidential' ? 'confidential' : 'institutional';
+      const requestedVisibility = data.visibility === 'confidential' ? 'confidential' : 'institutional';
+      if (currentVisibility !== requestedVisibility) {
+        return res.status(400).json({ error: 'A classificação de sigilo não pode ser alterada nesta edição.' });
+      }
+
+      const description = sanitizeSocialText(data.description);
+      if (!description) return res.status(400).json({ error: 'Descrição do atendimento é obrigatória.' });
+
+      const type = data.type === 'contato_familia' ? 'contato_familia' : 'atendimento_individual';
+      const updatedMetadata: any = {
+        ...current,
+        date: sanitizeSocialText(data.date) || current.date,
+        time: sanitizeSocialText(data.time),
+        type,
+        subtype: type === 'atendimento_individual' && ['conversation', 'specific_demand'].includes(data.subtype)
+          ? data.subtype
+          : undefined,
+        title: sanitizeSocialText(data.title) || (type === 'contato_familia' ? 'Atendimento Familiar' : 'Atendimento Individual'),
+        targetPersonOrEntity: sanitizeSocialText(data.targetPersonOrEntity),
+        contactPhone: sanitizeSocialText(data.contactPhone),
+        visibility: currentVisibility,
+        postToMural: currentVisibility === 'institutional',
+        hasConfidentialContent: currentVisibility === 'confidential'
+      };
+
+      if (currentVisibility === 'institutional') {
+        updatedMetadata.description = description;
+        updatedMetadata.referrals = sanitizeSocialText(data.referrals);
+      } else {
+        delete updatedMetadata.description;
+        delete updatedMetadata.referrals;
+      }
+
+      evolutions[index] = updatedMetadata;
+      const updatedSocialWork = { ...(resident.socialWork || {}), evolutions };
+      const batch = db.batch();
+      batch.set(residentRef, { socialWork: updatedSocialWork }, { merge: true });
+
+      if (currentVisibility === 'confidential') {
+        batch.set(db.collection('social_confidential_records').doc(req.params.recordId), {
+          institutionId,
+          residentId,
+          recordId: req.params.recordId,
+          description,
+          referrals: sanitizeSocialText(data.referrals),
+          authorUserId: current.authorUserId || req.user?.id,
+          authorUsername: current.authorUsername || req.user?.username,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
+
+      await batch.commit();
+      invalidateCache('residents');
+
+      await logAudit('update', 'social_work', req.params.recordId, req, institutionId,
+        `Atendimento do Serviço Social atualizado para ${resident.name || 'residente'}`,
+        { residentId, visibility: currentVisibility, type });
+
+      return res.json({ success: true, record: updatedMetadata, socialWork: updatedSocialWork });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao atualizar atendimento do Serviço Social.');
+    }
+  });
+
+  app.delete('/api/social-work/records/:recordId', requireAuth, async (req: any, res) => {
+    if (!isStrictSocialWorker(req.user)) {
+      return res.status(403).json({ error: 'Acesso restrito ao Serviço Social.' });
+    }
+
+    const residentId = String(req.query.residentId || '').trim();
+    if (!residentId) return res.status(400).json({ error: 'residentId é obrigatório.' });
+
+    try {
+      const residentRef = db.collection('residents').doc(residentId);
+      const residentDoc = await residentRef.get();
+      if (!residentDoc.exists) return res.status(404).json({ error: 'Residente não encontrado.' });
+
+      const resident: any = residentDoc.data();
+      if (!isAuthorizedForDocument(req.user, resident)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+
+      const evolutions = Array.isArray(resident.socialWork?.evolutions)
+        ? [...resident.socialWork.evolutions]
+        : [];
+      const index = getSocialWorkRecordIndex(evolutions, req.params.recordId);
+      if (index < 0) return res.status(404).json({ error: 'Atendimento não encontrado.' });
+
+      const current = evolutions[index] || {};
+      if (current.authorUserId && current.authorUserId !== req.user?.id) {
+        return res.status(403).json({ error: 'Apenas a profissional autora pode excluir este registro.' });
+      }
+
+      const institutionId = await getRealInstitutionId(resident.institutionId || '');
+      const updatedEvolutions = evolutions.filter((item: any) => item?.id !== req.params.recordId);
+      const updatedSocialWork = { ...(resident.socialWork || {}), evolutions: updatedEvolutions };
+
+      const batch = db.batch();
+      batch.set(residentRef, { socialWork: updatedSocialWork }, { merge: true });
+      batch.delete(db.collection('social_confidential_records').doc(req.params.recordId));
+      await batch.commit();
+
+      invalidateCache('residents');
+
+      await logAudit('delete', 'social_work', req.params.recordId, req, institutionId,
+        `Atendimento do Serviço Social excluído de ${resident.name || 'residente'}`,
+        { residentId, visibility: current.visibility || 'institutional' });
+
+      return res.json({ success: true, socialWork: updatedSocialWork });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao excluir atendimento do Serviço Social.');
+    }
+  });
+
+  app.post('/api/social-work/confidential/:residentId/:recordId/unlock', requireAuth, async (req: any, res) => {
+    if (!isStrictSocialWorker(req.user)) {
+      return res.status(403).json({ error: 'Acesso negado: registro restrito ao Serviço Social.' });
+    }
+
+    try {
+      const proof = verifyReauthToken(String(req.body?.reauthToken || ''));
+      if (!proof.valid || proof.userId !== req.user?.id) {
+        return res.status(401).json({ error: 'Confirmação de identidade inválida ou expirada.' });
+      }
+
+      const residentDoc = await db.collection('residents').doc(req.params.residentId).get();
+      if (!residentDoc.exists) return res.status(404).json({ error: 'Residente não encontrado.' });
+
+      const resident: any = residentDoc.data();
+      if (!isAuthorizedForDocument(req.user, resident)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+
+      const institutionId = await getRealInstitutionId(resident.institutionId || '');
+      if (!institutionId || !isUserAuthorizedForInstitution(req.user, institutionId)) {
+        return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
+      }
+
+      const evolutions = Array.isArray(resident.socialWork?.evolutions) ? resident.socialWork.evolutions : [];
+      const metadata = evolutions.find((item: any) => item?.id === req.params.recordId);
+      if (!metadata || metadata.visibility !== 'confidential') {
+        return res.status(404).json({ error: 'Registro sigiloso não encontrado.' });
+      }
+
+      const confidentialDoc = await db.collection('social_confidential_records').doc(req.params.recordId).get();
+      if (!confidentialDoc.exists) return res.status(404).json({ error: 'Conteúdo sigiloso não encontrado.' });
+
+      const confidential: any = confidentialDoc.data();
+      if (
+        confidential.residentId !== req.params.residentId ||
+        getCanonicalInstitutionId(confidential.institutionId) !== getCanonicalInstitutionId(institutionId)
+      ) {
+        return res.status(404).json({ error: 'Conteúdo sigiloso não encontrado.' });
+      }
+
+      await logAudit('unlock', 'social_work_confidential', req.params.recordId, req, institutionId,
+        'Registro sigiloso do Serviço Social desbloqueado.',
+        { residentId: req.params.residentId });
+
+      return res.json({
+        description: confidential.description || '',
+        referrals: confidential.referrals || ''
+      });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao desbloquear registro sigiloso.');
+    }
+  });
+
   // Multidisciplinary History API
   app.get('/api/multidisciplinary/history', requireAuth, async (req, res) => {
     const { institutionId, competence } = req.query;
