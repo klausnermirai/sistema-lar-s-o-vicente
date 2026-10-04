@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Resident, SocialWorkData, SocialWorkEvolution, SocialWorkActionType, MuralMessage, InstitutionSettings } from '../types';
 import { 
   FileSearch, 
@@ -24,10 +24,19 @@ import {
   Filter,
   Info,
   X,
-  Volume2
+  Volume2,
+  Lock,
+  Eye
 } from 'lucide-react';
 import { getLocalDateString, formatDateToBR } from '../lib/utils';
-import { getProfessionalSignature } from '../lib/api';
+import {
+  getProfessionalSignature,
+  saveSocialWorkRecord,
+  updateSocialWorkRecord,
+  deleteSocialWorkRecord,
+  createSocialWorkReauthToken,
+  unlockConfidentialSocialRecord
+} from '../lib/api';
 import { getHtmlPrintHeader, getHtmlPrintStyles, getHtmlPrintFooter, printHtml } from '../lib/pdfHelpers';
 
 interface SocialWorkerTabProps {
@@ -107,21 +116,25 @@ const ACTION_TYPE_CONFIG: Record<SocialWorkActionType, { label: string; icon: an
 
 export default function SocialWorkerTab({
   resident,
-  settings,
-  onChange,
-  residents,
-  onSaveResident,
-  onPostToMural
+  settings
 }: SocialWorkerTabProps) {
   const [activeSubTab, setActiveSubTab] = useState<'acoes' | 'novo' | 'notificacao'>('acoes');
   const [editingId, setEditingId] = useState<string | null>(null);
-  
-  // Search & Filter State
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('todos');
+  const [filterVisibility, setFilterVisibility] = useState<string>('todos');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
 
-  // Form State
-  const [formData, setFormData] = useState<Partial<SocialWorkEvolution>>(() => {
+  const [evolutions, setEvolutions] = useState<SocialWorkEvolution[]>(resident.socialWork?.evolutions || []);
+  const [unlockedRecords, setUnlockedRecords] = useState<Record<string, { description: string; referrals: string }>>({});
+  const [unlockTarget, setUnlockTarget] = useState<SocialWorkEvolution | null>(null);
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [isUnlocking, setIsUnlocking] = useState(false);
+
+  const makeInitialForm = (): Partial<SocialWorkEvolution> => {
     const prof = getProfessionalSignature();
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -129,6 +142,7 @@ export default function SocialWorkerTab({
       date: getLocalDateString(),
       time: timeStr,
       type: 'atendimento_individual',
+      subtype: 'conversation',
       title: '',
       description: '',
       referrals: '',
@@ -138,39 +152,26 @@ export default function SocialWorkerTab({
       professionalRole: prof.profissionalFuncao || 'Serviço Social',
       cress: prof.profissionalRegistro || '',
       professionalSignature: prof.profissionalAssinaturaTexto || '',
-      postToMural: false
+      visibility: 'institutional',
+      postToMural: true
     };
-  });
+  };
 
+  const [formData, setFormData] = useState<Partial<SocialWorkEvolution>>(makeInitialForm);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
-
-  // WhatsApp communication state
   const [customMessage, setCustomMessage] = useState('');
   const [showPreview, setShowPreview] = useState(false);
 
-  const evolutions = resident.socialWork?.evolutions || [];
+  useEffect(() => {
+    setEvolutions(resident.socialWork?.evolutions || []);
+    setUnlockedRecords({});
+    setEditingId(null);
+  }, [resident.id, resident.socialWork?.evolutions]);
 
   const responsible = resident.relatives?.find(r => r.isResponsible) || resident.relatives?.[0];
 
   const resetForm = () => {
-    const prof = getProfessionalSignature();
-    const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    setFormData({
-      date: getLocalDateString(),
-      time: timeStr,
-      type: 'atendimento_individual',
-      title: '',
-      description: '',
-      referrals: '',
-      targetPersonOrEntity: '',
-      contactPhone: '',
-      professionalName: prof.profissionalNome || 'Assistente Social',
-      professionalRole: prof.profissionalFuncao || 'Serviço Social',
-      cress: prof.profissionalRegistro || '',
-      professionalSignature: prof.profissionalAssinaturaTexto || '',
-      postToMural: false
-    });
+    setFormData(makeInitialForm());
     setEditingId(null);
   };
 
@@ -179,104 +180,125 @@ export default function SocialWorkerTab({
     setActiveSubTab('novo');
   };
 
+  const isConfidential = (evo: SocialWorkEvolution) => evo.visibility === 'confidential';
+
+  const getVisibleContent = (evo: SocialWorkEvolution) => {
+    if (!isConfidential(evo)) {
+      return { description: evo.description || '', referrals: evo.referrals || '' };
+    }
+    return unlockedRecords[evo.id] || null;
+  };
+
   const handleStartEdit = (evo: SocialWorkEvolution) => {
+    const unlocked = getVisibleContent(evo);
+    if (isConfidential(evo) && !unlocked) {
+      setUnlockTarget(evo);
+      setUnlockPassword('');
+      setUnlockError('Desbloqueie o registro antes de editá-lo.');
+      return;
+    }
+
     setEditingId(evo.id);
     setFormData({
-      ...evo
+      ...evo,
+      description: unlocked?.description || evo.description || '',
+      referrals: unlocked?.referrals || evo.referrals || ''
     });
     setActiveSubTab('novo');
   };
 
-  const handleDelete = (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este registro de ação social?')) {
-      return;
-    }
-    const updatedEvolutions = evolutions.filter(e => e.id !== id);
-    const updatedSocialWork: SocialWorkData = {
-      ...resident.socialWork,
-      evolutions: updatedEvolutions
-    };
-    onChange(updatedSocialWork);
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este registro do Serviço Social?')) return;
 
-    if (onSaveResident) {
-      onSaveResident({
-        ...resident,
-        socialWork: updatedSocialWork
+    try {
+      const result = await deleteSocialWorkRecord(resident.id, id);
+      setEvolutions(result?.socialWork?.evolutions || evolutions.filter(e => e.id !== id));
+      setUnlockedRecords(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
       });
+      setFeedbackMsg('Registro excluído com sucesso!');
+      setTimeout(() => setFeedbackMsg(null), 3000);
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao excluir registro.');
     }
-
-    setFeedbackMsg('Registro excluído com sucesso!');
-    setTimeout(() => setFeedbackMsg(null), 3000);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.description?.trim()) {
-      alert('Por favor, descreva o relato da intervenção social.');
+    const description = formData.description?.trim() || '';
+    if (!description) {
+      alert('Por favor, descreva o atendimento realizado.');
       return;
     }
 
-    const prof = getProfessionalSignature();
-    const actionType = formData.type || 'atendimento_individual';
-    const config = ACTION_TYPE_CONFIG[actionType];
+    const type = formData.type === 'contato_familia' ? 'contato_familia' : 'atendimento_individual';
+    const visibility = formData.visibility === 'confidential' ? 'confidential' : 'institutional';
 
-    const evolutionToSave: SocialWorkEvolution = {
-      id: editingId || `social-${Date.now()}`,
+    const payload = {
+      institutionId: resident.institutionId,
+      residentId: resident.id,
       date: formData.date || getLocalDateString(),
-      time: formData.time || '12:00',
-      type: actionType,
-      title: formData.title?.trim() || config.label,
-      description: formData.description?.trim() || '',
+      time: formData.time || '',
+      type,
+      subtype: type === 'atendimento_individual' ? formData.subtype : undefined,
+      title: formData.title?.trim() || (type === 'contato_familia' ? 'Atendimento Familiar' : 'Atendimento Individual'),
+      description,
       referrals: formData.referrals?.trim() || '',
       targetPersonOrEntity: formData.targetPersonOrEntity?.trim() || '',
       contactPhone: formData.contactPhone?.trim() || '',
-      professionalName: formData.professionalName || prof.profissionalNome || 'Assistente Social',
-      professionalRole: formData.professionalRole || prof.profissionalFuncao || 'Serviço Social',
-      cress: formData.cress || prof.profissionalRegistro || '',
-      professionalSignature: formData.professionalSignature || prof.profissionalAssinaturaTexto || '',
-      postToMural: !!formData.postToMural,
-      timestamp: Date.now()
+      visibility
     };
 
-    let updatedEvolutions: SocialWorkEvolution[];
-    if (editingId) {
-      updatedEvolutions = evolutions.map(item => item.id === editingId ? evolutionToSave : item);
-    } else {
-      updatedEvolutions = [evolutionToSave, ...evolutions];
+    try {
+      const result = editingId
+        ? await updateSocialWorkRecord(editingId, payload)
+        : await saveSocialWorkRecord(payload);
+
+      const nextEvolutions = result?.socialWork?.evolutions || [];
+      setEvolutions(nextEvolutions);
+
+      if (visibility === 'confidential' && result?.record?.id) {
+        setUnlockedRecords(prev => ({
+          ...prev,
+          [result.record.id]: { description, referrals: payload.referrals }
+        }));
+      }
+
+      setFeedbackMsg(editingId ? 'Atendimento atualizado com sucesso!' : 'Atendimento registrado no prontuário!');
+      setTimeout(() => setFeedbackMsg(null), 3500);
+      resetForm();
+      setActiveSubTab('acoes');
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao salvar atendimento.');
     }
+  };
 
-    const updatedSocialWork: SocialWorkData = {
-      ...resident.socialWork,
-      evolutions: updatedEvolutions
-    };
+  const handleUnlockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!unlockTarget || !unlockPassword) return;
 
-    // Save to resident
-    onChange(updatedSocialWork);
-    if (onSaveResident) {
-      onSaveResident({
-        ...resident,
-        socialWork: updatedSocialWork
-      });
+    setIsUnlocking(true);
+    setUnlockError('');
+    try {
+      const reauthToken = await createSocialWorkReauthToken(unlockPassword);
+      const content = await unlockConfidentialSocialRecord(resident.id, unlockTarget.id, reauthToken);
+      setUnlockedRecords(prev => ({
+        ...prev,
+        [unlockTarget.id]: {
+          description: content?.description || '',
+          referrals: content?.referrals || ''
+        }
+      }));
+      setUnlockTarget(null);
+      setUnlockPassword('');
+    } catch (err: any) {
+      setUnlockError(err?.message || 'Não foi possível desbloquear o registro.');
+      setUnlockPassword('');
+    } finally {
+      setIsUnlocking(false);
     }
-
-    // Post to Mural if selected
-    if (formData.postToMural && onPostToMural) {
-      onPostToMural({
-        author: formData.professionalName || 'Assistência Social',
-        text: `🤝 *Ação do Serviço Social - ${resident.name}*\n` +
-              `*Ação:* ${evolutionToSave.title} (${config.label})\n` +
-              `*Data:* ${formatDateToBR(evolutionToSave.date)} às ${evolutionToSave.time}\n` +
-              (evolutionToSave.targetPersonOrEntity ? `*Envolvido:* ${evolutionToSave.targetPersonOrEntity}\n` : '') +
-              `*Resumo:* ${evolutionToSave.description.substring(0, 160)}${evolutionToSave.description.length > 160 ? '...' : ''}\n` +
-              (evolutionToSave.referrals ? `*Encaminhamentos:* ${evolutionToSave.referrals}\n` : '')
-      });
-    }
-
-    setFeedbackMsg(editingId ? 'Ação social atualizada com sucesso!' : 'Ação social registrada no prontuário!');
-    setTimeout(() => setFeedbackMsg(null), 3500);
-
-    resetForm();
-    setActiveSubTab('acoes');
   };
 
   const handlePrintSingleAction = (evo: SocialWorkEvolution) => {
