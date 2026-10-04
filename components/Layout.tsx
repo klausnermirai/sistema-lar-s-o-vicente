@@ -680,7 +680,7 @@ const Layout: React.FC<LayoutProps> = ({
             <span className="truncate max-w-[100px] sm:max-w-[180px]">{institutionName || 'UNIDADE'}</span>
             <ChevronRight size={14} className="shrink-0" />
             <span className="text-gray-900 truncate">
-              {activeRoute === AppRoute.VISITANTES ? 'Portal do Visitante' :
+              {activeRoute === AppRoute.VISITANTES ? 'Portal de Visitantes' :
                activeRoute === AppRoute.RESIDENTS ? 'Módulo de Residentes' : 
                activeRoute === AppRoute.SCREENING ? 'Módulo de Triagens Social' : 
                activeRoute === AppRoute.SAUDE_CUIDADOS ? 'Saúde e Cuidados' :
