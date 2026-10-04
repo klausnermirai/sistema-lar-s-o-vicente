@@ -443,14 +443,24 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     }
 
     if (formState.accessLevel === 'visitante') {
-      const selectedVisitorUnits = systemUnits.filter(u => {
-        const selected = formState.selectedUnitIds.includes(u.id) || (!!u.cnpj && formState.selectedUnitIds.includes(u.cnpj));
-        const type = String(u.type || '').toLowerCase();
-        return selected && ['obra_unida', 'lar', 'ilpi'].includes(type);
-      });
+      if (formState.hasAllUnitsAccess) {
+        onMessage('A conta de Portaria não pode possuir acesso global.', 'error');
+        return;
+      }
 
-      if (formState.hasAllUnitsAccess || selectedVisitorUnits.length !== 1) {
-        onMessage('O Portal de Visitantes deve estar vinculado a exatamente uma Obra Unida / Lar / ILPI.', 'error');
+      if (isGlobalController) {
+        const selectedVisitorUnits = systemUnits.filter(u => {
+          const selected = formState.selectedUnitIds.includes(u.id) || (!!u.cnpj && formState.selectedUnitIds.includes(u.cnpj));
+          const type = String(u.type || '').toLowerCase();
+          return selected && ['obra_unida', 'lar', 'ilpi'].includes(type);
+        });
+
+        if (selectedVisitorUnits.length !== 1) {
+          onMessage('O Portal de Visitantes deve estar vinculado a exatamente uma Obra Unida / Lar / ILPI.', 'error');
+          return;
+        }
+      } else if (!institutionId) {
+        onMessage('A unidade institucional atual é obrigatória para criar uma conta de Portaria.', 'error');
         return;
       }
     }
@@ -1198,7 +1208,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                               ...formState,
                               accessLevel: level.id,
                               hasAllUnitsAccess: false,
-                              selectedUnitIds: selectedObra ? [selectedObra.id || selectedObra.cnpj || ''].filter(Boolean) : []
+                              selectedUnitIds: isGlobalController
+                                ? (selectedObra ? [selectedObra.id || selectedObra.cnpj || ''].filter(Boolean) : [])
+                                : (institutionId ? [institutionId] : [])
                             });
                           } else {
                             setFormState({ ...formState, accessLevel: level.id });
