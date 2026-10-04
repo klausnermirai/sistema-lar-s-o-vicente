@@ -626,9 +626,9 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
                           <span className="font-bold text-sm text-gray-800">{resident.name}</span>
                         </div>
                         
-                        {(resident.relatives && resident.relatives.length > 0) ? (
+                        {(resident.relatives && resident.relatives.some(rel => !rel.deceased)) ? (
                           <div className="space-y-2">
-                            {resident.relatives.map(rel => (
+                            {resident.relatives.filter(rel => !rel.deceased).map(rel => (
                               <div key={rel.id} className="flex items-center justify-between bg-gray-50 p-2.5 rounded-xl border border-gray-100">
                                 <div>
                                   <div className="text-xs font-bold text-gray-800">{rel.name}</div>
