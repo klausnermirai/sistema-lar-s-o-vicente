@@ -630,7 +630,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <span className="text-[10px] font-black uppercase text-[#004c99] tracking-widest block">
-              ${isAdministrative ? 'Gestão da Portaria & Acesso' : 'Portal de Portaria & Acesso'}
+              {isAdministrative ? 'Gestão da Portaria & Acesso' : 'Portal de Portaria & Acesso'}
             </span>
             <h1 className={`${isFacialMode ? 'text-lg sm:text-xl' : 'text-2xl'} font-black text-gray-800 uppercase tracking-tight`}>
               Módulo de Visitantes & Portaria
