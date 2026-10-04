@@ -148,11 +148,11 @@ const ACCESS_LEVELS = [
   },
   {
     id: 'visitante',
-    label: 'Visitante / Consulta',
+    label: 'Portal de Visitantes / Portaria',
     icon: Eye,
     color: 'bg-gray-100 text-gray-700 border-gray-200',
     accentColor: 'border-gray-400 bg-gray-50',
-    description: 'Acesso apenas de leitura para consultas pontuais e familiares.'
+    description: 'Acesso restrito ao Portal de Visitantes da única Obra Unida vinculada.'
   }
 ];
 
@@ -353,6 +353,22 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const toggleUnitSelection = (unitIdOrCnpj: string) => {
     setFormState(prev => {
       const matchedUnit = systemUnits.find(u => u.id === unitIdOrCnpj || u.cnpj === unitIdOrCnpj);
+      const isVisitorProfile = prev.accessLevel === 'visitante';
+
+      if (isVisitorProfile) {
+        if (!matchedUnit || !['obra_unida', 'lar', 'ilpi'].includes(String(matchedUnit.type || '').toLowerCase())) {
+          onMessage('A conta de Portaria só pode ser vinculada a uma Obra Unida / Lar / ILPI.', 'error');
+          return prev;
+        }
+
+        const primaryKey = matchedUnit.id || matchedUnit.cnpj || unitIdOrCnpj;
+        return {
+          ...prev,
+          hasAllUnitsAccess: false,
+          selectedUnitIds: [primaryKey]
+        };
+      }
+
       const keysToMatch = new Set<string>([unitIdOrCnpj]);
       if (matchedUnit) {
         if (matchedUnit.id) keysToMatch.add(matchedUnit.id);
@@ -376,6 +392,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   };
 
   const selectAllUnitsOfCategory = (type: 'obras' | 'conselhos' | 'conferencias' | 'all') => {
+    if (formState.accessLevel === 'visitante') {
+      onMessage('A conta de Portaria deve possuir exatamente uma Obra Unida.', 'error');
+      return;
+    }
+
     const targetUnits = systemUnits.filter(u => {
       if (type === 'obras') return u.type === 'obra_unida' || u.type === 'lar';
       if (type === 'conselhos') return u.type === 'conselho_central' || u.type === 'conselho_particular';
@@ -421,6 +442,19 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       return;
     }
 
+    if (formState.accessLevel === 'visitante') {
+      const selectedVisitorUnits = systemUnits.filter(u => {
+        const selected = formState.selectedUnitIds.includes(u.id) || (!!u.cnpj && formState.selectedUnitIds.includes(u.cnpj));
+        const type = String(u.type || '').toLowerCase();
+        return selected && ['obra_unida', 'lar', 'ilpi'].includes(type);
+      });
+
+      if (formState.hasAllUnitsAccess || selectedVisitorUnits.length !== 1) {
+        onMessage('O Portal de Visitantes deve estar vinculado a exatamente uma Obra Unida / Lar / ILPI.', 'error');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       // Monta os dados das unidades autorizadas selecionadas
@@ -432,9 +466,18 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             return formState.selectedUnitIds.includes(uId) || (uCnpj && formState.selectedUnitIds.includes(uCnpj));
           });
 
-      const primaryInstitutionId = (!formState.hasAllUnitsAccess && formState.selectedUnitIds.length > 0)
-        ? formState.selectedUnitIds[0]
-        : (editingUserId ? (users.find(u => u.id === editingUserId)?.institutionId || institutionId) : institutionId);
+      const visitorSelectedUnit = formState.accessLevel === 'visitante'
+        ? systemUnits.find(u => {
+            const selected = formState.selectedUnitIds.includes(u.id) || (!!u.cnpj && formState.selectedUnitIds.includes(u.cnpj));
+            return selected && ['obra_unida', 'lar', 'ilpi'].includes(String(u.type || '').toLowerCase());
+          })
+        : undefined;
+
+      const primaryInstitutionId = visitorSelectedUnit
+        ? (visitorSelectedUnit.id || visitorSelectedUnit.cnpj || institutionId)
+        : (!formState.hasAllUnitsAccess && formState.selectedUnitIds.length > 0)
+          ? formState.selectedUnitIds[0]
+          : (editingUserId ? (users.find(u => u.id === editingUserId)?.institutionId || institutionId) : institutionId);
 
       const userPayload: any = {
         ...(editingUserId ? { id: editingUserId } : {}),
@@ -448,10 +491,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         status: formState.status,
         institutionId: primaryInstitutionId,
         ...(isGlobalController ? {
-          hasAllUnitsAccess: formState.hasAllUnitsAccess,
-          institutionIds: formState.hasAllUnitsAccess ? [] : formState.selectedUnitIds,
-          authorizedUnits: formState.hasAllUnitsAccess ? [] : formState.selectedUnitIds,
-          allowedUnits: allowedUnitsData
+          hasAllUnitsAccess: formState.accessLevel === 'visitante' ? false : formState.hasAllUnitsAccess,
+          institutionIds: formState.accessLevel === 'visitante' ? [] : (formState.hasAllUnitsAccess ? [] : formState.selectedUnitIds),
+          authorizedUnits: formState.accessLevel === 'visitante' ? [] : (formState.hasAllUnitsAccess ? [] : formState.selectedUnitIds),
+          allowedUnits: formState.accessLevel === 'visitante' ? [] : allowedUnitsData
         } : {}),
         notes: formState.notes.trim(),
         ...(formState.password ? { password: formState.password } : {})
@@ -574,6 +617,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
       if (!matchesSearch) return false;
 
+      if (formState.accessLevel === 'visitante') {
+        return ['obra_unida', 'lar', 'ilpi'].includes(String(unit.type || '').toLowerCase());
+      }
+
       if (unitTypeTab === 'obras') {
         return unit.type === 'obra_unida' || unit.type === 'lar';
       }
@@ -585,7 +632,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       }
       return true;
     });
-  }, [systemUnits, unitSearch, unitTypeTab]);
+  }, [systemUnits, unitSearch, unitTypeTab, formState.accessLevel]);
 
   return (
     <div className="space-y-6">
@@ -1140,7 +1187,23 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                       <button
                         key={level.id}
                         type="button"
-                        onClick={() => setFormState({ ...formState, accessLevel: level.id })}
+                        onClick={() => {
+                          if (level.id === 'visitante') {
+                            const selectedObra = systemUnits.find(u => {
+                              const selected = formState.selectedUnitIds.includes(u.id) || (!!u.cnpj && formState.selectedUnitIds.includes(u.cnpj));
+                              return selected && ['obra_unida', 'lar', 'ilpi'].includes(String(u.type || '').toLowerCase());
+                            });
+                            setUnitTypeTab('obras');
+                            setFormState({
+                              ...formState,
+                              accessLevel: level.id,
+                              hasAllUnitsAccess: false,
+                              selectedUnitIds: selectedObra ? [selectedObra.id || selectedObra.cnpj || ''].filter(Boolean) : []
+                            });
+                          } else {
+                            setFormState({ ...formState, accessLevel: level.id });
+                          }
+                        }}
                         className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between ${
                           isSelected
                             ? `${level.accentColor} border-2 shadow-xs`
@@ -1226,6 +1289,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
                       3. Escopo de Acesso a Unidades (Obras, Conselhos e Conferências)
                     </h4>
+                    {formState.accessLevel === 'visitante' && (
+                      <p className="text-[10px] font-bold text-amber-700 uppercase mt-1">
+                        Conta de Portaria: selecione exatamente uma Obra Unida / Lar / ILPI.
+                      </p>
+                    )}
                   </div>
                   <span className="text-[10px] font-bold uppercase text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
                     {formState.hasAllUnitsAccess ? 'Acesso Global' : `${unitStats.selectedTotal} unidade(s) selecionada(s)`}
@@ -1256,7 +1324,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     </div>
                   </label>
 
-                  {isGlobalController && (
+                  {isGlobalController && formState.accessLevel !== 'visitante' && (
                     <label className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
                       formState.hasAllUnitsAccess 
                         ? 'bg-purple-50/60 border-purple-400 shadow-xs ring-1 ring-purple-400' 
