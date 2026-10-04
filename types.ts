@@ -872,13 +872,17 @@ export type SocialWorkActionType =
   | 'reuniao_equipe'
   | 'outro';
 
+export type SocialWorkVisibility = 'institutional' | 'confidential';
+export type SocialWorkAttendanceSubtype = 'conversation' | 'specific_demand';
+
 export interface SocialWorkEvolution {
   id: string;
   date: string;
   time?: string;
   type: SocialWorkActionType;
+  subtype?: SocialWorkAttendanceSubtype;
   title: string;
-  description: string;
+  description?: string;
   referrals?: string; // Encaminhamentos / Providências
   targetPersonOrEntity?: string; // Familiar contatado, órgão/rede envolvida (CRAS, CREAS, INSS, UBS, etc.)
   contactPhone?: string;
@@ -887,7 +891,27 @@ export interface SocialWorkEvolution {
   cress?: string;
   professionalSignature?: string;
   postToMural?: boolean;
+  visibility?: SocialWorkVisibility;
+  hasConfidentialContent?: boolean;
+  authorUserId?: string;
+  authorUsername?: string;
   timestamp?: number;
+}
+
+export interface SocialWorkRecordPayload {
+  institutionId: string;
+  residentId: string;
+  id?: string;
+  date: string;
+  time?: string;
+  type: 'atendimento_individual' | 'contato_familia';
+  subtype?: SocialWorkAttendanceSubtype;
+  title?: string;
+  description: string;
+  referrals?: string;
+  targetPersonOrEntity?: string;
+  contactPhone?: string;
+  visibility: SocialWorkVisibility;
 }
 
 export interface SocialWorkData {

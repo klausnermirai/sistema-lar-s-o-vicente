@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Resident, SocialWorkData, SocialWorkEvolution, SocialWorkActionType, MuralMessage, InstitutionSettings } from '../types';
 import { 
   FileSearch, 
@@ -24,10 +24,19 @@ import {
   Filter,
   Info,
   X,
-  Volume2
+  Volume2,
+  Lock,
+  Eye
 } from 'lucide-react';
 import { getLocalDateString, formatDateToBR } from '../lib/utils';
-import { getProfessionalSignature } from '../lib/api';
+import {
+  getProfessionalSignature,
+  saveSocialWorkRecord,
+  updateSocialWorkRecord,
+  deleteSocialWorkRecord,
+  createSocialWorkReauthToken,
+  unlockConfidentialSocialRecord
+} from '../lib/api';
 import { getHtmlPrintHeader, getHtmlPrintStyles, getHtmlPrintFooter, printHtml } from '../lib/pdfHelpers';
 
 interface SocialWorkerTabProps {
@@ -107,21 +116,25 @@ const ACTION_TYPE_CONFIG: Record<SocialWorkActionType, { label: string; icon: an
 
 export default function SocialWorkerTab({
   resident,
-  settings,
-  onChange,
-  residents,
-  onSaveResident,
-  onPostToMural
+  settings
 }: SocialWorkerTabProps) {
   const [activeSubTab, setActiveSubTab] = useState<'acoes' | 'novo' | 'notificacao'>('acoes');
   const [editingId, setEditingId] = useState<string | null>(null);
-  
-  // Search & Filter State
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('todos');
+  const [filterVisibility, setFilterVisibility] = useState<string>('todos');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
 
-  // Form State
-  const [formData, setFormData] = useState<Partial<SocialWorkEvolution>>(() => {
+  const [evolutions, setEvolutions] = useState<SocialWorkEvolution[]>(resident.socialWork?.evolutions || []);
+  const [unlockedRecords, setUnlockedRecords] = useState<Record<string, { description: string; referrals: string }>>({});
+  const [unlockTarget, setUnlockTarget] = useState<SocialWorkEvolution | null>(null);
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [isUnlocking, setIsUnlocking] = useState(false);
+
+  const makeInitialForm = (): Partial<SocialWorkEvolution> => {
     const prof = getProfessionalSignature();
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -129,6 +142,7 @@ export default function SocialWorkerTab({
       date: getLocalDateString(),
       time: timeStr,
       type: 'atendimento_individual',
+      subtype: 'conversation',
       title: '',
       description: '',
       referrals: '',
@@ -138,39 +152,26 @@ export default function SocialWorkerTab({
       professionalRole: prof.profissionalFuncao || 'Serviço Social',
       cress: prof.profissionalRegistro || '',
       professionalSignature: prof.profissionalAssinaturaTexto || '',
-      postToMural: false
+      visibility: 'institutional',
+      postToMural: true
     };
-  });
+  };
 
+  const [formData, setFormData] = useState<Partial<SocialWorkEvolution>>(makeInitialForm);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
-
-  // WhatsApp communication state
   const [customMessage, setCustomMessage] = useState('');
   const [showPreview, setShowPreview] = useState(false);
 
-  const evolutions = resident.socialWork?.evolutions || [];
+  useEffect(() => {
+    setEvolutions(resident.socialWork?.evolutions || []);
+    setUnlockedRecords({});
+    setEditingId(null);
+  }, [resident.id, resident.socialWork?.evolutions]);
 
   const responsible = resident.relatives?.find(r => r.isResponsible) || resident.relatives?.[0];
 
   const resetForm = () => {
-    const prof = getProfessionalSignature();
-    const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    setFormData({
-      date: getLocalDateString(),
-      time: timeStr,
-      type: 'atendimento_individual',
-      title: '',
-      description: '',
-      referrals: '',
-      targetPersonOrEntity: '',
-      contactPhone: '',
-      professionalName: prof.profissionalNome || 'Assistente Social',
-      professionalRole: prof.profissionalFuncao || 'Serviço Social',
-      cress: prof.profissionalRegistro || '',
-      professionalSignature: prof.profissionalAssinaturaTexto || '',
-      postToMural: false
-    });
+    setFormData(makeInitialForm());
     setEditingId(null);
   };
 
@@ -179,108 +180,138 @@ export default function SocialWorkerTab({
     setActiveSubTab('novo');
   };
 
+  const isConfidential = (evo: SocialWorkEvolution) => evo.visibility === 'confidential';
+
+  const getVisibleContent = (evo: SocialWorkEvolution) => {
+    if (!isConfidential(evo)) {
+      return { description: evo.description || '', referrals: evo.referrals || '' };
+    }
+    return unlockedRecords[evo.id] || null;
+  };
+
   const handleStartEdit = (evo: SocialWorkEvolution) => {
+    const unlocked = getVisibleContent(evo);
+    if (isConfidential(evo) && !unlocked) {
+      setUnlockTarget(evo);
+      setUnlockPassword('');
+      setUnlockError('Desbloqueie o registro antes de editá-lo.');
+      return;
+    }
+
     setEditingId(evo.id);
     setFormData({
-      ...evo
+      ...evo,
+      description: unlocked?.description || evo.description || '',
+      referrals: unlocked?.referrals || evo.referrals || ''
     });
     setActiveSubTab('novo');
   };
 
-  const handleDelete = (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este registro de ação social?')) {
-      return;
-    }
-    const updatedEvolutions = evolutions.filter(e => e.id !== id);
-    const updatedSocialWork: SocialWorkData = {
-      ...resident.socialWork,
-      evolutions: updatedEvolutions
-    };
-    onChange(updatedSocialWork);
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este registro do Serviço Social?')) return;
 
-    if (onSaveResident) {
-      onSaveResident({
-        ...resident,
-        socialWork: updatedSocialWork
+    try {
+      const result = await deleteSocialWorkRecord(resident.id, id);
+      setEvolutions(result?.socialWork?.evolutions || evolutions.filter(e => e.id !== id));
+      setUnlockedRecords(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
       });
+      setFeedbackMsg('Registro excluído com sucesso!');
+      setTimeout(() => setFeedbackMsg(null), 3000);
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao excluir registro.');
     }
-
-    setFeedbackMsg('Registro excluído com sucesso!');
-    setTimeout(() => setFeedbackMsg(null), 3000);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.description?.trim()) {
-      alert('Por favor, descreva o relato da intervenção social.');
+    const description = formData.description?.trim() || '';
+    if (!description) {
+      alert('Por favor, descreva o atendimento realizado.');
       return;
     }
 
-    const prof = getProfessionalSignature();
-    const actionType = formData.type || 'atendimento_individual';
-    const config = ACTION_TYPE_CONFIG[actionType];
+    const type: SocialWorkActionType = editingId && formData.type
+      ? formData.type
+      : (formData.type === 'contato_familia' ? 'contato_familia' : 'atendimento_individual');
+    const visibility = formData.visibility === 'confidential' ? 'confidential' : 'institutional';
 
-    const evolutionToSave: SocialWorkEvolution = {
-      id: editingId || `social-${Date.now()}`,
+    const payload = {
+      institutionId: resident.institutionId,
+      residentId: resident.id,
       date: formData.date || getLocalDateString(),
-      time: formData.time || '12:00',
-      type: actionType,
-      title: formData.title?.trim() || config.label,
-      description: formData.description?.trim() || '',
+      time: formData.time || '',
+      type,
+      subtype: type === 'atendimento_individual' ? formData.subtype : undefined,
+      title: formData.title?.trim() || (type === 'contato_familia' ? 'Atendimento Familiar' : 'Atendimento Individual'),
+      description,
       referrals: formData.referrals?.trim() || '',
       targetPersonOrEntity: formData.targetPersonOrEntity?.trim() || '',
       contactPhone: formData.contactPhone?.trim() || '',
-      professionalName: formData.professionalName || prof.profissionalNome || 'Assistente Social',
-      professionalRole: formData.professionalRole || prof.profissionalFuncao || 'Serviço Social',
-      cress: formData.cress || prof.profissionalRegistro || '',
-      professionalSignature: formData.professionalSignature || prof.profissionalAssinaturaTexto || '',
-      postToMural: !!formData.postToMural,
-      timestamp: Date.now()
+      visibility
     };
 
-    let updatedEvolutions: SocialWorkEvolution[];
-    if (editingId) {
-      updatedEvolutions = evolutions.map(item => item.id === editingId ? evolutionToSave : item);
-    } else {
-      updatedEvolutions = [evolutionToSave, ...evolutions];
+    try {
+      const result = editingId
+        ? await updateSocialWorkRecord(editingId, payload)
+        : await saveSocialWorkRecord(payload);
+
+      const nextEvolutions = result?.socialWork?.evolutions || [];
+      setEvolutions(nextEvolutions);
+
+      if (visibility === 'confidential' && result?.record?.id) {
+        setUnlockedRecords(prev => ({
+          ...prev,
+          [result.record.id]: { description, referrals: payload.referrals }
+        }));
+      }
+
+      setFeedbackMsg(editingId ? 'Atendimento atualizado com sucesso!' : 'Atendimento registrado no prontuário!');
+      setTimeout(() => setFeedbackMsg(null), 3500);
+      resetForm();
+      setActiveSubTab('acoes');
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao salvar atendimento.');
     }
+  };
 
-    const updatedSocialWork: SocialWorkData = {
-      ...resident.socialWork,
-      evolutions: updatedEvolutions
-    };
+  const handleUnlockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!unlockTarget || !unlockPassword) return;
 
-    // Save to resident
-    onChange(updatedSocialWork);
-    if (onSaveResident) {
-      onSaveResident({
-        ...resident,
-        socialWork: updatedSocialWork
-      });
+    setIsUnlocking(true);
+    setUnlockError('');
+    try {
+      const reauthToken = await createSocialWorkReauthToken(unlockPassword);
+      const content = await unlockConfidentialSocialRecord(resident.id, unlockTarget.id, reauthToken);
+      setUnlockedRecords(prev => ({
+        ...prev,
+        [unlockTarget.id]: {
+          description: content?.description || '',
+          referrals: content?.referrals || ''
+        }
+      }));
+      setUnlockTarget(null);
+      setUnlockPassword('');
+    } catch (err: any) {
+      setUnlockError(err?.message || 'Não foi possível desbloquear o registro.');
+      setUnlockPassword('');
+    } finally {
+      setIsUnlocking(false);
     }
-
-    // Post to Mural if selected
-    if (formData.postToMural && onPostToMural) {
-      onPostToMural({
-        author: formData.professionalName || 'Assistência Social',
-        text: `🤝 *Ação do Serviço Social - ${resident.name}*\n` +
-              `*Ação:* ${evolutionToSave.title} (${config.label})\n` +
-              `*Data:* ${formatDateToBR(evolutionToSave.date)} às ${evolutionToSave.time}\n` +
-              (evolutionToSave.targetPersonOrEntity ? `*Envolvido:* ${evolutionToSave.targetPersonOrEntity}\n` : '') +
-              `*Resumo:* ${evolutionToSave.description.substring(0, 160)}${evolutionToSave.description.length > 160 ? '...' : ''}\n` +
-              (evolutionToSave.referrals ? `*Encaminhamentos:* ${evolutionToSave.referrals}\n` : '')
-      });
-    }
-
-    setFeedbackMsg(editingId ? 'Ação social atualizada com sucesso!' : 'Ação social registrada no prontuário!');
-    setTimeout(() => setFeedbackMsg(null), 3500);
-
-    resetForm();
-    setActiveSubTab('acoes');
   };
 
   const handlePrintSingleAction = (evo: SocialWorkEvolution) => {
     const config = ACTION_TYPE_CONFIG[evo.type] || ACTION_TYPE_CONFIG.outro;
+    const unlocked = getVisibleContent(evo);
+    const printDescription = isConfidential(evo) && !unlocked
+      ? '[CONTEÚDO SIGILOSO - PROTEGIDO POR SIGILO PROFISSIONAL]'
+      : (unlocked?.description || evo.description || '');
+    const printReferrals = isConfidential(evo) && !unlocked
+      ? ''
+      : (unlocked?.referrals || evo.referrals || '');
     const headerHtml = getHtmlPrintHeader(settings, "RELATÓRIO DE AÇÃO DO SERVIÇO SOCIAL");
 
     const html = `
@@ -353,13 +384,13 @@ export default function SocialWorkerTab({
 
           <h2 class="section-title">3. Relato da Intervenção Social</h2>
           <div class="paragraph" style="white-space: pre-wrap; line-height: 1.6; text-align: justify;">
-            ${evo.description}
+            ${printDescription}
           </div>
 
-          ${evo.referrals ? `
+          ${printReferrals ? `
           <h2 class="section-title">4. Encaminhamentos e Providências</h2>
           <div class="paragraph" style="white-space: pre-wrap; line-height: 1.6; background-color: #f8fafc; padding: 12px; border-left: 3px solid #004c99; font-weight: 500;">
-            ${evo.referrals}
+            ${printReferrals}
           </div>
           ` : ''}
 
@@ -407,9 +438,9 @@ export default function SocialWorkerTab({
             </div>
           ` : ''}
           <div style="font-size: 12px; line-height: 1.5; color: #1e293b; margin-top: 6px; white-space: pre-wrap;">
-            <strong>Relato:</strong> ${evo.description}
+            <strong>Relato:</strong> ${evo.visibility === 'confidential' ? '[REGISTRO SIGILOSO - CONTEÚDO NÃO INCLUÍDO NO HISTÓRICO GERAL]' : (evo.description || '')}
           </div>
-          ${evo.referrals ? `
+          ${evo.visibility !== 'confidential' && evo.referrals ? `
             <div style="font-size: 11px; line-height: 1.4; color: #0f172a; margin-top: 6px; background-color: #f8fafc; padding: 6px 8px; border-left: 2px solid #004c99;">
               <strong>Encaminhamentos:</strong> ${evo.referrals}
             </div>
@@ -491,9 +522,12 @@ export default function SocialWorkerTab({
       });
       if (recentSocial.length > 0) {
         updates.push(`*Serviço Social:*`);
-        recentSocial.forEach(e => {
-          updates.push(`- ${formatDateToBR(e.date)}: *${e.title}* - ${e.description.substring(0, 90)}...`);
-        });
+        recentSocial
+          .filter(e => e.visibility !== 'confidential')
+          .forEach(e => {
+            const summary = (e.description || 'Atendimento registrado').slice(0, 90);
+            updates.push(`- ${formatDateToBR(e.date)}: *${e.title}* - ${summary}${summary.length >= 90 ? '...' : ''}`);
+          });
       }
     }
 
@@ -589,14 +623,18 @@ export default function SocialWorkerTab({
 
   // Filtered evolutions
   const filteredEvolutions = evolutions.filter(evo => {
-    if (filterType !== 'todos' && evo.type !== filterType) {
-      return false;
-    }
+    const visibility = evo.visibility === 'confidential' ? 'confidential' : 'institutional';
+    if (filterType !== 'todos' && evo.type !== filterType) return false;
+    if (filterVisibility !== 'todos' && visibility !== filterVisibility) return false;
+    if (filterDateFrom && evo.date < filterDateFrom) return false;
+    if (filterDateTo && evo.date > filterDateTo) return false;
+
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
+      const unlocked = getVisibleContent(evo);
       const matchTitle = evo.title?.toLowerCase().includes(term);
-      const matchDesc = evo.description?.toLowerCase().includes(term);
-      const matchRef = evo.referrals?.toLowerCase().includes(term);
+      const matchDesc = unlocked?.description?.toLowerCase().includes(term);
+      const matchRef = unlocked?.referrals?.toLowerCase().includes(term);
       const matchTarget = evo.targetPersonOrEntity?.toLowerCase().includes(term);
       if (!matchTitle && !matchDesc && !matchRef && !matchTarget) return false;
     }
@@ -642,7 +680,7 @@ export default function SocialWorkerTab({
             }`}
           >
             <Plus size={16} />
-            <span>{editingId ? 'Editar Ação Social' : 'Nova Ação Social'}</span>
+            <span>{editingId ? 'Editar Ação Social' : 'Novo Atendimento'}</span>
           </button>
 
           <button
@@ -678,39 +716,87 @@ export default function SocialWorkerTab({
       {activeSubTab === 'acoes' && (
         <div className="space-y-4">
           {/* Filters and Search Bar */}
-          <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm flex flex-col md:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input
-                type="text"
-                placeholder="Buscar por título, relato, órgão, familiar ou encaminhamento..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-[#004c99] focus:outline-none"
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm space-y-3">
+            <div className="flex flex-col lg:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Buscar por título, relato, familiar ou encaminhamento..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-[#004c99] focus:outline-none"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Filter size={16} className="text-gray-400 hidden sm:block" />
+                <select
+                  value={filterType}
+                  onChange={e => setFilterType(e.target.value)}
+                  className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 focus:ring-2 focus:ring-[#004c99] focus:outline-none"
                 >
-                  <X size={14} />
-                </button>
-              )}
+                  <option value="todos">Todos os tipos</option>
+                  <option value="atendimento_individual">Atendimento Individual</option>
+                  <option value="contato_familia">Atendimento Familiar</option>
+                  {Object.entries(ACTION_TYPE_CONFIG)
+                    .filter(([key]) => !['atendimento_individual', 'contato_familia'].includes(key))
+                    .map(([key, cfg]) => (
+                      <option key={key} value={key}>{cfg.label}</option>
+                    ))}
+                </select>
+
+                <select
+                  value={filterVisibility}
+                  onChange={e => setFilterVisibility(e.target.value)}
+                  className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 focus:ring-2 focus:ring-[#004c99] focus:outline-none"
+                >
+                  <option value="todos">Todas as visibilidades</option>
+                  <option value="institutional">Institucional</option>
+                  <option value="confidential">Sigiloso</option>
+                </select>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Filter size={16} className="text-gray-400 hidden sm:block" />
-              <select
-                value={filterType}
-                onChange={e => setFilterType(e.target.value)}
-                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 focus:ring-2 focus:ring-[#004c99] focus:outline-none"
-              >
-                <option value="todos">Todos os Tipos de Ação</option>
-                {Object.entries(ACTION_TYPE_CONFIG).map(([key, cfg]) => (
-                  <option key={key} value={key}>{cfg.label}</option>
-                ))}
-              </select>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Período</span>
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={e => setFilterDateFrom(e.target.value)}
+                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700"
+              />
+              <span className="text-[10px] font-bold text-gray-400">até</span>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={e => setFilterDateTo(e.target.value)}
+                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700"
+              />
+              {(filterDateFrom || filterDateTo || filterVisibility !== 'todos' || filterType !== 'todos' || searchTerm) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setFilterType('todos');
+                    setFilterVisibility('todos');
+                    setFilterDateFrom('');
+                    setFilterDateTo('');
+                  }}
+                  className="px-3 py-2 text-[10px] font-black uppercase tracking-wider text-gray-500 hover:text-[#004c99]"
+                >
+                  Limpar filtros
+                </button>
+              )}
             </div>
           </div>
 
@@ -734,7 +820,7 @@ export default function SocialWorkerTab({
                 className="px-5 py-2.5 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase tracking-wider inline-flex items-center gap-2 hover:bg-[#003d7a] transition-all shadow-md cursor-pointer"
               >
                 <Plus size={16} />
-                <span>Registrar Nova Ação Social</span>
+                <span>Registrar Novo Atendimento</span>
               </button>
             </div>
           ) : (
@@ -742,6 +828,9 @@ export default function SocialWorkerTab({
               {filteredEvolutions.map((evo, index) => {
                 const config = ACTION_TYPE_CONFIG[evo.type] || ACTION_TYPE_CONFIG.outro;
                 const IconComponent = config.icon;
+                const confidential = isConfidential(evo);
+                const visibleContent = getVisibleContent(evo);
+                const locked = confidential && !visibleContent;
 
                 return (
                   <div
@@ -762,6 +851,11 @@ export default function SocialWorkerTab({
                             {evo.postToMural && (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
                                 <Volume2 size={11} /> Mural
+                              </span>
+                            )}
+                            {confidential && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                                <Lock size={11} /> Sigiloso
                               </span>
                             )}
                           </div>
@@ -830,20 +924,46 @@ export default function SocialWorkerTab({
                     )}
 
                     {/* Description / Relato */}
-                    <div className="mt-4 text-xs font-medium text-gray-800 whitespace-pre-wrap leading-relaxed">
-                      {evo.description}
-                    </div>
-
-                    {/* Referrals / Encaminhamentos */}
-                    {evo.referrals && (
-                      <div className="mt-4 p-3.5 bg-blue-50/70 border border-blue-100 rounded-2xl text-xs">
-                        <span className="text-[10px] font-black text-[#004c99] uppercase tracking-wider block mb-1">
-                          Encaminhamentos / Providências:
-                        </span>
-                        <p className="text-gray-800 font-medium whitespace-pre-wrap leading-relaxed">
-                          {evo.referrals}
-                        </p>
+                    {locked ? (
+                      <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                        <div className="flex items-start gap-3">
+                          <Lock size={18} className="text-slate-500 mt-0.5" />
+                          <div className="flex-1">
+                            <p className="text-xs font-black text-slate-700 uppercase tracking-wide">Registro sigiloso</p>
+                            <p className="text-[11px] text-slate-500 mt-1">
+                              O conteúdo é restrito ao Serviço Social e exige confirmação da sua senha de login.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUnlockTarget(evo);
+                              setUnlockPassword('');
+                              setUnlockError('');
+                            }}
+                            className="px-3 py-2 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5"
+                          >
+                            <Eye size={13} /> Visualizar
+                          </button>
+                        </div>
                       </div>
+                    ) : (
+                      <>
+                        <div className="mt-4 text-xs font-medium text-gray-800 whitespace-pre-wrap leading-relaxed">
+                          {visibleContent?.description || evo.description || ''}
+                        </div>
+
+                        {(visibleContent?.referrals || evo.referrals) && (
+                          <div className="mt-4 p-3.5 bg-blue-50/70 border border-blue-100 rounded-2xl text-xs">
+                            <span className="text-[10px] font-black text-[#004c99] uppercase tracking-wider block mb-1">
+                              Encaminhamentos / Providências:
+                            </span>
+                            <p className="text-gray-800 font-medium whitespace-pre-wrap leading-relaxed">
+                              {visibleContent?.referrals || evo.referrals}
+                            </p>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     {/* Signature footer */}
@@ -887,48 +1007,66 @@ export default function SocialWorkerTab({
             </button>
           </div>
 
-          {/* Date, Time and Type */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Data, horário e classificação do atendimento */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
-                Data do Atendimento / Ação *
-              </label>
-              <input
-                type="date"
-                required
-                value={formData.date || ''}
-                onChange={e => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none"
-              />
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Data do Atendimento *</label>
+              <input type="date" required value={formData.date || ''} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none" />
             </div>
-
             <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
-                Horário
-              </label>
-              <input
-                type="time"
-                value={formData.time || ''}
-                onChange={e => setFormData({ ...formData, time: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none"
-              />
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Horário</label>
+              <input type="time" value={formData.time || ''} onChange={e => setFormData({ ...formData, time: e.target.value })} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none" />
             </div>
-
             <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
-                Tipo de Ação Social *
-              </label>
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Tipo de Atendimento *</label>
               <select
                 value={formData.type || 'atendimento_individual'}
-                onChange={e => setFormData({ ...formData, type: e.target.value as SocialWorkActionType })}
+                onChange={e => setFormData({ ...formData, type: e.target.value as SocialWorkActionType, subtype: e.target.value === 'atendimento_individual' ? (formData.subtype || 'conversation') : undefined })}
                 className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none"
               >
-                {Object.entries(ACTION_TYPE_CONFIG).map(([key, cfg]) => (
-                  <option key={key} value={key}>{cfg.label}</option>
-                ))}
+                {editingId && formData.type && !['atendimento_individual', 'contato_familia'].includes(formData.type) && (
+                  <option value={formData.type}>{ACTION_TYPE_CONFIG[formData.type]?.label || 'Registro legado'}</option>
+                )}
+                <option value="atendimento_individual">Atendimento Individual</option>
+                <option value="contato_familia">Atendimento Familiar</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Visibilidade *</label>
+              <select
+                value={formData.visibility || 'institutional'}
+                disabled={!!editingId}
+                onChange={e => {
+                  const visibility = e.target.value === 'confidential' ? 'confidential' : 'institutional';
+                  setFormData({ ...formData, visibility, postToMural: visibility === 'institutional' });
+                }}
+                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none disabled:opacity-60"
+              >
+                <option value="institutional">Institucional — vai para o mural</option>
+                <option value="confidential">Sigiloso — somente Serviço Social</option>
               </select>
             </div>
           </div>
+
+          {formData.type === 'atendimento_individual' && (
+            <div>
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Natureza do Atendimento Individual</label>
+              <select value={formData.subtype || 'conversation'} onChange={e => setFormData({ ...formData, subtype: e.target.value as any })} className="w-full md:w-1/2 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none">
+                <option value="conversation">Conversa / Acolhimento</option>
+                <option value="specific_demand">Solução de demanda pontual</option>
+              </select>
+            </div>
+          )}
+
+          {formData.visibility === 'confidential' && (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-start gap-3">
+              <Lock size={18} className="text-slate-600 mt-0.5" />
+              <div>
+                <p className="text-xs font-black text-slate-800 uppercase tracking-wide">Registro sigiloso</p>
+                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">O relato e os encaminhamentos ficarão protegidos fora do documento do residente. O registro não será enviado ao mural e só poderá ser aberto por profissional do Serviço Social após confirmação de identidade.</p>
+              </div>
+            </div>
+          )}
 
           {/* Title / Assunto */}
           <div>
@@ -1030,30 +1168,23 @@ export default function SocialWorkerTab({
             />
           </div>
 
-          {/* Professional Signature & Mural Toggle */}
+          {/* Assinatura e destino */}
           <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1">
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider block">
-                Assinatura do Profissional Responsável
-              </span>
+              <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider block">Profissional Responsável</span>
               <p className="text-xs font-black text-gray-800">
                 {formData.professionalName || 'Assistente Social'} • {formData.professionalRole || 'Serviço Social'}
                 {formData.cress ? ` • CRESS: ${formData.cress}` : ''}
               </p>
             </div>
 
-            <label className="flex items-center gap-2.5 cursor-pointer bg-white px-3.5 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
-              <input
-                type="checkbox"
-                checked={!!formData.postToMural}
-                onChange={e => setFormData({ ...formData, postToMural: e.target.checked })}
-                className="w-4 h-4 rounded text-[#004c99] focus:ring-[#004c99] border-gray-300"
-              />
-              <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                <Volume2 size={14} className="text-amber-500" />
-                Publicar resumo no Mural da Equipe
-              </span>
-            </label>
+            <div className={formData.visibility === 'confidential'
+              ? "px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 bg-slate-100 text-slate-700 border-slate-200"
+              : "px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 bg-amber-50 text-amber-700 border-amber-200"
+            }>
+              {formData.visibility === 'confidential' ? <Lock size={14} /> : <Volume2 size={14} />}
+              {formData.visibility === 'confidential' ? 'Somente prontuário social sigiloso' : 'Prontuário + resumo no mural'}
+            </div>
           </div>
 
           {/* Action buttons */}
@@ -1163,6 +1294,71 @@ export default function SocialWorkerTab({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {unlockTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[120] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden">
+            <div className="p-6 bg-[#004c99] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Lock size={18} />
+                <h3 className="font-black uppercase tracking-tight">Acesso Sigiloso</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setUnlockTarget(null);
+                  setUnlockPassword('');
+                  setUnlockError('');
+                }}
+                className="opacity-80 hover:opacity-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUnlockSubmit} className="p-6 space-y-4">
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Confirme sua própria senha de login para visualizar este registro do Serviço Social.
+              </p>
+
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Sua senha</label>
+                <input
+                  type="password"
+                  value={unlockPassword}
+                  onChange={e => setUnlockPassword(e.target.value)}
+                  autoComplete="current-password"
+                  autoFocus
+                  required
+                  className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+                />
+                {unlockError && <p className="text-xs font-bold text-red-600 mt-2">{unlockError}</p>}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUnlockTarget(null);
+                    setUnlockPassword('');
+                    setUnlockError('');
+                  }}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-black uppercase"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUnlocking}
+                  className="px-5 py-2 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase disabled:opacity-60"
+                >
+                  {isUnlocking ? 'Confirmando...' : 'Desbloquear'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
