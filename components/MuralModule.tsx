@@ -24,6 +24,7 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
   const [filterDate, setFilterDate] = useState('');
   const [searchText, setSearchText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const loadedPreviousHistoryRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [editMsgText, setEditMsgText] = useState('');
@@ -104,9 +105,17 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
         timestamp: Number(msg.timestamp) || Date.now()
       })) as MuralMessage[];
 
-      setMessages(normalized.sort((a, b) => a.timestamp - b.timestamp));
-      setHasMoreHistory(Boolean(page.hasMore));
-      setHistoryCursor(page.nextCursor);
+      const sorted = normalized.sort((a, b) => a.timestamp - b.timestamp);
+      if (showLoading) {
+        setMessages(sorted);
+      } else {
+        setMessages(current => mergeMessages(current, sorted));
+      }
+
+      if (!loadedPreviousHistoryRef.current) {
+        setHasMoreHistory(Boolean(page.hasMore));
+        setHistoryCursor(page.nextCursor);
+      }
 
       if (normalized.length > 0) {
         const lastTimestamp = Math.max(...normalized.map(m => m.timestamp));
@@ -133,6 +142,7 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
         timestamp: Number(msg.timestamp) || Date.now()
       })) as MuralMessage[];
 
+      loadedPreviousHistoryRef.current = true;
       setMessages(current => mergeMessages(current, normalized));
       setHasMoreHistory(Boolean(page.hasMore));
       setHistoryCursor(page.nextCursor);
@@ -146,6 +156,11 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
 
   useEffect(() => {
     if (!institutionId) return;
+
+    loadedPreviousHistoryRef.current = false;
+    setMessages([]);
+    setHasMoreHistory(false);
+    setHistoryCursor(null);
 
     if (initialLastRead === null) {
       setInitialLastRead(getLastReadTimestamp(institutionId, username));
