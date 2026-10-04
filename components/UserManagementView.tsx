@@ -169,6 +169,18 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const isGlobalController = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('ssvp_session');
+      if (!saved) return false;
+      const session = JSON.parse(saved);
+      const identity = String(session?.username || session?.email || '').trim().toLowerCase();
+      return identity === 'kwarizaya@gmail.com';
+    } catch {
+      return false;
+    }
+  }, []);
+
   // Filtros da listagem de usuários
   const [searchTerm, setSearchTerm] = useState('');
   const [accessFilter, setAccessFilter] = useState('all');
@@ -265,8 +277,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     setLoading(true);
     try {
       const [usersData, unitsData] = await Promise.all([
-        fetchUsers(institutionId, true),
-        fetchSystemUnits().catch(() => [])
+        fetchUsers(institutionId, isGlobalController),
+        isGlobalController ? fetchSystemUnits().catch(() => []) : Promise.resolve([])
       ]);
       setUsers(usersData || []);
       setSystemUnits(unitsData || []);
@@ -434,11 +446,13 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         accessLevel: formState.accessLevel,
         funcionarioId: formState.funcionarioId || undefined,
         status: formState.status,
-        hasAllUnitsAccess: formState.hasAllUnitsAccess,
         institutionId: primaryInstitutionId,
-        institutionIds: formState.hasAllUnitsAccess ? [] : formState.selectedUnitIds,
-        authorizedUnits: formState.hasAllUnitsAccess ? [] : formState.selectedUnitIds,
-        allowedUnits: allowedUnitsData,
+        ...(isGlobalController ? {
+          hasAllUnitsAccess: formState.hasAllUnitsAccess,
+          institutionIds: formState.hasAllUnitsAccess ? [] : formState.selectedUnitIds,
+          authorizedUnits: formState.hasAllUnitsAccess ? [] : formState.selectedUnitIds,
+          allowedUnits: allowedUnitsData
+        } : {}),
         notes: formState.notes.trim(),
         ...(formState.password ? { password: formState.password } : {})
       };
@@ -1242,31 +1256,39 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     </div>
                   </label>
 
-                  <label className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
-                    formState.hasAllUnitsAccess 
-                      ? 'bg-purple-50/60 border-purple-400 shadow-xs ring-1 ring-purple-400' 
-                      : 'bg-white border-slate-200 hover:bg-slate-50'
-                  }`}>
-                    <input
-                      type="radio"
-                      name="allUnitsAccess"
-                      checked={formState.hasAllUnitsAccess}
-                      onChange={() => setFormState({ ...formState, hasAllUnitsAccess: true })}
-                      className="mt-0.5 text-purple-600 focus:ring-purple-500"
-                    />
-                    <div>
-                      <span className="text-xs font-black text-slate-900 uppercase block">
-                        Acesso Total / Global (Super Admin)
-                      </span>
-                      <span className="text-[11px] text-slate-500 font-medium leading-relaxed block mt-0.5">
-                        O usuário poderá alternar e acessar livremente todas as unidades cadastradas no sistema (todas as Obras, Conselhos e Conferências).
-                      </span>
-                    </div>
-                  </label>
+                  {isGlobalController && (
+                    <label className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
+                      formState.hasAllUnitsAccess 
+                        ? 'bg-purple-50/60 border-purple-400 shadow-xs ring-1 ring-purple-400' 
+                        : 'bg-white border-slate-200 hover:bg-slate-50'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="allUnitsAccess"
+                        checked={formState.hasAllUnitsAccess}
+                        onChange={() => setFormState({ ...formState, hasAllUnitsAccess: true })}
+                        className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                      />
+                      <div>
+                        <span className="text-xs font-black text-slate-900 uppercase block">
+                          Acesso Total / Global (Controlador)
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-medium leading-relaxed block mt-0.5">
+                          Acesso global é reservado ao controlador do sistema.
+                        </span>
+                      </div>
+                    </label>
+                  )}
                 </div>
 
                 {/* Selecionador Granular de Unidades */}
-                {!formState.hasAllUnitsAccess && (
+                {!isGlobalController && (
+                  <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-[11px] font-semibold text-blue-800">
+                    O escopo institucional deste usuário é administrado exclusivamente pelo controlador global. Administradores locais podem alterar o perfil funcional, mas não conceder acesso a outras unidades.
+                  </div>
+                )}
+
+                {isGlobalController && !formState.hasAllUnitsAccess && (
                   <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200 space-y-4 animate-in slide-in-from-top-2 duration-300">
                     {/* Abas com Contadores Claros */}
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">

@@ -592,7 +592,17 @@ async function startServer() {
         return res.status(401).json({ error: 'Usuário não encontrado ou inativo.' });
       }
       
-      req.user = { id: userDoc.id, ...userDoc.data() };
+      const rawUser: any = { id: userDoc.id, ...userDoc.data() };
+      const controllerEmail = String(rawUser.email || rawUser.username || '').trim().toLowerCase();
+      const isGlobalController = controllerEmail === 'kwarizaya@gmail.com';
+
+      // Regra multi-tenant: somente o controlador global pode possuir alcance irrestrito.
+      // Perfis funcionais (administrador/gerencial/etc.) não ampliam o escopo institucional.
+      req.user = {
+        ...rawUser,
+        isGlobalAdmin: isGlobalController,
+        hasAllUnitsAccess: isGlobalController
+      };
       next();
     } catch (err) {
       if (isDbUnavailableError(err)) {
@@ -705,6 +715,29 @@ async function startServer() {
     }
 
     return requireAuth(req, res, next);
+  });
+
+  // Guarda central de escopo institucional.
+  // Qualquer institutionId enviado pelo cliente precisa pertencer ao escopo do usuário autenticado.
+  app.use('/api', (req: any, res, next) => {
+    if (!req.user) return next();
+
+    const candidateIds = [
+      req.headers['x-institution-id'],
+      req.query?.institutionId,
+      req.body?.institutionId
+    ]
+      .flat()
+      .filter((value: any) => typeof value === 'string' && value.trim() !== '')
+      .map((value: string) => value.trim());
+
+    for (const candidateId of candidateIds) {
+      if (!isUserAuthorizedForInstitution(req.user, candidateId)) {
+        return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
+      }
+    }
+
+    return next();
   });
 
   // Login
@@ -902,11 +935,7 @@ async function startServer() {
       }
 
       // Identifica a quais instituições este usuário tem permissão
-      const isSuperAdmin = 
-        cleanUser === 'kwarizaya@gmail.com' ||
-        userData.accessLevel === 'administrador' ||
-        userData.hasAllUnitsAccess === true ||
-        userData.role === 'TI / Gestão';
+      const isSuperAdmin = cleanUser === 'kwarizaya@gmail.com';
 
       let authorizedUnits: any[] = [];
 
@@ -999,9 +1028,12 @@ async function startServer() {
         }
       }
 
-      // Se o usuário ainda não tiver nenhuma unidade mapeada, assume o Lar de Monte Alto como padrão seguro
+      // Sem vínculo institucional explícito, não concede acesso por fallback.
+      // O usuário deve permanecer bloqueado até que o controlador global defina sua unidade.
       if (authorizedUnits.length === 0) {
-        authorizedUnits.push(standardUnits[0]);
+        return res.status(403).json({
+          error: 'Usuário sem unidade institucional autorizada. Solicite ao controlador do sistema a configuração do acesso.'
+        });
       }
 
       // Se foi fornecido um CNPJ ou explicitInstId, tenta selecionar diretamente
@@ -1015,6 +1047,10 @@ async function startServer() {
           u.cnpj === explicitSearch || 
           u.cnpj.replace(/\D/g, '') === cleanExplicit
         );
+
+        if (!targetUnit) {
+          return res.status(403).json({ error: 'Acesso negado para a unidade selecionada.' });
+        }
       }
 
       // SE É MULTIACESSO (mais de 1 unidade) e não foi fornecida a unidade escolhida:
@@ -2791,7 +2827,18 @@ async function startServer() {
         }
       }
 
-      res.json(units);
+      const requester: any = (req as any).user;
+      const requesterEmail = String(requester?.email || requester?.username || '').trim().toLowerCase();
+      const isGlobalController = requesterEmail === 'kwarizaya@gmail.com';
+
+      if (isGlobalController) {
+        return res.json(units);
+      }
+
+      const scopedUnits = units.filter((unit: any) =>
+        isUserAuthorizedForInstitution(requester, unit.id || unit.cnpj)
+      );
+      return res.json(scopedUnits);
     } catch (error: any) {
       console.error('Erro ao buscar unidades do sistema:', error);
       return sendDatabaseError(res, error, 'Erro ao carregar unidades do sistema');
@@ -2799,30 +2846,51 @@ async function startServer() {
   });
 
   // ========== /USERS ==========
-  app.get('/api/users', requireRole(['administrador', 'gerencial']), async (req, res) => {
+  app.get('/api/users', requireRole(['administrador', 'gerencial']), async (req: any, res) => {
     const { institutionId, all } = req.query;
     try {
-      const realId = await getRealInstitutionId(institutionId as string);
-      
-      const snapshot = await safeQuery(async () => {
-        if (all === 'true') {
-          return await db.collection('users').get();
-        }
-        let snap = await db.collection('users').where('institutionId', '==', realId).get();
-        if (snap.empty) {
-          // Fallback: Check if they are saved under the CNPJ string
-          const instDoc = await db.collection('institutions').doc(realId).get();
-          if (instDoc.exists && instDoc.data().cnpj) {
-            snap = await db.collection('users').where('institutionId', '==', instDoc.data().cnpj).get();
-          } else if (institutionId && institutionId !== realId) {
-            snap = await db.collection('users').where('institutionId', '==', institutionId).get();
-          }
-        }
-        return snap;
-      });
-      
-      const dbUsers = snapshot ? snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived) : [];
-      let finalUsers = dbUsers;
+      const requesterEmail = String(req.user?.email || req.user?.username || '').trim().toLowerCase();
+      const isGlobalController = requesterEmail === 'kwarizaya@gmail.com';
+
+      if (all === 'true' && !isGlobalController) {
+        return res.status(403).json({ error: 'A listagem global de usuários é restrita ao controlador do sistema.' });
+      }
+
+      if (isGlobalController && all === 'true') {
+        const snapshot = await safeQuery(async () => await db.collection('users').get());
+        const dbUsers = snapshot
+          ? snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived)
+          : [];
+        return res.json(dbUsers);
+      }
+
+      if (!institutionId || typeof institutionId !== 'string') {
+        return res.status(400).json({ error: 'institutionId é obrigatório.' });
+      }
+
+      const realId = await getRealInstitutionId(institutionId);
+      if (!isUserAuthorizedForInstitution(req.user, realId)) {
+        return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
+      }
+
+      // Para manter compatibilidade com institutionId, institutionIds e allowedUnits legados,
+      // filtra em memória somente os usuários vinculados à unidade solicitada.
+      const snapshot = await safeQuery(async () => await db.collection('users').get());
+      let finalUsers = snapshot
+        ? snapshot.docs
+            .map((doc: any) => ({ ...doc.data(), id: doc.id }))
+            .filter((item: any) => !item.archived)
+            .filter((item: any) => {
+              const itemEmail = String(item.email || item.username || '').trim().toLowerCase();
+              const scopedItem = {
+                ...item,
+                isGlobalAdmin: itemEmail === 'kwarizaya@gmail.com',
+                hasAllUnitsAccess: itemEmail === 'kwarizaya@gmail.com'
+              };
+              return isUserAuthorizedForInstitution(scopedItem, realId);
+            })
+        : [];
+
       if (institutionId === 'demo-institution-id') {
         const demoUsers = [
           { id: 'demo-u1', username: 'demonstracao@ssvp.com', fullName: 'Administrador Demo', accessLevel: 'administrador', role: 'Gestor' },
@@ -2830,27 +2898,96 @@ async function startServer() {
           { id: 'demo-u3', username: 'psico@ssvp.com', fullName: 'Ana Psicóloga', accessLevel: 'psicologia', role: 'Psicóloga' },
           { id: 'demo-u4', username: 'to@ssvp.com', fullName: 'Carlos Terapeuta', accessLevel: 'terapeuta_ocupacional', role: 'Terapeuta Ocupacional' }
         ];
-        finalUsers = [...demoUsers, ...dbUsers];
+        finalUsers = [...demoUsers, ...finalUsers];
       }
-      
-      res.json(finalUsers);
+
+      return res.json(finalUsers);
     } catch (error: any) {
-      return sendDatabaseError(res, error, 'Erro ao buscar usuários.' );
+      return sendDatabaseError(res, error, 'Erro ao buscar usuários.');
     }
   });
 
-  app.post('/api/users', requireRole(['administrador', 'gerencial']), async (req, res) => {
-    const data = req.body;
+  app.post('/api/users', requireRole(['administrador', 'gerencial']), async (req: any, res) => {
+    const data = { ...req.body };
     try {
+      const requesterEmail = String(req.user?.email || req.user?.username || '').trim().toLowerCase();
+      const isGlobalController = requesterEmail === 'kwarizaya@gmail.com';
+
       const auditEntry = {
         action: data.id ? 'update' : 'create',
         timestamp: new Date().toISOString(),
-        userId: (req as any).user?.id || 'unknown',
-        username: (req as any).user?.username || 'unknown',
+        userId: req.user?.id || 'unknown',
+        username: req.user?.username || 'unknown',
       };
 
-      const realId = await getRealInstitutionId(data.institutionId);
-      data.institutionId = realId;
+      let existingData: any = null;
+      if (data.id) {
+        const existingDoc = await db.collection('users').doc(data.id).get();
+        if (!existingDoc.exists) {
+          return res.status(404).json({ error: 'Usuário não encontrado.' });
+        }
+        existingData = existingDoc.data();
+
+        const targetEmail = String(existingData?.email || existingData?.username || '').trim().toLowerCase();
+        if (!isGlobalController && targetEmail === 'kwarizaya@gmail.com') {
+          return res.status(403).json({ error: 'O controlador global só pode ser administrado pela própria conta controladora.' });
+        }
+
+        const targetPrimary = existingData?.institutionId;
+        if (!isGlobalController && (!targetPrimary || !isUserAuthorizedForInstitution(req.user, targetPrimary))) {
+          return res.status(403).json({ error: 'Acesso negado para administrar este usuário.' });
+        }
+      }
+
+      if (isGlobalController) {
+        const requestedPrimary = data.institutionId || existingData?.institutionId;
+        if (requestedPrimary) {
+          data.institutionId = await getRealInstitutionId(requestedPrimary);
+        }
+
+        const targetEmail = String(data.email || data.username || existingData?.email || existingData?.username || '').trim().toLowerCase();
+        const targetIsController = targetEmail === 'kwarizaya@gmail.com';
+
+        // Apenas Klausner pode ser global. Demais usuários podem receber multiacesso explícito.
+        data.isGlobalAdmin = targetIsController;
+        data.hasAllUnitsAccess = targetIsController;
+
+        if (!targetIsController) {
+          data.institutionIds = Array.isArray(data.institutionIds) ? data.institutionIds : [];
+          data.authorizedUnits = Array.isArray(data.authorizedUnits) ? data.authorizedUnits : [];
+          data.allowedUnits = Array.isArray(data.allowedUnits) ? data.allowedUnits : [];
+        }
+      } else {
+        if (data.id) {
+          // Administradores locais podem editar o perfil funcional, mas não o escopo institucional.
+          data.institutionId = existingData?.institutionId;
+          data.institutionIds = Array.isArray(existingData?.institutionIds) ? existingData.institutionIds : [];
+          data.authorizedUnits = Array.isArray(existingData?.authorizedUnits) ? existingData.authorizedUnits : [];
+          data.allowedUnits = Array.isArray(existingData?.allowedUnits) ? existingData.allowedUnits : [];
+        } else {
+          const requestedPrimary = data.institutionId || req.user?.institutionId;
+          if (!requestedPrimary) {
+            return res.status(400).json({ error: 'Unidade principal obrigatória para o novo usuário.' });
+          }
+
+          const realId = await getRealInstitutionId(requestedPrimary);
+          if (!isUserAuthorizedForInstitution(req.user, realId)) {
+            return res.status(403).json({ error: 'Acesso negado para cadastrar usuário nesta unidade.' });
+          }
+
+          data.institutionId = realId;
+          data.institutionIds = [];
+          data.authorizedUnits = [];
+          data.allowedUnits = [];
+        }
+
+        data.isGlobalAdmin = false;
+        data.hasAllUnitsAccess = false;
+      }
+
+      if (!data.institutionId) {
+        return res.status(400).json({ error: 'institutionId é obrigatório.' });
+      }
 
       const payload = { ...data };
       payload.auditLog = admin.firestore.FieldValue.arrayUnion(auditEntry);
@@ -2859,37 +2996,57 @@ async function startServer() {
         const { id, ...updateData } = payload;
         await db.collection('users').doc(id).set(updateData, { merge: true });
         await logAudit('update', 'users', id, req, data.institutionId, `Atualização do usuário ${payload.username}`);
-        res.json(data);
-      } else {
-        const docRef = await db.collection('users').add(payload);
-        await logAudit('create', 'users', docRef.id, req, data.institutionId, `Novo usuário cadastrado: ${payload.username}`);
-        res.json({ ...data, id: docRef.id });
+        return res.json({ ...existingData, ...data, id });
       }
+
+      const docRef = await db.collection('users').add(payload);
+      await logAudit('create', 'users', docRef.id, req, data.institutionId, `Novo usuário cadastrado: ${payload.username}`);
+      return res.json({ ...data, id: docRef.id });
     } catch (error: any) {
       console.error('Error saving user to Firestore:', error);
-      return sendDatabaseError(res, error, 'Erro ao salvar usuário no banco de dados.' );
+      return sendDatabaseError(res, error, 'Erro ao salvar usuário no banco de dados.');
     }
   });
 
-  app.delete('/api/users/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
+  app.delete('/api/users/:id', requireRole(['administrador', 'gerencial']), async (req: any, res) => {
     const { id } = req.params;
     try {
+      const requesterEmail = String(req.user?.email || req.user?.username || '').trim().toLowerCase();
+      const isGlobalController = requesterEmail === 'kwarizaya@gmail.com';
+
+      const userRef = db.collection('users').doc(id);
+      const targetDoc = await userRef.get();
+      if (!targetDoc.exists) return res.json({ success: true });
+
+      const targetData: any = targetDoc.data();
+      const targetEmail = String(targetData?.email || targetData?.username || '').trim().toLowerCase();
+
+      if (!isGlobalController) {
+        if (targetEmail === 'kwarizaya@gmail.com') {
+          return res.status(403).json({ error: 'O controlador global não pode ser desativado por administradores locais.' });
+        }
+        if (!targetData?.institutionId || !isUserAuthorizedForInstitution(req.user, targetData.institutionId)) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
+      }
+
       const auditEntry = {
         action: 'archive',
         timestamp: new Date().toISOString(),
-        userId: (req as any).user?.id || 'unknown',
-        username: (req as any).user?.username || 'unknown',
+        userId: req.user?.id || 'unknown',
+        username: req.user?.username || 'unknown',
       };
-      await db.collection('users').doc(id).update({
+
+      await userRef.update({
         archived: true,
         archivedAt: new Date().toISOString(),
-        archivedBy: (req as any).user?.id || 'unknown',
+        archivedBy: req.user?.id || 'unknown',
         auditLog: admin.firestore.FieldValue.arrayUnion(auditEntry)
       });
-      res.json({ success: true, message: 'Arquivado com sucesso.' });
+      return res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
-      return sendDatabaseError(res, error, );
+      return sendDatabaseError(res, error);
     }
   });
 
@@ -3223,9 +3380,15 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/agenda/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico']), async (req, res) => {
+  app.delete('/api/agenda/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico']), async (req: any, res) => {
     try {
-      await db.collection('agenda_events').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      const docRef = db.collection('agenda_events').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists) return res.status(404).json({ error: 'Evento não encontrado.' });
+      if (!isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await docRef.update({ archived: true, archivedAt: new Date().toISOString() });
       invalidateCache('agenda');
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
@@ -3731,7 +3894,13 @@ async function startServer() {
 
   app.delete('/api/donations/:id', async (req: any, res) => {
     try {
-      await db.collection('finance_donations').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      const docRef = db.collection('finance_donations').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists) return res.status(404).json({ error: 'Doação não encontrada.' });
+      if (!isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await docRef.update({ archived: true, archivedAt: new Date().toISOString() });
       res.json({ success: true });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao inativar doação.' );
@@ -3830,6 +3999,9 @@ async function startServer() {
         }
 
         const carneData = docSnap.data();
+        if (!isAuthorizedForDocument(req.user, carneData)) {
+          throw new Error('CARNE_FORBIDDEN');
+        }
         const realId = carneData.institutionId;
         let parcelas = carneData.parcelas || [];
 
@@ -3902,6 +4074,9 @@ async function startServer() {
     } catch (error: any) {
       if (error.message === 'CARNE_NOT_FOUND') {
         return res.status(404).json({ error: 'Carnê não encontrado.' });
+      }
+      if (error.message === 'CARNE_FORBIDDEN') {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
       }
       if (error.message && error.message.startsWith('ALREADY_PAID:')) {
         const nums = error.message.split('ALREADY_PAID:')[1];
@@ -4012,7 +4187,13 @@ async function startServer() {
 
   app.delete('/api/caixinha/:id', async (req: any, res) => {
     try {
-      await db.collection('caixinha_movements').doc(req.params.id).update({
+      const docRef = db.collection('caixinha_movements').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists) return res.status(404).json({ error: 'Movimentação não encontrada.' });
+      if (!isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await docRef.update({
         archived: true,
         archivedAt: new Date().toISOString()
       });
