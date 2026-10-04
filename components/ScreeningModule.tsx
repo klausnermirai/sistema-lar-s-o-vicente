@@ -2398,6 +2398,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
                 <th>Idade</th>
                 <th>Trabalho</th>
                 <th>Renda Mensal</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -2408,8 +2409,9 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
                   <td>${m.age || ''}</td>
                   <td>${m.job || ''}</td>
                   <td>${m.income || ''}</td>
+                  <td>${m.deceased ? 'FALECIDO' : 'Vivo'}</td>
                 </tr>
-              `).join('') : '<tr><td colspan="5" style="text-align: center; color: #666;">Nenhum membro da família detalhado.</td></tr>'}
+              `).join('') : '<tr><td colspan="6" style="text-align: center; color: #666;">Nenhum membro da família detalhado.</td></tr>'}
             </tbody>
           </table>
 
@@ -2568,11 +2570,12 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
       age: "",
       job: "",
       income: "",
+      deceased: false,
     };
     updateInterview("familyTable", [...data.interview.familyTable, newMember]);
   };
 
-  const updateFamilyMember = (id: string, field: string, value: string) => {
+  const updateFamilyMember = (id: string, field: string, value: any) => {
     const updatedTable = data.interview.familyTable.map((m: any) =>
       m.id === id ? { ...m, [field]: value } : m,
     );
@@ -2826,7 +2829,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
           <div>
             <FormLabel>Com quem o idoso reside atualmente?</FormLabel>
             <div className="flex flex-wrap gap-2">
-              {["Sozinho", "Filhos", "Familiares", "Outros"].map((v) => (
+              {["Sozinho", "Filhos", "Familiares", "Instituição de acolhimento / clínica", "Outros"].map((v) => (
                 <FormChoice
                   key={v}
                   label={v}
@@ -2919,6 +2922,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
                 <th className="px-6 py-4">Idade</th>
                 <th className="px-6 py-4">Trabalho</th>
                 <th className="px-6 py-4">Renda Mensal</th>
+                <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 print:hidden"></th>
               </tr>
             </thead>
@@ -2965,6 +2969,17 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
                       }
                     />
                   </td>
+                  <td className="px-6 py-3">
+                    <label className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(m.deceased)}
+                        onChange={(e) => updateFamilyMember(m.id, "deceased", e.target.checked)}
+                        className="w-4 h-4 rounded text-[#004c99]"
+                      />
+                      Falecido
+                    </label>
+                  </td>
                   <td className="px-6 py-3 text-right print:hidden">
                     <button
                       onClick={() => removeFamilyMember(m.id)}
@@ -2976,7 +2991,7 @@ function CandidateForm({ candidate, onSave, onCancel, onAdmit, autoPrint, settin
                 </tr>
               ))}
               <tr className="print:hidden">
-                <td colSpan={6} className="p-4 bg-gray-50/30 text-center">
+                <td colSpan={7} className="p-4 bg-gray-50/30 text-center">
                   <button
                     onClick={addFamilyMember}
                     className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-[#004c99] hover:bg-white px-6 py-2 rounded-xl border border-dashed border-[#004c99] transition-all"
