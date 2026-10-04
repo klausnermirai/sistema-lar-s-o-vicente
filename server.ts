@@ -346,7 +346,7 @@ async function isVisitorPortalInstitution(idOrCnpj: string): Promise<boolean> {
     const doc = await db.collection('institutions').doc(realId).get();
     if (doc.exists) {
       const data: any = doc.data() || {};
-      const rawType = String(data.entityType || data.type || data.institutionType || '').trim().toLowerCase();
+      const rawType = String(data.entityType || data.type || data.institutionType || 'obra_unida').trim().toLowerCase();
       const normalizedType = rawType.replace(/[\s-]+/g, '_');
       if (['obra_unida', 'obraunida', 'lar', 'ilpi'].includes(normalizedType)) {
         return true;
