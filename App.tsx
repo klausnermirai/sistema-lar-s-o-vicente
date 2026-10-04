@@ -86,19 +86,17 @@ const InternalApp: React.FC = () => {
   const [view, setView] = React.useState<'login' | 'setup' | 'app'>(
     (session || DEV_BYPASS_AUTH) ? 'app' : 'login'
   );
+  const [loginKey, setLoginKey] = React.useState(0);
   const [activeRoute, setActiveRoute] = React.useState<AppRoute>(() => {
-    if (session?.accessLevel === 'medico') return AppRoute.CONSULTAS_MEDICAS;
     if (session?.accessLevel === 'visitante') return AppRoute.VISITANTES;
     return AppRoute.HOME;
   });
 
   React.useEffect(() => {
-    if (session?.accessLevel === 'medico' && activeRoute !== AppRoute.CONSULTAS_MEDICAS) {
-      setActiveRoute(AppRoute.CONSULTAS_MEDICAS);
-    } else if (session?.accessLevel === 'visitante' && (activeRoute === AppRoute.RESIDENTS || activeRoute === AppRoute.HOME)) {
+    if (session?.accessLevel === 'visitante' && activeRoute !== AppRoute.VISITANTES) {
       setActiveRoute(AppRoute.VISITANTES);
     }
-  }, [session?.accessLevel]);
+  }, [session?.accessLevel, activeRoute]);
 
   const [vicentinoNavContext, setVicentinoNavContext] = React.useState<{ particularId?: string; conferenciaId?: string }>({});
 
@@ -124,6 +122,8 @@ const InternalApp: React.FC = () => {
     });
     const unsubAuth = subscribeAuthExpired(() => {
       setSession(null);
+      setActiveRoute(AppRoute.HOME);
+      setLoginKey(key => key + 1);
       setView('login');
     });
     return () => {
@@ -157,7 +157,7 @@ const InternalApp: React.FC = () => {
           AppRoute.CENTRAL_CONSELHOS,
           AppRoute.SETTINGS
         ];
-        if (!vicentinoRoutes.includes(activeRoute)) {
+        if (activeRoute !== AppRoute.HOME && !vicentinoRoutes.includes(activeRoute)) {
           setActiveRoute(AppRoute.VICENTINO_CONFERENCIAS);
         }
       }
@@ -259,6 +259,7 @@ const InternalApp: React.FC = () => {
       newSession.institutionId = getCanonicalInstitutionId(newSession.institutionId);
     }
     setSession(newSession);
+    setActiveRoute(newSession.accessLevel === 'visitante' ? AppRoute.VISITANTES : AppRoute.HOME);
     const isMember = 
       newSession.accessLevel === 'membro_conferencia' || 
       newSession.accessLevel === 'membro' || 
@@ -266,7 +267,6 @@ const InternalApp: React.FC = () => {
       !!newSession.membroId;
 
     if (isMember) {
-      setActiveRoute(AppRoute.VICENTINO_CONFERENCIAS);
       if (newSession.conferenciaId || newSession.hierarchy?.conferenciaId) {
         setVicentinoNavContext({
           particularId: newSession.particularId || newSession.hierarchy?.particularId,
@@ -323,6 +323,8 @@ const InternalApp: React.FC = () => {
   const handleLogout = () => {
     localStorage.removeItem('ssvp_session');
     setSession(null);
+    setActiveRoute(AppRoute.HOME);
+    setLoginKey(key => key + 1);
     setView('login');
   };
 
@@ -544,11 +546,17 @@ const InternalApp: React.FC = () => {
   }
 
   if (view === 'setup') {
-    return <SetupScreen onSetupComplete={handleSetupComplete} onBackToLogin={() => setView('login')} />;
+    return <SetupScreen
+      onSetupComplete={handleSetupComplete}
+      onBackToLogin={() => {
+        setLoginKey(key => key + 1);
+        setView('login');
+      }}
+    />;
   }
 
   if (view === 'login') {
-    return <LoginScreen onLoginSuccess={handleLoginSuccess} onDevSetup={() => setView('setup')} logoUrl={settings?.logoUrl} />;
+    return <LoginScreen key={loginKey} onLoginSuccess={handleLoginSuccess} onDevSetup={() => setView('setup')} logoUrl={settings?.logoUrl} />;
   }
 
   const getCouncilInfo = () => {

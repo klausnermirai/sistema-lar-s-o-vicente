@@ -3,7 +3,7 @@ import { MuralMessage, Resident } from '../types';
 import { setLastReadTimestamp, getLastReadTimestamp } from '../lib/muralStore';
 import { fetchResidents, fetchMural, saveMuralMessage, updateMuralMessage, toggleMuralLikeApi, deleteMuralMessage } from '../lib/api';
 import { sortResidentsByName } from '../lib/utils';
-import { Send, Search, Calendar as CalendarIcon, Download, Copy, MessageCircle, Edit2, Trash2, X, Check, ThumbsUp, Users, ChevronRight, Eye } from 'lucide-react';
+import { Send, Search, Calendar as CalendarIcon, Download, Copy, MessageCircle, Edit2, Trash2, X, Check, ThumbsUp, Users, ChevronRight, Eye, ArrowLeft } from 'lucide-react';
 
 interface MuralModuleProps {
   institutionId: string;
@@ -317,11 +317,14 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
               />
             </div>
             {filterDate && (
-              <button 
+              <button
+                type="button"
                 onClick={() => setFilterDate('')}
-                className="px-4 py-2 text-xs font-bold text-gray-500 uppercase hover:text-gray-800"
+                className="flex items-center gap-2 px-4 py-2 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase tracking-wide hover:bg-blue-800 transition-colors shadow-sm"
+                title="Retornar às 50 mensagens mais recentes"
               >
-                Limpar Data
+                <ArrowLeft size={14} />
+                Voltar ao mural atual
               </button>
             )}
           </div>
@@ -334,6 +337,16 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <MessageCircle size={48} className="mb-4 opacity-20" />
             <p className="font-bold uppercase text-sm">Nenhuma mensagem encontrada</p>
+            {filterDate && (
+              <button
+                type="button"
+                onClick={() => setFilterDate('')}
+                className="mt-5 flex items-center gap-2 px-4 py-2 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase tracking-wide hover:bg-blue-800 transition-colors"
+              >
+                <ArrowLeft size={14} />
+                Voltar ao mural atual
+              </button>
+            )}
           </div>
         ) : (
           (() => {

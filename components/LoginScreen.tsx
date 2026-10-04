@@ -87,6 +87,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
   };
 
   React.useEffect(() => {
+    // A tela de login sempre inicia visualmente limpa.
+    setUsername('');
+    setPassword('');
+    setShowPassword(false);
+
     // Checar se há aviso de sessão expirada/renovação necessária
     const notice = sessionStorage.getItem('ssvp_auth_notice');
     if (notice) {
@@ -229,8 +234,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
         setResetToken(null);
         setNewPassword('');
         setConfirmPassword('');
-        if (resetUserEmail) setUsername(resetUserEmail);
-        setPassword(newPassword);
+        setUsername('');
+        setPassword('');
+        setShowPassword(false);
         setIsForgotModalOpen(false);
       }, 2000);
     } catch (err: any) {
@@ -366,7 +372,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
               <p className="text-[10px] font-semibold text-gray-400 mt-2">Sistema de Gestão da SSVP - Caridade Organizada</p>
             </div>
 
-            <form onSubmit={e => handleLogin(e)} className="px-10 pb-12 space-y-5">
+            <form onSubmit={e => handleLogin(e)} autoComplete="off" className="px-10 pb-12 space-y-5">
               {error && (
                 <div className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-600 animate-shake">
                   <AlertCircle size={18} className="shrink-0" />
@@ -385,7 +391,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
                     onChange={e => setUsername(e.target.value)}
                     className="w-full pl-12 pr-4 py-4 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                     placeholder="seu@email.com"
-                    autoComplete="username"
+                    name="ssvp-login-user"
+                    autoComplete="off"
                   />
                 </div>
               </div>
@@ -401,7 +408,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
                     onChange={e => setPassword(e.target.value)}
                     className="w-full pl-12 pr-12 py-4 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                     placeholder="••••••••"
-                    autoComplete="current-password"
+                    name="ssvp-login-password"
+                    autoComplete="new-password"
                   />
                   <button 
                     type="button"

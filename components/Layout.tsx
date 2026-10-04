@@ -244,6 +244,7 @@ const Layout: React.FC<LayoutProps> = ({
     ];
   } else if (isMedico) {
     atendimentoItems = [
+      { id: AppRoute.HOME, label: 'Página Inicial', icon: Home },
       { id: AppRoute.CONSULTAS_MEDICAS, label: 'Consulta Médica', icon: Stethoscope },
       { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     ];
