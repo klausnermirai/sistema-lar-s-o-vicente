@@ -856,6 +856,7 @@ const InternalApp: React.FC = () => {
           residents={residents} 
           onVisitSaved={() => {}} 
           onSaveResident={handleSaveResident}
+          accessLevel={session?.accessLevel}
         />
       )}
 
