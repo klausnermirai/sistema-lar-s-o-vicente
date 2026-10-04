@@ -1567,7 +1567,29 @@ async function startServer() {
       if (!doc.exists) {
         return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
       }
-      const resident = { ...doc.data(), id: doc.id };
+      const resident: any = { ...doc.data(), id: doc.id };
+      const requesterLevel = normalizeAccessLevel(req.user?.accessLevel || req.user?.role);
+
+      if (requesterLevel === 'visitante') {
+        const primaryInstitutionId = req.user?.institutionId;
+        if (
+          !primaryInstitutionId ||
+          getCanonicalInstitutionId(primaryInstitutionId) !== getCanonicalInstitutionId(resident.institutionId)
+        ) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
+
+        return res.json({
+          id: resident.id,
+          name: resident.name || '',
+          status: resident.status || 'ativo',
+          relatives: Array.isArray(resident.relatives)
+            ? resident.relatives.filter((relative: any) => !relative?.deceased)
+            : [],
+          visitRecords: Array.isArray(resident.visitRecords) ? resident.visitRecords : []
+        });
+      }
+
       if (!isAuthorizedForDocument(req.user, resident)) {
         return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
       }
@@ -1654,8 +1676,9 @@ async function startServer() {
           await logAudit('update', 'residents', payload.id, req, safePortariaUpdate.institutionId, `Atualização operacional de portaria do residente ${existingData.name || ''}`);
           invalidateCache('residents');
           return res.json({
-            ...existingData,
             id: payload.id,
+            name: existingData.name || '',
+            status: existingData.status || 'ativo',
             relatives: safePortariaUpdate.relatives,
             visitRecords: safePortariaUpdate.visitRecords
           });
