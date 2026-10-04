@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MuralMessage, Resident } from '../types';
 import { setLastReadTimestamp, getLastReadTimestamp } from '../lib/muralStore';
-import { fetchResidents, saveMuralMessage } from '../lib/api';
+import { fetchMural, fetchResidents, saveMuralMessage } from '../lib/api';
 import { sortResidentsByName } from '../lib/utils';
 import { Send, Search, Calendar as CalendarIcon, Download, Copy, MessageCircle, Edit2, Trash2, X, Check, ThumbsUp, Users, ChevronRight, Eye } from 'lucide-react';
-import { collection, query, where, orderBy, limit, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, doc } from 'firebase/firestore';
+import { deleteDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { getCanonicalInstitutionId, isMonteAltoUnit, getMonteAltoQueryIds } from '../lib/canonical_units';
 
 interface MuralModuleProps {
   institutionId: string;
@@ -34,6 +33,9 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
   const [residentsList, setResidentsList] = useState<Resident[]>([]);
   const [residentSearch, setResidentSearch] = useState('');
   const [loadingResidents, setLoadingResidents] = useState(false);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [historyCursor, setHistoryCursor] = useState<{ before: number; seenAtBefore: string[] } | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newVisibilidade, setNewVisibilidade] = useState<string[]>(['admin']);
@@ -85,51 +87,79 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
     }
   };
 
+  const mergeMessages = (current: MuralMessage[], incoming: MuralMessage[]) => {
+    const byId = new Map<string, MuralMessage>();
+    [...current, ...incoming].forEach((msg) => byId.set(msg.id, msg));
+    return Array.from(byId.values()).sort((a, b) => a.timestamp - b.timestamp);
+  };
+
+  const loadLatestMessages = async (showLoading = false) => {
+    if (!institutionId) return;
+    if (showLoading) setIsLoading(true);
+
+    try {
+      const page = await fetchMural(institutionId, { limit: 50 });
+      const normalized = (page.messages || []).map((msg: any) => ({
+        ...msg,
+        timestamp: Number(msg.timestamp) || Date.now()
+      })) as MuralMessage[];
+
+      setMessages(normalized.sort((a, b) => a.timestamp - b.timestamp));
+      setHasMoreHistory(Boolean(page.hasMore));
+      setHistoryCursor(page.nextCursor);
+
+      if (normalized.length > 0) {
+        const lastTimestamp = Math.max(...normalized.map(m => m.timestamp));
+        setLastReadTimestamp(institutionId, username, lastTimestamp);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar mural:', error);
+    } finally {
+      if (showLoading) setIsLoading(false);
+    }
+  };
+
+  const handleLoadPrevious = async () => {
+    if (!institutionId || !historyCursor || isLoadingHistory) return;
+    setIsLoadingHistory(true);
+    try {
+      const page = await fetchMural(institutionId, {
+        limit: 50,
+        before: historyCursor.before,
+        seenAtBefore: historyCursor.seenAtBefore
+      });
+      const normalized = (page.messages || []).map((msg: any) => ({
+        ...msg,
+        timestamp: Number(msg.timestamp) || Date.now()
+      })) as MuralMessage[];
+
+      setMessages(current => mergeMessages(current, normalized));
+      setHasMoreHistory(Boolean(page.hasMore));
+      setHistoryCursor(page.nextCursor);
+    } catch (error) {
+      console.error('Erro ao carregar histórico anterior do mural:', error);
+      alert('Não foi possível carregar mensagens anteriores.');
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
   useEffect(() => {
     if (!institutionId) return;
-    setIsLoading(true);
 
     if (initialLastRead === null) {
       setInitialLastRead(getLastReadTimestamp(institutionId, username));
     }
 
-    const canonicalId = getCanonicalInstitutionId(institutionId || cnpj);
-    const ids = isMonteAltoUnit(canonicalId) ? getMonteAltoQueryIds() : [canonicalId];
-    if (cnpj && !ids.includes(cnpj)) {
-      ids.push(cnpj);
-    }
+    loadLatestMessages(true);
 
-    // Limita aos 50 mais recentes para otimizar leituras no Firestore
-    const q = query(
-      collection(db, 'muralMessages'),
-      where('institutionId', 'in', ids),
-      orderBy('timestamp', 'desc'),
-      limit(50)
-    );
+    // Mantém o mural atualizado sem consultar diretamente o Firestore no cliente.
+    // A API aplica escopo institucional e visibilidade antes de devolver os dados.
+    const refreshTimer = window.setInterval(() => {
+      loadLatestMessages(false);
+    }, 15000);
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          ...data,
-          id: doc.id,
-          timestamp: data.timestamp?.toDate?.()?.getTime() || data.timestamp || Date.now()
-        } as MuralMessage;
-      }).sort((a, b) => a.timestamp - b.timestamp);
-      
-      setMessages(msgs);
-      setIsLoading(false);
-
-      if (msgs.length > 0) {
-        const lastTimestamp = Math.max(...msgs.map(m => m.timestamp));
-        setLastReadTimestamp(institutionId, username, lastTimestamp);
-      }
-    }, (error) => {
-      console.error("Error listening to mural messages:", error);
-      setIsLoading(false);
-    });
-
-    return () => unsubscribe();
+    return () => window.clearInterval(refreshTimer);
   }, [institutionId, username]);
 
   useEffect(() => {
@@ -155,6 +185,7 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
       };
       
       await saveMuralMessage(msgData);
+      await loadLatestMessages(false);
       setNewMessage('');
       setNewVisibilidade(['admin']);
     } catch (err: any) {
@@ -327,6 +358,18 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
 
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {hasMoreHistory && (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={handleLoadPrevious}
+              disabled={isLoadingHistory}
+              className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-[10px] font-black uppercase tracking-widest text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {isLoadingHistory ? 'Carregando...' : 'Carregar anteriores'}
+            </button>
+          </div>
+        )}
         {filteredMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <MessageCircle size={48} className="mb-4 opacity-20" />
