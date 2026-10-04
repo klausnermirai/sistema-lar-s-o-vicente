@@ -1294,6 +1294,71 @@ export default function SocialWorkerTab({
           )}
         </div>
       )}
+
+      {unlockTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[120] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden">
+            <div className="p-6 bg-[#004c99] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Lock size={18} />
+                <h3 className="font-black uppercase tracking-tight">Acesso Sigiloso</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setUnlockTarget(null);
+                  setUnlockPassword('');
+                  setUnlockError('');
+                }}
+                className="opacity-80 hover:opacity-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUnlockSubmit} className="p-6 space-y-4">
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Confirme sua própria senha de login para visualizar este registro do Serviço Social.
+              </p>
+
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Sua senha</label>
+                <input
+                  type="password"
+                  value={unlockPassword}
+                  onChange={e => setUnlockPassword(e.target.value)}
+                  autoComplete="current-password"
+                  autoFocus
+                  required
+                  className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004c99] text-sm"
+                />
+                {unlockError && <p className="text-xs font-bold text-red-600 mt-2">{unlockError}</p>}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUnlockTarget(null);
+                    setUnlockPassword('');
+                    setUnlockError('');
+                  }}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-black uppercase"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUnlocking}
+                  className="px-5 py-2 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase disabled:opacity-60"
+                >
+                  {isUnlocking ? 'Confirmando...' : 'Desbloquear'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
