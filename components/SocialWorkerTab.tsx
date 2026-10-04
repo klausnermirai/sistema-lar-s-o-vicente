@@ -233,7 +233,9 @@ export default function SocialWorkerTab({
       return;
     }
 
-    const type = formData.type === 'contato_familia' ? 'contato_familia' : 'atendimento_individual';
+    const type: SocialWorkActionType = editingId && formData.type
+      ? formData.type
+      : (formData.type === 'contato_familia' ? 'contato_familia' : 'atendimento_individual');
     const visibility = formData.visibility === 'confidential' ? 'confidential' : 'institutional';
 
     const payload = {
