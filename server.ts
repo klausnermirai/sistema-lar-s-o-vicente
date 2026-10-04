@@ -2873,7 +2873,15 @@ async function startServer() {
         ? snapshot.docs
             .map((doc: any) => ({ ...doc.data(), id: doc.id }))
             .filter((item: any) => !item.archived)
-            .filter((item: any) => isUserAuthorizedForInstitution(item, realId))
+            .filter((item: any) => {
+              const itemEmail = String(item.email || item.username || '').trim().toLowerCase();
+              const scopedItem = {
+                ...item,
+                isGlobalAdmin: itemEmail === 'kwarizaya@gmail.com',
+                hasAllUnitsAccess: itemEmail === 'kwarizaya@gmail.com'
+              };
+              return isUserAuthorizedForInstitution(scopedItem, realId);
+            })
         : [];
 
       if (institutionId === 'demo-institution-id') {
@@ -2993,25 +3001,45 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/users/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
+  app.delete('/api/users/:id', requireRole(['administrador', 'gerencial']), async (req: any, res) => {
     const { id } = req.params;
     try {
+      const requesterEmail = String(req.user?.email || req.user?.username || '').trim().toLowerCase();
+      const isGlobalController = requesterEmail === 'kwarizaya@gmail.com';
+
+      const userRef = db.collection('users').doc(id);
+      const targetDoc = await userRef.get();
+      if (!targetDoc.exists) return res.json({ success: true });
+
+      const targetData: any = targetDoc.data();
+      const targetEmail = String(targetData?.email || targetData?.username || '').trim().toLowerCase();
+
+      if (!isGlobalController) {
+        if (targetEmail === 'kwarizaya@gmail.com') {
+          return res.status(403).json({ error: 'O controlador global não pode ser desativado por administradores locais.' });
+        }
+        if (!targetData?.institutionId || !isUserAuthorizedForInstitution(req.user, targetData.institutionId)) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
+      }
+
       const auditEntry = {
         action: 'archive',
         timestamp: new Date().toISOString(),
-        userId: (req as any).user?.id || 'unknown',
-        username: (req as any).user?.username || 'unknown',
+        userId: req.user?.id || 'unknown',
+        username: req.user?.username || 'unknown',
       };
-      await db.collection('users').doc(id).update({
+
+      await userRef.update({
         archived: true,
         archivedAt: new Date().toISOString(),
-        archivedBy: (req as any).user?.id || 'unknown',
+        archivedBy: req.user?.id || 'unknown',
         auditLog: admin.firestore.FieldValue.arrayUnion(auditEntry)
       });
-      res.json({ success: true, message: 'Arquivado com sucesso.' });
+      return res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
-      return sendDatabaseError(res, error, );
+      return sendDatabaseError(res, error);
     }
   });
 
