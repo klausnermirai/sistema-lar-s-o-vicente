@@ -2117,11 +2117,155 @@ async function startServer() {
   // Cache temporário em memória para deduplicação de mensagens no mural
   const recentMuralPosts = new Map<string, { timestamp: number; result: any }>();
 
+  // Cache institucional bruto do mural. Mantém o histórico normalizado por unidade
+  // para evitar releituras completas frequentes do Firestore.
+  interface MuralRawCacheEntry {
+    messages: any[];
+    loadedAt: number;
+  }
+
+  const muralRawCache = new Map<string, MuralRawCacheEntry>();
+  const MURAL_RAW_CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas
+
+  function normalizeMuralTimestamp(value: any): number {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    if (value && typeof value.toMillis === 'function') {
+      const millis = value.toMillis();
+      return Number.isFinite(millis) ? millis : 0;
+    }
+    if (value && typeof value.toDate === 'function') {
+      const millis = value.toDate().getTime();
+      return Number.isFinite(millis) ? millis : 0;
+    }
+    if (value && typeof value.seconds === 'number') {
+      const nanos = typeof value.nanoseconds === 'number' ? value.nanoseconds : 0;
+      return (value.seconds * 1000) + Math.floor(nanos / 1_000_000);
+    }
+    if (value && typeof value._seconds === 'number') {
+      const nanos = typeof value._nanoseconds === 'number' ? value._nanoseconds : 0;
+      return (value._seconds * 1000) + Math.floor(nanos / 1_000_000);
+    }
+    return 0;
+  }
+
+  function getMuralCacheKey(institutionId: string): string {
+    return getCanonicalInstitutionId(institutionId) || institutionId;
+  }
+
+  function getBrazilDateString(timestampMs: number): string {
+    if (!timestampMs || !Number.isFinite(timestampMs)) return '';
+    return new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date(timestampMs));
+  }
+
+  function normalizeMuralMessage(raw: any, id?: string): any {
+    return {
+      ...raw,
+      ...(id ? { id } : {}),
+      timestamp: normalizeMuralTimestamp(raw?.timestamp)
+    };
+  }
+
+  function sortMuralDesc(messages: any[]): any[] {
+    return messages.sort((a: any, b: any) => {
+      const tsDiff = (b.timestamp || 0) - (a.timestamp || 0);
+      if (tsDiff !== 0) return tsDiff;
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
+  }
+
+  async function loadInstitutionMuralRaw(institutionId: string): Promise<any[]> {
+    const cacheKey = getMuralCacheKey(institutionId);
+    const cached = muralRawCache.get(cacheKey);
+    if (cached && (Date.now() - cached.loadedAt) < MURAL_RAW_CACHE_TTL_MS) {
+      return cached.messages;
+    }
+
+    const canonicalId = getCanonicalInstitutionId(institutionId);
+    const ids = isMonteAltoUnit(canonicalId)
+      ? Array.from(new Set(getMonteAltoQueryIds()))
+      : Array.from(new Set([institutionId, canonicalId].filter(Boolean)));
+
+    let query: any = db.collection('muralMessages');
+    if (ids.length === 1) {
+      query = query.where('institutionId', '==', ids[0]);
+    } else {
+      query = query.where('institutionId', 'in', ids);
+    }
+
+    const snapshot = await query.get();
+    const normalized = sortMuralDesc(
+      snapshot.docs
+        .map((doc: any) => normalizeMuralMessage(doc.data(), doc.id))
+        .filter((item: any) => !item.archived)
+    );
+
+    muralRawCache.set(cacheKey, {
+      messages: normalized,
+      loadedAt: Date.now()
+    });
+
+    return normalized;
+  }
+
+  function updateMuralCacheIfLoaded(institutionId: string, updater: (messages: any[]) => any[]): void {
+    const cacheKey = getMuralCacheKey(institutionId);
+    const cached = muralRawCache.get(cacheKey);
+    if (!cached) return;
+
+    cached.messages = sortMuralDesc(updater([...cached.messages]));
+    cached.loadedAt = Date.now();
+    muralRawCache.set(cacheKey, cached);
+  }
+
+  async function enrichMuralAuthors(messages: any[]): Promise<any[]> {
+    const missingAuthorUserIds = new Set<string>();
+    messages.forEach((msg: any) => {
+      if (!msg.authorDisplayName && !msg.authorName && msg.authorUserId) {
+        missingAuthorUserIds.add(msg.authorUserId);
+      }
+    });
+
+    if (missingAuthorUserIds.size === 0) return messages;
+
+    const authorMap = new Map<string, any>();
+    const idsArray = Array.from(missingAuthorUserIds).slice(0, 30);
+    try {
+      const usersSnap = await db.collection('users').where(FieldPath.documentId(), 'in', idsArray).get();
+      usersSnap.docs.forEach((doc: any) => authorMap.set(doc.id, doc.data()));
+    } catch (err) {
+      console.warn("Aviso ao buscar autores em lote:", err);
+      return messages;
+    }
+
+    return messages.map((msg: any) => {
+      if (!msg.authorDisplayName && !msg.authorName && msg.authorUserId) {
+        const uData = authorMap.get(msg.authorUserId);
+        if (uData) {
+          return {
+            ...msg,
+            authorDisplayName: uData.fullName || uData.username,
+            authorFunction: uData.role || '',
+            authorName: uData.fullName || uData.username,
+            authorRole: uData.role || ''
+          };
+        }
+      }
+      return msg;
+    });
+  }
+
   // Mural Messages
   app.get('/api/mural', requireAuth, async (req: any, res) => {
-    const { institutionId } = req.query;
-    const accessLevel = req.user?.accessLevel;
-    const username = req.user?.username;
+    const { institutionId, date } = req.query;
 
     if (!institutionId || typeof institutionId !== 'string') {
       return res.status(400).json({ error: 'institutionId é obrigatório' });
@@ -2131,81 +2275,39 @@ async function startServer() {
       return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
     }
 
-    const cacheKey = `mural:${institutionId}:${accessLevel || 'guest'}:${username || 'anon'}`;
-    const cached = getFromCache(cacheKey);
-    if (cached) return res.json(cached);
+    if (date && (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
+      return res.status(400).json({ error: 'Data inválida. Use o formato YYYY-MM-DD.' });
+    }
 
     try {
-      const isMonte = isMonteAltoUnit(institutionId as string);
-      let query: any = db.collection('muralMessages');
+      const rawMessages = await loadInstitutionMuralRaw(institutionId);
 
-      if (isMonte) {
-        query = query.where('institutionId', 'in', getMonteAltoQueryIds());
+      let visibleMessages = rawMessages
+        .filter((msg: any) => isUserAuthorizedToViewMuralMessage(req.user, msg));
+
+      if (typeof date === 'string' && date) {
+        visibleMessages = visibleMessages.filter((msg: any) =>
+          getBrazilDateString(msg.timestamp) === date
+        );
       } else {
-        query = query.where('institutionId', '==', institutionId);
+        visibleMessages = visibleMessages.slice(0, 50);
       }
 
-      // Retorna apenas as 50 mensagens mais recentes
-      const snapshot = await query
-        .orderBy('timestamp', 'desc')
-        .limit(50)
-        .get();
-        
-      let messages = snapshot.docs
-        .map(doc => ({ ...doc.data(), id: doc.id }))
-        .filter((item: any) => !item.archived)
-        .reverse(); // Ordena cronologicamente do mais antigo ao mais recente para exibição
-      
-      // Filtra mensagens do mural baseado na visibilidade compartilhada e no usuário
-      const filteredMessages = messages.filter((msg: any) => isUserAuthorizedToViewMuralMessage(req.user, msg));
+      visibleMessages = await enrichMuralAuthors(visibleMessages);
 
-      // Elimina N+1: Usa dados gravados na mensagem ou faz busca em lote única para autores ausentes
-      const missingAuthorUserIds = new Set<string>();
-      filteredMessages.forEach((msg: any) => {
-        if (!msg.authorDisplayName && !msg.authorName && msg.authorUserId) {
-          missingAuthorUserIds.add(msg.authorUserId);
-        }
-      });
-
-      if (missingAuthorUserIds.size > 0) {
-        const authorMap = new Map<string, any>();
-        const idsArray = Array.from(missingAuthorUserIds).slice(0, 30);
-        try {
-          // Busca em lote única
-          const usersSnap = await db.collection('users').where(FieldPath.documentId(), 'in', idsArray).get();
-          usersSnap.docs.forEach(doc => authorMap.set(doc.id, doc.data()));
-        } catch (err) {
-          console.warn("Aviso ao buscar autores em lote:", err);
-        }
-
-        filteredMessages.forEach((msg: any) => {
-          if (!msg.authorDisplayName && !msg.authorName && msg.authorUserId) {
-            const uData = authorMap.get(msg.authorUserId);
-            if (uData) {
-              msg.authorDisplayName = uData.fullName || uData.username;
-              msg.authorFunction = uData.role || '';
-              msg.authorName = msg.authorDisplayName;
-              msg.authorRole = msg.authorFunction;
-            }
-          }
-        });
-      }
-
-      if (filteredMessages) {
-        setToCache(cacheKey, filteredMessages);
-      }
-      res.json(filteredMessages);
+      // O chat exibe do mais antigo para o mais recente.
+      return res.json([...visibleMessages].reverse());
     } catch (error) {
       if (isQuotaError(error)) {
         return res.status(503).json({ error: 'Cota de requisições do banco de dados excedida (RESOURCE_EXHAUSTED). Tente novamente mais tarde.', code: 'RESOURCE_EXHAUSTED' });
       }
       console.error('Error fetching mural:', error);
-      return sendDatabaseError(res, error, );
+      return sendDatabaseError(res, error);
     }
   });
 
   app.post('/api/mural', requireAuth, async (req: any, res) => {
-    const data = req.body;
+    const data = { ...req.body };
     try {
       const user = req.user;
       let targetInstId = data.institutionId ? await getRealInstitutionId(data.institutionId) : '';
@@ -2217,9 +2319,8 @@ async function startServer() {
       }
       data.institutionId = targetInstId;
 
-      if (!data.timestamp) {
-        data.timestamp = Date.now();
-      }
+      const normalizedTimestamp = normalizeMuralTimestamp(data.timestamp);
+      data.timestamp = normalizedTimestamp || Date.now();
 
       // Prevenção contra envio duplicado no servidor (deduplicação por hash de texto + usuário em janela de 5s)
       const authorId = user?.username || data.author || 'anon';
@@ -2228,20 +2329,18 @@ async function startServer() {
       const existing = recentMuralPosts.get(dedupeKey);
 
       if (existing && (now - existing.timestamp < 5000)) {
-        console.log(`[Mural] Post duplicado ignorado para a chave: ${dedupeKey}`);
         return res.json(existing.result);
       }
-      
-      // Auto-identify author from session and record directly onto document to prevent N+1 queries
+
       if (req.user) {
         data.authorUserId = req.user.id;
         data.authorEmail = req.user.username;
-        
+
         let sigTextFallback = req.user.fullName || req.user.username;
         if (req.user.role) {
           sigTextFallback = `${sigTextFallback} — ${req.user.role}`;
         }
-        
+
         data.authorDisplayName = req.user.fullName || req.user.username;
         data.authorFunction = req.user.role || '';
         data.authorSignatureText = sigTextFallback;
@@ -2258,7 +2357,6 @@ async function startServer() {
               const funcaoStr = empData?.funcao || '';
               const conselhoStr = empData?.conselhoProfissional || '';
               const registroStr = empData?.numeroRegistro || '';
-              
               const sigText = funcaoStr ? `${nomeStr} — ${funcaoStr}` : nomeStr;
 
               data.authorFuncionarioId = req.user.funcionarioId;
@@ -2268,7 +2366,6 @@ async function startServer() {
               data.authorProfessionalRegistry = registroStr;
               data.authorRegistryUf = empData?.ufRegistro || '';
               data.authorSignatureText = sigText;
-              
               data.authorName = nomeStr;
               data.authorRole = funcaoStr;
             }
@@ -2279,19 +2376,22 @@ async function startServer() {
       }
 
       const docRef = await db.collection('muralMessages').add(data);
-      const resultObj = { ...data, id: docRef.id };
+      const resultObj = normalizeMuralMessage({ ...data }, docRef.id);
 
-      // Registra no cache de deduplicação
       recentMuralPosts.set(dedupeKey, { timestamp: now, result: resultObj });
-      // Limpa cache antigo se ficar grande
       if (recentMuralPosts.size > 100) {
         for (const [k, v] of recentMuralPosts.entries()) {
           if (now - v.timestamp > 10000) recentMuralPosts.delete(k);
         }
       }
 
+      updateMuralCacheIfLoaded(data.institutionId, (messages) => [
+        resultObj,
+        ...messages.filter((msg: any) => msg.id !== resultObj.id)
+      ]);
+
       await logAudit('create', 'mural', docRef.id, req, data.institutionId, 'Nova mensagem no mural', { title: data.title });
-      
+
       // Enviar notificação para o Telegram
       if (data.institutionId) {
         try {
@@ -2300,20 +2400,17 @@ async function startServer() {
             const settings = settingsDoc.data();
             if (settings?.telegramBotToken && settings?.telegramChatId) {
               const url = `https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`;
-              
               const titlePart = data.title ? `*${data.title}*\n` : '';
-              
+
               let displayName = data.authorName || data.author || 'Usuário';
               let authorLine = `👤 *${displayName}* ${data.authorRole ? `(${data.authorRole})` : ''}\n`;
               if (data.authorSignatureText) {
                 authorLine = `👤 *${data.authorSignatureText}*\n`;
               }
-              const authorPart = authorLine;
-              
+
               const textPart = data.text ? `\n📄 ${data.text}` : '';
               const detailsPart = data.detailedContent ? `\n\n📝 _Detalhes:_\n${data.detailedContent}` : '';
-
-              const message = `🔔 *NOVA MENSAGEM NO MURAL*\n\n${titlePart}${authorPart}${textPart}${detailsPart}`;
+              const message = `🔔 *NOVA MENSAGEM NO MURAL*\n\n${titlePart}${authorLine}${textPart}${detailsPart}`;
 
               await fetch(url, {
                 method: 'POST',
@@ -2331,13 +2428,12 @@ async function startServer() {
         }
       }
 
-      invalidateCache('mural');
-      res.json(resultObj);
+      return res.json(resultObj);
     } catch (error) {
       if (isQuotaError(error)) {
         return res.status(503).json({ error: 'Cota de requisições do banco de dados excedida (RESOURCE_EXHAUSTED). Tente novamente mais tarde.', code: 'RESOURCE_EXHAUSTED' });
       }
-      return sendDatabaseError(res, error, );
+      return sendDatabaseError(res, error);
     }
   });
 
@@ -2347,28 +2443,118 @@ async function startServer() {
       if (!doc.exists) {
         return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
       }
-      const message = { ...doc.data(), id: doc.id };
+      const message = normalizeMuralMessage(doc.data(), doc.id);
       if (!isUserAuthorizedToViewMuralMessage(req.user, message)) {
         return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
       }
-      res.json(message);
+      return res.json(message);
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao buscar mensagem do mural');
     }
   });
 
-  app.delete('/api/mural/:id', requireRole(['administrador', 'gerencial', 'assistente_social', 'enfermeira']), async (req: any, res) => {
+  app.put('/api/mural/:id', requireAuth, async (req: any, res) => {
     try {
-      const doc = await db.collection('muralMessages').doc(req.params.id).get();
+      const docRef = db.collection('muralMessages').doc(req.params.id);
+      const doc = await docRef.get();
       if (!doc.exists) {
         return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
       }
-      if (!isAuthorizedForDocument(req.user, doc.data())) {
+
+      const current: any = doc.data();
+      if (!isAuthorizedForDocument(req.user, current)) {
         return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
       }
-      await db.collection('muralMessages').doc(req.params.id).update({ archived: true });
-      invalidateCache('mural');
-      res.json({ success: true });
+
+      const currentAuthor = String(current.authorEmail || current.author || '').trim().toLowerCase();
+      const requester = String(req.user?.username || req.user?.email || '').trim().toLowerCase();
+      if (!currentAuthor || currentAuthor !== requester) {
+        return res.status(403).json({ error: 'Apenas o autor pode editar esta mensagem.' });
+      }
+
+      const text = String(req.body?.text || '').trim();
+      if (!text) {
+        return res.status(400).json({ error: 'Texto da mensagem é obrigatório.' });
+      }
+
+      await docRef.update({ text, updatedAt: new Date().toISOString() });
+
+      updateMuralCacheIfLoaded(current.institutionId, (messages) =>
+        messages.map((msg: any) =>
+          msg.id === req.params.id ? { ...msg, text, updatedAt: new Date().toISOString() } : msg
+        )
+      );
+
+      return res.json({ success: true, id: req.params.id, text });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao editar mensagem do mural');
+    }
+  });
+
+  app.post('/api/mural/:id/like', requireAuth, async (req: any, res) => {
+    try {
+      const docRef = db.collection('muralMessages').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+
+      const current: any = doc.data();
+      const normalizedCurrent = normalizeMuralMessage(current, doc.id);
+      if (!isUserAuthorizedToViewMuralMessage(req.user, normalizedCurrent)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+
+      const username = String(req.user?.username || '').trim();
+      if (!username) {
+        return res.status(400).json({ error: 'Usuário inválido.' });
+      }
+
+      const likes = Array.isArray(current.likes) ? current.likes.filter(Boolean) : [];
+      const newLikes = likes.includes(username)
+        ? likes.filter((u: string) => u !== username)
+        : [...likes, username];
+
+      await docRef.update({ likes: newLikes });
+
+      updateMuralCacheIfLoaded(current.institutionId, (messages) =>
+        messages.map((msg: any) =>
+          msg.id === req.params.id ? { ...msg, likes: newLikes } : msg
+        )
+      );
+
+      return res.json({ success: true, id: req.params.id, likes: newLikes });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao curtir mensagem do mural');
+    }
+  });
+
+  app.delete('/api/mural/:id', requireRole(['administrador', 'gerencial', 'assistente_social', 'enfermeira']), async (req: any, res) => {
+    try {
+      const docRef = db.collection('muralMessages').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+
+      const current: any = doc.data();
+      if (!isAuthorizedForDocument(req.user, current)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+
+      const currentAuthor = String(current.authorEmail || current.author || '').trim().toLowerCase();
+      const requester = String(req.user?.username || req.user?.email || '').trim().toLowerCase();
+      if (!currentAuthor || currentAuthor !== requester) {
+        return res.status(403).json({ error: 'Apenas o autor pode apagar esta mensagem.' });
+      }
+
+      await docRef.update({ archived: true, archivedAt: new Date().toISOString() });
+
+      updateMuralCacheIfLoaded(current.institutionId, (messages) =>
+        messages.filter((msg: any) => msg.id !== req.params.id)
+      );
+
+      return res.json({ success: true });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao arquivar mensagem do mural');
     }
