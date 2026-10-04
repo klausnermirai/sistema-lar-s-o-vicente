@@ -192,7 +192,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
 
     // 2. Parentes / Familiares de todos os residentes
     residents.forEach(res => {
-      (res.relatives || []).forEach(rel => {
+      (res.relatives || []).filter(rel => !rel.deceased).forEach(rel => {
         const key = `rel_${res.id}_${rel.name.toLowerCase().trim()}`;
         const existing = map.get(key);
         map.set(key, {
