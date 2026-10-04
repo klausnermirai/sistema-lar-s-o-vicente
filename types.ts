@@ -14,6 +14,22 @@ export interface AgendaEvent {
   residentId?: string; // Optional related resident
   type?: 'comum' | 'consulta_exame' | 'atividade_grupo' | 'triagem' | 'salao_festas' | string;
   companion?: string;
+  // Status and lifecycle fields
+  status?: 'agendado' | 'finalizado' | 'cancelado' | 'adiado';
+  cancellationReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  completedAt?: string;
+  completedBy?: string;
+  postponedHistory?: Array<{
+    previousDate: string;
+    previousTime?: string;
+    newDate: string;
+    newTime?: string;
+    reason?: string;
+    postponedAt: string;
+    postponedBy: string;
+  }>;
   // Novos campos para salão de festas
   dates?: string[];
   endTime?: string;
@@ -103,17 +119,41 @@ export interface AssistedFamily {
   createdAt: string;
 }
 
+export interface SystemUnit {
+  id: string;
+  name: string;
+  type: 'conselho_central' | 'conselho_particular' | 'conferencia' | 'obra_unida' | 'lar' | string;
+  cnpj?: string;
+  city?: string;
+  state?: string;
+  parentName?: string;
+}
+
 export interface User {
   id: string;
   institutionId: string;
+  institutionIds?: string[];
+  allowedUnits?: SystemUnit[];
+  hasAllUnitsAccess?: boolean;
   username: string;
   password?: string;
   fullName: string;
   role: string;
   professionalRegistration?: string;
-  accessLevel: 'administrador' | 'assistente_social' | 'psicologia' | 'terapeuta_ocupacional' | 'fisioterapeuta' | 'nutricionista' | 'medico' | 'cuidados';
+  accessLevel: 'administrador' | 'assistente_social' | 'psicologia' | 'terapeuta_ocupacional' | 'fisioterapeuta' | 'nutricionista' | 'medico' | 'cuidados' | 'enfermeira' | 'auxiliar_administrativo' | 'visitante' | 'diretoria' | string;
   institutionType?: InstitutionType;
   funcionarioId?: string;
+  membroId?: string;
+  conferenciaId?: string;
+  particularId?: string;
+  centralId?: string;
+  mustChangePassword?: boolean;
+  isFirstLogin?: boolean;
+  status?: 'ativo' | 'inativo' | string;
+  phone?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Relative {
@@ -123,6 +163,10 @@ export interface Relative {
   phone: string;
   observation: string;
   isResponsible: boolean;
+  document?: string;
+  photoUrl?: string;
+  faceDescriptor?: number[];
+  lastVisitDate?: string;
 }
 
 export interface FamilyMemberRecord {
@@ -132,6 +176,25 @@ export interface FamilyMemberRecord {
   age: string;
   job: string;
   income: string;
+}
+
+export interface RegisteredVisitor {
+  id: string;
+  institutionId: string;
+  name: string;
+  document?: string;
+  phone?: string;
+  type: 'residente' | 'instituicao' | 'ssvp' | 'orgao_fiscalizador';
+  residentId?: string;
+  residentName?: string;
+  kinship?: string;
+  agencyName?: string;
+  conferenceName?: string;
+  photoUrl?: string;
+  faceDescriptor?: number[];
+  createdAt: string;
+  lastVisitDate?: string;
+  totalVisits?: number;
 }
 
 export interface GlobalVisitRecord {
@@ -147,8 +210,16 @@ export interface GlobalVisitRecord {
   agencyName?: string; // orgao_fiscalizador
   conferenceName?: string; // ssvp
   residentId?: string; // residente
+  residentName?: string;
   visitorName?: string; // residente
   kinship?: string; // residente
+  visitorDoc?: string;
+  photoUrl?: string;
+  faceDescriptor?: number[];
+  matchedVia?: 'facial' | 'manual';
+  facialConfidence?: number;
+  timeIn?: string;
+  timeOut?: string;
 }
 
 export interface VisitRecord {
@@ -159,6 +230,10 @@ export interface VisitRecord {
   timeIn: string;
   timeOut: string;
   observation: string;
+  photoUrl?: string;
+  faceDescriptor?: number[];
+  matchedVia?: 'facial' | 'manual';
+  facialConfidence?: number;
 }
 
 export interface FinancialTransaction {
@@ -786,6 +861,40 @@ export interface PhysiotherapyData {
   groupActivities?: GroupActivity[];
 }
 
+export type SocialWorkActionType =
+  | 'atendimento_individual'
+  | 'contato_familia'
+  | 'visita_domiciliar'
+  | 'articulacao_rede'
+  | 'gestao_beneficios'
+  | 'documentacao'
+  | 'pia_social'
+  | 'reuniao_equipe'
+  | 'outro';
+
+export interface SocialWorkEvolution {
+  id: string;
+  date: string;
+  time?: string;
+  type: SocialWorkActionType;
+  title: string;
+  description: string;
+  referrals?: string; // Encaminhamentos / Providências
+  targetPersonOrEntity?: string; // Familiar contatado, órgão/rede envolvida (CRAS, CREAS, INSS, UBS, etc.)
+  contactPhone?: string;
+  professionalName: string;
+  professionalRole?: string;
+  cress?: string;
+  professionalSignature?: string;
+  postToMural?: boolean;
+  timestamp?: number;
+}
+
+export interface SocialWorkData {
+  evolutions?: SocialWorkEvolution[];
+  initialAssessment?: any;
+}
+
 export interface PiaGoalStatus {
   status: 'Em andamento' | 'Atingida' | 'Não atingida' | '';
   reviewDate: string;
@@ -810,12 +919,14 @@ export interface PiaData {
     medical: string;
     occupationalTherapy?: string;
     physiotherapy?: string;
+    socialWork?: string;
   };
   goalsStatus: {
     nutrition: PiaGoalStatus;
     psychology: PiaGoalStatus;
     occupationalTherapy?: PiaGoalStatus;
     physiotherapy?: PiaGoalStatus;
+    socialWork?: PiaGoalStatus;
   };
   revisions: PiaRevision[];
 }
@@ -884,6 +995,7 @@ export interface Resident {
   relatives: Relative[];
   visitRecords: VisitRecord[];
   financials: FinancialTransaction[];
+  initialBalance?: number;
   personalItems: PersonalItem[];
   healthUpdates: HealthUpdate[];
   medications: Medication[];
@@ -916,6 +1028,7 @@ export interface Resident {
   psychology?: PsychologyData;
   occupationalTherapy?: OccupationalTherapyData;
   physiotherapy?: PhysiotherapyData;
+  socialWork?: SocialWorkData;
   pia?: PiaData;
   per?: PerData;
   careNeeds?: {
@@ -953,6 +1066,7 @@ export interface IncidentReport {
   conduct: string;
   visibilidade?: string[];
   professionalName: string;
+  reporterName?: string;
   actions?: { id: string, timestamp: number, user: string, text: string }[];
 }
 
@@ -969,6 +1083,7 @@ export interface ShiftHandover {
   pendingTasks: string;
   visibilidade?: string[];
   professionalName: string;
+  reporterName?: string;
   actions?: { id: string, timestamp: number, user: string, text: string }[];
 }
 
@@ -1118,10 +1233,19 @@ export enum AppRoute {
   EMPLOYEES = 'employees',
   STOCK = 'compras',
   FINANCEIRO = 'financeiro',
+  CONTROLE_FINANCEIRO_IDOSOS = 'controle-financeiro-idosos',
   CENTRAL_INFO = 'central-info',
   CENTRAL_BOARD = 'central-board',
   CENTRAL_OBRAS = 'central-obras',
-  CENTRAL_CONSELHOS = 'central-conselhos'
+  CENTRAL_CONSELHOS = 'central-conselhos',
+  // Rotas Diretas do Novo Layout Vicentino (Guias/Abas)
+  VICENTINO_FAMILIAS = 'vicentino-familias',
+  VICENTINO_MEMBROS = 'vicentino-membros',
+  VICENTINO_CONFERENCIAS = 'vicentino-conferencias',
+  VICENTINO_PARTICULARES = 'vicentino-particulares',
+  VICENTINO_CENTRAL = 'vicentino-central',
+  VICENTINO_METROPOLITANO = 'vicentino-metropolitano',
+  VICENTINO_NACIONAL = 'vicentino-nacional'
 }
 
 export interface OperationalShift {
@@ -1404,6 +1528,7 @@ export interface ConselhoCustomRole {
 }
 
 export interface ConselhoMember {
+  membroId?: string;
   name: string;
   phone: string;
 }
@@ -1498,4 +1623,569 @@ export interface FinanceDonation {
   institutionId?: string;
 }
 
+export interface CarneParcela {
+  numero: number; // 1 to 12
+  mesReferencia: string; // Ex: "Janeiro/2026"
+  vencimento: string; // YYYY-MM-DD
+  valor: number;
+  pago: boolean;
+  dataPagamento?: string; // YYYY-MM-DD
+  formaPagamento?: string; // Pix, Dinheiro, Boleto, Cartão, Transferência, Outro
+  donationId?: string; // ID da FinanceDonation gerada quando foi paga
+  observacao?: string;
+}
+
+export interface CarneWhatsAppLog {
+  id: string;
+  date: string;
+  messageType: 'agradecimento' | 'lembrete';
+  parcelaNumero?: number;
+  textPreview?: string;
+  phone?: string;
+  userResponsible?: string;
+  status: string;
+}
+
+export interface Carne {
+  id?: string;
+  benefactorId: string;
+  benefactorName: string;
+  ano: number; // Ex: 2026
+  valorParcela: number; // Valor base de cada folha
+  totalParcelas: number; // Padrão: 12
+  categoryId?: string; // ID da categoria de receita vinculada (ex: Carnês de mensalidade)
+  categoryName?: string;
+  status: 'ativo' | 'quitado' | 'cancelado';
+  notes?: string;
+  parcelas: CarneParcela[];
+  createdAt?: string;
+  institutionId?: string;
+  whatsappLogs?: CarneWhatsAppLog[];
+  lastWhatsAppAt?: string;
+  lastWhatsAppBy?: string;
+}
+
+export type CaixinhaMovementType = 'entrada' | 'saida';
+export type CaixinhaCategory = 
+  | 'servico_sem_nota' 
+  | 'despesa_miuda' 
+  | 'deposito_bancario' 
+  | 'alimentacao_diaria' 
+  | 'doacao_dinheiro' 
+  | 'carne_dinheiro' 
+  | 'entrada_avulsa' 
+  | 'outro';
+
+export interface CaixinhaMovement {
+  id?: string;
+  type: CaixinhaMovementType;
+  category: CaixinhaCategory;
+  categoryLabel?: string;
+  description: string;
+  value: number;
+  date: string; // YYYY-MM-DD
+  responsible?: string;
+  receiptNumber?: string;
+  originDonationId?: string;
+  institutionId?: string;
+  notes?: string;
+  createdAt?: string;
+  archived?: boolean;
+}
+
+// ==========================================
+// NOVOS TIPOS PARA A HIERARQUIA CONSELHO CENTRAL / CONSELHOS PARTICULARES / CONFERÊNCIAS / MEMBROS
+// ==========================================
+
+export interface LegacyCounts {
+  confrades: number;
+  consocias: number;
+  aspirantes: number;
+}
+
+export interface ConferenciaCountsCache {
+  confrades: number;
+  consocias: number;
+  aspirantes: number;
+  totalMembros: number;
+  lastReconciledAt?: string;
+}
+
+export interface ConselhoParticularCountsCache {
+  totalConferencias: number;
+  totalConfrades: number;
+  totalConsocias: number;
+  totalAspirantes: number;
+  lastReconciledAt?: string;
+}
+
+export interface StandaloneConselhoParticular {
+  id: string; // ID imutável do documento
+  centralId: string; // ID imutável da instituição (Conselho Central pai)
+  name: string;
+  normalizedName: string; // Nome normalizado em CAIXA ALTA sem acentos para busca
+  code?: string;
+  institutionDate?: string; // Data de Fundação / Instituição
+  city?: string;
+  phone?: string;
+  email?: string;
+  // Endereço completo da sede
+  addressStreet?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  addressNeighborhood?: string;
+  addressCity?: string;
+  addressState?: string;
+  addressZip?: string;
+  fullAddress?: string;
+  startDate?: string;
+  endDate?: string;
+  presidente?: ConselhoMember;
+  vicePresidente?: ConselhoMember;
+  secretario?: ConselhoMember;
+  tesoureiro?: ConselhoMember;
+  ecafo?: ConselhoMember;
+  coordenadorCCA?: ConselhoMember;
+  customRoles?: ConselhoCustomRole[];
+  mandateHistory?: ConselhoPastMandate[];
+  countsCache?: ConselhoParticularCountsCache;
+  notes?: string;
+  status: 'ativo' | 'inativo';
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+  migrationId?: string;
+}
+
+export interface StandaloneConferencia {
+  id: string; // ID imutável do documento
+  particularId: string; // ID do Conselho Particular pai
+  centralId: string; // ID da instituição (Conselho Central pai)
+  name: string;
+  normalizedName: string; // Nome normalizado em CAIXA ALTA sem acentos para busca
+  code?: string;
+  foundationDate?: string; // Data de Fundação
+  aggregationDate?: string; // Data de Agregação
+  meetingDay?: string;
+  meetingTime?: string;
+  location?: string;
+  // Endereço completo do local de reuniões / sede
+  addressStreet?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  addressNeighborhood?: string;
+  addressCity?: string;
+  addressState?: string;
+  addressZip?: string;
+  fullAddress?: string;
+  phone?: string;
+  email?: string;
+  startDate?: string;
+  endDate?: string;
+  presidente?: ConselhoMember;
+  vicePresidente?: ConselhoMember;
+  secretario?: ConselhoMember;
+  segundoSecretario?: ConselhoMember;
+  tesoureiro?: ConselhoMember;
+  segundoTesoureiro?: ConselhoMember;
+  legacyCounts?: LegacyCounts; // Contadores estáticos históricos do sistema legado
+  countsCache?: ConferenciaCountsCache; // Cache derivado exclusivamente de membros cadastrados individualmente
+  mandateHistory?: ConferenciaPastMandate[];
+  notes?: string;
+  status: 'ativo' | 'inativo';
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+  migrationId?: string;
+}
+
+export interface MembroSSVP {
+  id: string; // ID imutável do membro
+  conferenciaId: string; // ID da Conferência à qual pertence
+  particularId: string; // ID do Conselho Particular à qual pertence
+  centralId: string; // ID do Conselho Central à qual pertence
+  fullName: string;
+  normalizedName: string; // Nome completo normalizado em CAIXA ALTA sem acentos para busca
+  type: 'confrade' | 'consocia' | 'vicentino' | 'aspirante' | 'afastado' | 'auxiliar';
+  gender?: 'feminino' | 'masculino' | 'outro' | string;
+  birthDate?: string;
+  cpf?: string;
+  profession?: string;
+  // Endereço completo
+  addressStreet?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  addressNeighborhood?: string;
+  addressCity?: string;
+  addressState?: string;
+  addressZip?: string;
+  fullAddress?: string;
+  // Contatos
+  phone?: string; // Telefone celular / WhatsApp
+  normalizedPhone?: string;
+  phoneResidential?: string; // Telefone Residencial
+  phoneCommercial?: string; // Telefone Comercial
+  email?: string;
+  // Datas Vicentinas
+  admissionDate?: string; // Data completa de ingresso
+  acclamationDate?: string; // Data de aclamação
+  proclamationDate?: string; // Data completa de proclamação
+  role?: string;
+  userId?: string; // ID do usuário vinculado na coleção users
+  username?: string; // Nome de usuário de acesso (gerado a partir do primeiro nome)
+  hasAccess?: boolean; // Se possui acesso de login ativo
+  accessStatus?: string; // Status textual do acesso (ex: 'Acesso ativo', 'Acesso pendente — informe a data de nascimento')
+  status: 'ativo' | 'inativo' | 'afastado';
+  origin?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy?: string;
+  migrationId?: string;
+}
+
+export interface AuditLog {
+  id: string;
+  centralId: string;
+  entityType: 'conselho_particular' | 'conferencia' | 'membro_ssvp' | 'institution';
+  entityId: string;
+  action: 'create' | 'update' | 'inactivate' | 'reactivate' | 'transfer' | 'reconcile';
+  changedBy: string;
+  timestamp: string;
+  changes?: Record<string, { before: any; after: any }>;
+  notes?: string;
+}
+
+export interface MigrationLog {
+  migrationId: string;
+  timestamp: string;
+  executedBy: string;
+  dryRun: boolean;
+  centralId: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'rolled_back';
+  counts: {
+    legacyConselhosCount: number;
+    migratedConselhosCount: number;
+    legacyConferenciasCount: number;
+    migratedConferenciasCount: number;
+  };
+  errors?: string[];
+  completedAt?: string;
+}
+
+export interface ConselhoCentralPublicTokenConfig {
+  id: string; // Document ID (usually centralId or token)
+  centralId: string;
+  token: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  revokedAt?: string;
+  createdBy?: string;
+}
+
+export interface PublicConsentRecord {
+  accepted: boolean;
+  acceptedAt: string;
+  termVersion: string;
+  ipHash?: string;
+  userAgentSnippet?: string;
+  isThirdParty?: boolean;
+  representativeName?: string;
+}
+
+export interface SolicitacaoCadastroMembro {
+  id: string;
+  centralId: string;
+  particularId: string;
+  conferenciaId: string;
+  fullName: string;
+  normalizedName: string;
+  type: 'confrade' | 'consocia' | 'vicentino' | 'aspirante' | 'afastado' | 'auxiliar';
+  gender?: 'feminino' | 'masculino' | 'outro' | string;
+  birthDate?: string;
+  cpf?: string;
+  profession?: string;
+  // Endereço completo
+  addressStreet?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  addressNeighborhood?: string;
+  addressCity?: string;
+  addressState?: string;
+  addressZip?: string;
+  fullAddress?: string;
+  // Contatos
+  phone: string;
+  normalizedPhone: string;
+  phoneResidential?: string;
+  phoneCommercial?: string;
+  email?: string;
+  // Datas
+  admissionDate?: string;
+  acclamationDate?: string;
+  proclamationDate?: string;
+  isThirdPartySubmission?: boolean;
+  representativeName?: string;
+  consent: PublicConsentRecord;
+  status:
+    | 'aguardando_aprovacao'
+    | 'aprovado'
+    | 'recusado'
+    | 'processado_automaticamente'
+    | 'aguardando_revisao_duplicidade'
+    | 'parcialmente_processado';
+  rejectionReason?: string;
+  submittedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  membroId?: string;
+  tipo?: 'novo_cadastro' | 'atualizacao_cadastral' | 'complementacao_cadastro';
+  targetMembroId?: string;
+  targetSubmissionId?: string;
+  appliedChanges?: Record<string, any>;
+  requestedChanges?: Record<string, any>;
+  changesSummary?: Record<string, { before: any; after: any }>;
+  requestId?: string;
+  duplicityReasons?: string[];
+  possibleDuplicates?: Array<{ membroId: string; fullName: string; matchedOn: string }>;
+  isTransfer?: boolean;
+  oldParticularId?: string;
+  oldParticularName?: string;
+  oldConferenciaId?: string;
+  oldConferenciaName?: string;
+}
+
+export interface PublicHierarchyStructureResponse {
+  centralName: string;
+  conselhosParticulares: Array<{ id: string; name: string }>;
+  conferencias: Array<{ id: string; particularId: string; name: string }>;
+  termVersion: string;
+  termTitle: string;
+  termText: string;
+}
+
+export interface PublicMemberSubmissionPayload {
+  particularId: string;
+  conferenciaId: string;
+  fullName: string;
+  type: 'confrade' | 'consocia' | 'vicentino' | 'aspirante' | 'afastado' | 'auxiliar';
+  gender?: 'feminino' | 'masculino' | 'outro' | string;
+  birthDate?: string;
+  cpf?: string;
+  profession?: string;
+  addressStreet?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  addressNeighborhood?: string;
+  addressCity?: string;
+  addressState?: string;
+  addressZip?: string;
+  fullAddress?: string;
+  phone: string;
+  phoneResidential?: string;
+  phoneCommercial?: string;
+  email?: string;
+  admissionDate?: string;
+  acclamationDate?: string;
+  proclamationDate?: string;
+  consentAccepted: boolean;
+  termVersion?: string;
+  isThirdPartySubmission?: boolean;
+  representativeName?: string;
+  requestId?: string;
+}
+
+export interface PublicMemberLookupItem {
+  idOpaco: string;
+  fullName: string;
+  type: 'confrade' | 'consocia' | 'vicentino' | 'aspirante' | 'afastado' | 'auxiliar';
+}
+
+export interface PublicMemberMaskedDetails {
+  idOpaco: string;
+  fullName: string;
+  type: 'confrade' | 'consocia' | 'vicentino' | 'aspirante' | 'afastado' | 'auxiliar';
+  gender?: string;
+  profession?: string;
+  particularName: string;
+  conferenciaName: string;
+  maskedPhone: string;
+  maskedPhoneResidential?: string | null;
+  maskedPhoneCommercial?: string | null;
+  maskedCpf?: string | null;
+  maskedEmail: string | null;
+  maskedBirthDate: string | null;
+  maskedAddress?: string | null;
+  addressStreet?: string | null;
+  addressNumber?: string | null;
+  addressComplement?: string | null;
+  addressNeighborhood?: string | null;
+  addressCity?: string | null;
+  addressState?: string | null;
+  addressZip?: string | null;
+  admissionDateStatus: 'informada' | 'nao_informada';
+  acclamationDateStatus: 'informada' | 'nao_informada';
+  proclamationDateStatus: 'informada' | 'nao_informada';
+}
+
+export interface PublicMemberUpdateRequestPayload {
+  fullName?: string;
+  type?: 'confrade' | 'consocia' | 'vicentino' | 'aspirante' | 'afastado' | 'auxiliar';
+  gender?: string;
+  birthDate?: string;
+  cpf?: string;
+  profession?: string;
+  addressStreet?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  addressNeighborhood?: string;
+  addressCity?: string;
+  addressState?: string;
+  addressZip?: string;
+  fullAddress?: string;
+  phone?: string;
+  phoneResidential?: string;
+  phoneCommercial?: string;
+  email?: string;
+  admissionDate?: string;
+  acclamationDate?: string;
+  proclamationDate?: string;
+  particularId?: string;
+  conferenciaId?: string;
+  isThirdPartySubmission?: boolean;
+  representativeName?: string;
+  consentAccepted: boolean;
+  termVersion?: string;
+}
+
+// ==========================================
+// MÓDULO DE FAMÍLIAS ASSISTIDAS E SINDICÂNCIA SSVP
+// ==========================================
+
+export interface MembroFamiliarComposicao {
+  id: string;
+  name: string;
+  birthDate?: string;
+  age?: number;
+  isBatizado: boolean; // Sim/Não
+  kinship?: string; // Parentesco (filho, neto, mãe, etc.)
+  occupation?: string;
+  income?: number;
+}
+
+export interface FichaSindicanciaData {
+  // Cabeçalho e Cadastro Principal
+  assistidoNome: string;
+  assistidoDataNasc?: string;
+  assistidoCpf?: string;
+  assistidoRg?: string;
+  assistidoTelefone?: string;
+  conjugeNome?: string;
+  conjugeDataNasc?: string;
+  
+  // Endereço e Moradia
+  endereco: string;
+  numero?: string;
+  bairro?: string;
+  cidade?: string;
+  estado?: string;
+  cep?: string;
+  complemento?: string;
+  estadoCivil?: 'solteiro' | 'casado' | 'uniao_estavel' | 'divorciado' | 'viuvo' | 'separado' | string;
+  religiao?: string;
+  situacaoMoradia?: 'propria' | 'alugada' | 'cedida' | 'invasao' | 'financiada' | 'outros' | string;
+
+  // Membros da Família
+  membrosFamilia: MembroFamiliarComposicao[];
+
+  // Situação Financeira
+  profissao?: string;
+  quantosTrabalham?: number;
+  valorAluguel?: number;
+  rendaLiquida?: number;
+  assistenciaGoverno?: string; // Bolsa Família, BPC, etc.
+  valorAssistenciaGoverno?: number;
+  outrasRendas?: number;
+
+  // Observações Específicas da Sindicância
+  alguemDoente?: string; // Alguém doente? Precisa de medicação?
+  precisaMedicacao?: boolean;
+  medicacaoDetalhes?: string;
+  participacaoIgreja?: string; // Participação da Igreja?
+  precisamSacramentos?: string; // Precisam dos sacramentos? (Crisma, Matrimônio, Batismo)
+  observacoesGerais?: string; // Demais observações
+
+  // Aprovação e Visitadores da 1ª Visita
+  visitadoresPrimeiraVisita?: string[]; // Nomes ou IDs dos visitadores
+  dataAprovacao?: string; // Data aprovado
+  assinaturaPresidenteNome?: string;
+  statusSindicancia?: 'em_analise' | 'aprovado' | 'reprovado';
+}
+
+export interface VisitaFamiliaSSVP {
+  id: string;
+  familiaId: string;
+  conferenciaId: string;
+  centralId: string;
+  particularId: string;
+  dataVisita: string; // YYYY-MM-DD
+  mesAnoCompetencia: string; // YYYY-MM para controle mensal consolidado
+  visitadoresIds: string[]; // IDs dos membros que visitaram
+  visitadoresNomes: string[]; // Nomes dos membros para facilitar visualização
+  entregueCesta: boolean; // Sim/Não
+  quantidadeCestas?: number;
+  tipoAuxilioExtra?: string; // Ex: Leite, Fralda, Roupas, Medicamento
+  comentarios: string;
+  proximaVisitaAgendada?: string;
+  createdAt: string;
+  createdBy?: string;
+}
+
+export interface FamiliaAssistidaCompleta {
+  id: string;
+  centralId: string;
+  particularId: string;
+  conferenciaId: string;
+  
+  // Dados Resumidos de Busca
+  nomeAssistido: string;
+  cpfAssistido?: string;
+  telefone?: string;
+  enderecoResumido: string;
+  
+  // Status de Ativação / Arquivamento
+  status: 'ativo' | 'arquivado';
+  motivoArquivamento?: 'promocao_social' | 'mudanca' | 'falecimento' | 'desistencia' | 'outro' | string;
+  dataArquivamento?: string;
+  detalhesArquivamento?: string;
+
+  // Dados Completos da Sindicância
+  sindicancia: FichaSindicanciaData;
+
+  // Controle de Cestas e Visitas (Cache / Estatísticas Rápidas)
+  totalVisitasRealizadas: number;
+  totalCestasRecebidas: number;
+  dataUltimaVisita?: string;
+  recebeuCestaMesAtual?: boolean;
+  ultimoMesAnoCesta?: string; // YYYY-MM
+
+  // Metadados
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+}
+
+export interface ControleCestasMensalStats {
+  mesAno: string; // YYYY-MM
+  conferenciaId: string;
+  conferenciaNome?: string;
+  totalFamiliasAtivas: number;
+  totalFamiliasArquivadas: number;
+  totalFamiliasAtendidasComCesta: number;
+  totalCestasEntregues: number;
+  familiasSemCestaNoMes: number;
+}
 

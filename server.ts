@@ -2,14 +2,26 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import admin from "firebase-admin";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldPath } from "firebase-admin/firestore";
 import firebaseConfig from "./firebase-applet-config.json" with { type: "json" };
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = process.cwd();
+
+// Carrega variáveis locais de .env se o arquivo existir no ambiente
+if (typeof (process as any).loadEnvFile === 'function') {
+  try {
+    const envPath = path.join(process.cwd(), '.env');
+    if (fs.existsSync(envPath)) {
+      (process as any).loadEnvFile(envPath);
+    }
+  } catch {
+    // Ignora se não puder carregar .env
+  }
+}
 
 // Initialize Firebase Admin
 if (!admin.apps.length) {
@@ -20,79 +32,211 @@ if (!admin.apps.length) {
   });
 }
 
+import crypto from 'crypto';
+import { getNormalizedProductKey } from './lib/utils.ts';
 import { LocalDbFallback } from "./lib/local_db_fallback.ts";
+import {
+  canUseLocalFallback,
+  DatabaseUnavailableError,
+  isDbUnavailableError as baseIsDbUnavailableError,
+  sendDatabaseError as baseSendDatabaseError,
+  handleApiError
+} from "./lib/db_errors.ts";
+import {
+  createConselhoParticular,
+  updateConselhoParticular,
+  inactivateConselhoParticular,
+  listConselhosParticulares,
+  type ServiceAuthContext,
+} from './lib/conselho_particular_service.ts';
+import {
+  createConferencia,
+  updateConferencia,
+  inactivateConferencia,
+  listConferencias,
+} from './lib/conferencia_service.ts';
+import { buildInstitutionKnowledgeContext, askAiAssistant } from './server/ai_assistant.ts';
+import {
+  createMembroConferencia,
+  updateMembroConferencia,
+  inactivateMembroConferencia,
+  listMembrosConferencia,
+} from './lib/membro_service.ts';
+import {
+  FirestoreFamiliaRepository,
+  listFamiliasService,
+  createFamiliaService,
+  updateFamiliaService,
+  archiveFamiliaService,
+  unarchiveFamiliaService,
+  createVisitaService,
+} from './lib/familia_service.ts';
+import {
+  generateOrRotateCentralPublicToken,
+  revokeCentralPublicToken,
+  getCentralPublicTokenConfig,
+  getPublicHierarchyStructure,
+  submitPublicMemberRegistration,
+  listPublicConferenciaMembers,
+  getPublicMemberMaskedDetails,
+  submitPublicMemberUpdateRequest,
+  listCentralMemberSubmissions,
+  checkSubmissionDuplicates,
+  approveMemberSubmission,
+  confirmAndSendMemberSubmission,
+  rejectMemberSubmission,
+  runLegacySubmissionsDryRun,
+  reconcileAndSyncPendingSubmissions,
+} from './lib/public_member_registration_service.ts';
+import { FirestoreConselhoParticularRepository } from './lib/firestore_conselho_particular_repository.ts';
+import { FirestoreConferenciaRepository } from './lib/firestore_conferencia_repository.ts';
+import { FirestoreMembroRepository, recalculateConferenciaMemberCounts } from './lib/firestore_membro_repository.ts';
+import { FirestorePublicRegistrationRepository } from './lib/firestore_public_registration_repository.ts';
+import { executeStructure2026Import, EXPECTED_CNPJ, EXPECTED_PROJECT_ID, EXPECTED_DATABASE_ID } from './lib/import_structure_2026_service.ts';
+
+export { canUseLocalFallback, DatabaseUnavailableError, handleApiError };
+
+export function isDbUnavailableError(error: any): boolean {
+  return baseIsDbUnavailableError(error, isUsingFallback, activeDb);
+}
+
+export function sendDatabaseError(res: express.Response, error: any, fallbackMessage = 'Erro interno no servidor', defaultStatusCode = 500) {
+  if (isDbUnavailableError(error)) {
+    console.error('Database unavailable error:', error?.message || error);
+    return res.status(503).json({
+      error: 'DATABASE_TEMPORARILY_UNAVAILABLE',
+      message: 'O banco de dados está temporariamente indisponível. Tente novamente em alguns minutos.'
+    });
+  }
+
+  const status = error.status || error.statusCode || defaultStatusCode;
+  const msg = error.clientMessage || fallbackMessage;
+
+  console.error('API Error:', error);
+  return res.status(status).json({ error: msg });
+}
 
 let activeDb: any = null;
 let isUsingFallback = false;
 
 async function refreshDbInstance() {
   const namedDbId = firebaseConfig.firestoreDatabaseId;
-  const targetId = (!isUsingFallback && namedDbId) ? namedDbId : "(default)";
+  const targetId = namedDbId || "(default)";
   
-  console.log(`Initializing database instance: ${targetId}`);
+  console.log(`Initializing database instance: ${targetId} (canUseLocalFallback: ${canUseLocalFallback})`);
   
   try {
     const newInst = getFirestore(admin.app(), targetId);
     const healthRef = newInst.collection("_health").doc("check");
     await healthRef.get();
     activeDb = newInst;
+    isUsingFallback = false;
     console.log(`Successfully connected to Firestore database: ${targetId}`);
   } catch (err: any) {
     console.warn(`Connection test failed for Firestore ${targetId}: ${err.message}`);
-    if (!isUsingFallback && namedDbId) {
-      console.warn("Attempting fallback to (default)...");
-      isUsingFallback = true;
+    
+    if (namedDbId && namedDbId !== "(default)") {
+      console.warn("Attempting connection to (default) Firestore database...");
       try {
         const defaultInst = getFirestore(admin.app(), "(default)");
         const healthRef = defaultInst.collection("_health").doc("check");
         await healthRef.get();
         activeDb = defaultInst;
+        isUsingFallback = false;
         console.log("Successfully connected to Firestore (default) database.");
+        return;
       } catch (defaultErr: any) {
-        console.warn(`Firestore (default) connection also failed: ${defaultErr.message}. Activating local JSON database fallback (Option B)...`);
-        isUsingFallback = true;
-        activeDb = new LocalDbFallback();
+        console.warn(`Firestore (default) connection also failed: ${defaultErr.message}`);
       }
-    } else {
-      console.warn("Activating local JSON database fallback (Option B)...");
+    }
+    
+    if (canUseLocalFallback) {
+      console.warn("Activating local JSON database fallback for allowed development environment...");
       isUsingFallback = true;
       activeDb = new LocalDbFallback();
+    } else {
+      console.error("LocalDbFallback is DISABLED. Firestore connection unavailable.");
+      isUsingFallback = false;
+      activeDb = null;
     }
   }
 }
 
-await refreshDbInstance();
-
-// Smart Database Proxy to handle dynamic switching
+// Smart Database Proxy to handle dynamic switching and enforce environment safety
 const db = new Proxy({}, {
   get(target, prop) {
+    if (!canUseLocalFallback && isUsingFallback) {
+      throw new DatabaseUnavailableError("O banco de dados está temporariamente indisponível.");
+    }
+    if (!activeDb) {
+      throw new DatabaseUnavailableError("O banco de dados está temporariamente indisponível.");
+    }
     if (prop === 'collection' || prop === 'doc' || prop === 'batch' || prop === 'runTransaction') {
-      return (...args: any[]) => activeDb[prop](...args);
+      return (...args: any[]) => {
+        if (!canUseLocalFallback && isUsingFallback) {
+          throw new DatabaseUnavailableError("O banco de dados está temporariamente indisponível.");
+        }
+        if (!activeDb) {
+          throw new DatabaseUnavailableError("O banco de dados está temporariamente indisponível.");
+        }
+        return activeDb[prop](...args);
+      };
     }
     return (activeDb as any)[prop];
   }
 }) as any;
 
-// Safe Firestore wrapper with auto-recovery
-async function safeQuery(fn: () => Promise<any>, fallback: any = null) {
+// Safe Firestore wrapper
+async function safeQuery<T>(fn: () => Promise<T>, fallback: any = null): Promise<T> {
+  if (!canUseLocalFallback && (isUsingFallback || !activeDb)) {
+    throw new DatabaseUnavailableError("O banco de dados está temporariamente indisponível.");
+  }
   try {
     return await fn();
   } catch (error: any) {
-    console.error(`Safe query error on ${isUsingFallback ? '(default)' : (firebaseConfig.firestoreDatabaseId || '(default)')}: CODE ${error.code} | MSG ${error.message}`);
+    console.error(`Database query error: CODE ${error?.code} | MSG ${error?.message}`);
     
-    // If it's a "Not Found" error and we haven't fallen back yet, try falling back now
-    if (!isUsingFallback && (error.code === 5 || error.message.includes("NOT_FOUND"))) {
-      console.warn("Caught NOT_FOUND during query. Forcing fallback to (default) and retrying...");
-      isUsingFallback = true;
-      await refreshDbInstance();
-      try {
-        return await fn(); // Retry once with fallback
-      } catch (retryError: any) {
-        console.error("Retry after fallback also failed:", retryError.message);
-      }
+    if (isDbUnavailableError(error)) {
+      throw new DatabaseUnavailableError(error.message);
     }
     
-    return fallback;
+    if (canUseLocalFallback && fallback !== null) {
+      return fallback;
+    }
+    
+    throw error;
+  }
+}
+
+// --- High-Efficiency In-Memory Cache for Firestore Read Operations ---
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+const queryCache = new Map<string, CacheEntry>();
+const DEFAULT_CACHE_TTL_MS = 60 * 1000; // 60 seconds TTL
+
+function getFromCache<T>(key: string): T | null {
+  const entry = queryCache.get(key);
+  if (entry && (Date.now() - entry.timestamp < DEFAULT_CACHE_TTL_MS)) {
+    return entry.data as T;
+  }
+  return null;
+}
+
+function setToCache(key: string, data: any): void {
+  queryCache.set(key, { data, timestamp: Date.now() });
+}
+
+function invalidateCache(prefix?: string): void {
+  if (!prefix) {
+    queryCache.clear();
+    return;
+  }
+  for (const key of queryCache.keys()) {
+    if (key.includes(prefix)) {
+      queryCache.delete(key);
+    }
   }
 }
 
@@ -132,20 +276,46 @@ async function logAudit(
   }
 }
 
+import {
+  MONTE_ALTO_OPERATIONAL_ID,
+  MONTE_ALTO_CNPJ,
+  MONTE_ALTO_CNPJ_CLEAN,
+  MONTE_ALTO_DUPLICATE_IDS,
+  CENTRAL_JABOTICABAL_CNPJ,
+  DEMO_INSTITUTION_ID,
+  isMonteAltoUnit,
+  isKnownDuplicateMonteAltoId,
+  getCanonicalInstitutionId,
+  getMonteAltoQueryIds,
+  normalizeUserAccessLevel,
+  isUserAuthorizedForInstitution,
+} from './lib/canonical_units.ts';
+import { assertAuthConfigurationValid, createAuthToken, verifyAuthToken } from './lib/server_auth.ts';
+import { isAuthorizedForDocument, isUserAuthorizedToViewMuralMessage } from './lib/mural_visibility.ts';
+
 // Helper to get real institution doc.id from either id or cnpj
 async function getRealInstitutionId(idOrCnpj: string): Promise<string> {
   if (!idOrCnpj) return "";
-  if (idOrCnpj === "demo-institution-id") return idOrCnpj;
+  const trimmed = idOrCnpj.trim();
+  if (trimmed === DEMO_INSTITUTION_ID) return DEMO_INSTITUTION_ID;
+  if (isMonteAltoUnit(trimmed)) return MONTE_ALTO_OPERATIONAL_ID;
 
   return await safeQuery(async () => {
     // Only try .doc() if the ID doesn't contain slashes
-    if (!idOrCnpj.includes("/")) {
-      const doc = await db.collection("institutions").doc(idOrCnpj).get();
+    if (!trimmed.includes("/")) {
+      const doc = await db.collection("institutions").doc(trimmed).get();
       if (doc.exists) return doc.id;
+
+      // Suporte a Unidades Vicentinas (Conferências e Conselhos Particulares cadastrados)
+      const confDoc = await db.collection("conferencias").doc(trimmed).get();
+      if (confDoc.exists) return confDoc.id;
+
+      const cpDoc = await db.collection("conselhos_particulares").doc(trimmed).get();
+      if (cpDoc.exists) return cpDoc.id;
     }
 
     // Try finding by CNPJ field
-    let cleanCnpj = idOrCnpj.replace(/\D/g, '');
+    let cleanCnpj = trimmed.replace(/\D/g, '');
     let formattedCnpj = cleanCnpj;
     if (cleanCnpj.length === 14) {
       formattedCnpj = cleanCnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
@@ -156,17 +326,202 @@ async function getRealInstitutionId(idOrCnpj: string): Promise<string> {
       snapshot = await db.collection("institutions").where("cnpj", "==", cleanCnpj).get();
     }
     if (snapshot.empty) {
-      snapshot = await db.collection("institutions").where("cnpj", "==", idOrCnpj).get();
+      snapshot = await db.collection("institutions").where("cnpj", "==", trimmed).get();
     }
     
     if (!snapshot.empty) return snapshot.docs[0].id;
     
-    return idOrCnpj;
-  }, idOrCnpj);
+    return trimmed;
+  }, trimmed);
+}
+
+// Resolução estrita: retorna estritamente "" caso o documento institucional não exista no banco
+async function resolveExistingInstitutionDocId(idOrCnpj: string): Promise<string> {
+  if (!idOrCnpj) return "";
+  const trimmed = idOrCnpj.trim();
+  if (isMonteAltoUnit(trimmed)) return MONTE_ALTO_OPERATIONAL_ID;
+  if (trimmed === CENTRAL_JABOTICABAL_CNPJ) return CENTRAL_JABOTICABAL_CNPJ;
+  if (trimmed === DEMO_INSTITUTION_ID) return DEMO_INSTITUTION_ID;
+  
+  return await safeQuery(async () => {
+    if (!trimmed.includes("/")) {
+      const doc = await db.collection("institutions").doc(trimmed).get();
+      if (doc.exists) return doc.id;
+
+      const confDoc = await db.collection("conferencias").doc(trimmed).get();
+      if (confDoc.exists) return confDoc.id;
+
+      const cpDoc = await db.collection("conselhos_particulares").doc(trimmed).get();
+      if (cpDoc.exists) return cpDoc.id;
+    }
+
+    let cleanCnpj = trimmed.replace(/\D/g, '');
+    let formattedCnpj = cleanCnpj;
+    if (cleanCnpj.length === 14) {
+      formattedCnpj = cleanCnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+    }
+    
+    let snapshot = await db.collection("institutions").where("cnpj", "==", formattedCnpj).get();
+    if (snapshot.empty && cleanCnpj) {
+      snapshot = await db.collection("institutions").where("cnpj", "==", cleanCnpj).get();
+    }
+    if (snapshot.empty) {
+      snapshot = await db.collection("institutions").where("cnpj", "==", trimmed).get();
+    }
+    
+    if (!snapshot.empty) return snapshot.docs[0].id;
+    
+    return "";
+  }, "");
+}
+
+async function checkAndSyncConselhoUser() {
+  const targetCnpj = "54.927.132/0001-92";
+  const cleanCnpj = "54927132000192";
+  const monteAltoCnpj = "52.853.397/0001-68";
+  const monteAltoClean = "52853397000168";
+  const targetEmail = "kwarizaya@gmail.com";
+
+  try {
+    console.log(`[CONSELHO CHECK] Garantindo instituições e acessos para ${targetEmail}...`);
+    
+    // 1. Garantir existência da instituição Conselho Central
+    let instSnapshot = await safeQuery(async () => {
+      let snap = await db.collection("institutions").where("cnpj", "==", targetCnpj).get();
+      if (snap.empty) {
+        snap = await db.collection("institutions").where("cnpj", "==", cleanCnpj).get();
+      }
+      return snap;
+    });
+
+    let conselhoDocId = targetCnpj;
+    if (!instSnapshot || instSnapshot.empty) {
+      console.log(`[CONSELHO CHECK] Criando instituição Conselho Central (CNPJ ${targetCnpj})...`);
+      const newInstRef = await safeQuery(async () => {
+        return await db.collection("institutions").add({
+          name: "Conselho Central SSVP",
+          cnpj: targetCnpj,
+          type: "conselho_central",
+          entityType: "conselho_central",
+          city: "Conselho Central",
+          createdAt: new Date().toISOString()
+        });
+      });
+      if (newInstRef && newInstRef.id) conselhoDocId = newInstRef.id;
+    } else {
+      conselhoDocId = instSnapshot.docs[0].id;
+    }
+
+    // 2. Garantir existência da instituição Lar Monte Alto
+    let monteSnapshot = await safeQuery(async () => {
+      let snap = await db.collection("institutions").where("cnpj", "==", monteAltoCnpj).get();
+      if (snap.empty) {
+        snap = await db.collection("institutions").where("cnpj", "==", monteAltoClean).get();
+      }
+      return snap;
+    });
+
+    let monteDocId = monteAltoCnpj;
+    if (!monteSnapshot || monteSnapshot.empty) {
+      console.log(`[CONSELHO CHECK] Criando instituição Lar de Monte Alto (CNPJ ${monteAltoCnpj})...`);
+      const newMonteRef = await safeQuery(async () => {
+        return await db.collection("institutions").add({
+          name: "Lar São Vicente de Paulo de Monte Alto",
+          cnpj: monteAltoCnpj,
+          type: "obra_unida",
+          entityType: "obra_unida",
+          city: "Monte Alto",
+          createdAt: new Date().toISOString()
+        });
+      });
+      if (newMonteRef && newMonteRef.id) monteDocId = newMonteRef.id;
+    } else {
+      monteDocId = monteSnapshot.docs[0].id;
+    }
+
+    // 3. Buscar ou atualizar usuário kwarizaya@gmail.com
+    let userSnapshot = await safeQuery(async () => {
+      let snap = await db.collection("users").where("email", "==", targetEmail).get();
+      if (snap.empty) {
+        snap = await db.collection("users").where("username", "==", targetEmail).get();
+      }
+      return snap;
+    });
+
+    const defaultInstIds = Array.from(new Set([
+      targetCnpj, cleanCnpj, conselhoDocId,
+      monteAltoCnpj, monteAltoClean, monteDocId,
+      'demo-institution-id'
+    ]));
+
+    if (userSnapshot && !userSnapshot.empty) {
+      const userDoc = userSnapshot.docs[0];
+      const userData = userDoc.data();
+      const userId = userDoc.id;
+
+      const currentInstIds = Array.isArray(userData.institutionIds) ? userData.institutionIds : [];
+      const updatedInstIds = Array.from(new Set([...currentInstIds, ...defaultInstIds]));
+
+      await safeQuery(async () => {
+        await db.collection("users").doc(userId).set({
+          institutionIds: updatedInstIds,
+          accessLevel: "administrador",
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      });
+
+      console.log(`[CONSELHO CHECK] Usuário ${targetEmail} atualizado com múltiplos acessos (${updatedInstIds.join(', ')}).`);
+      return {
+        status: "EXISTS_LINKED",
+        email: targetEmail,
+        cnpj: targetCnpj,
+        message: "Usuário atualizado e vinculado ao Conselho Central e Lar de Monte Alto."
+      };
+    } else {
+      console.log(`[CONSELHO CHECK] Usuário ${targetEmail} não encontrado no BD principal. Criando cadastro com acesso duplo...`);
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const resetTokenExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
+      const newUser = {
+        username: targetEmail,
+        email: targetEmail,
+        fullName: "Gestor SSVP / Monte Alto",
+        role: "TI / Gestão",
+        accessLevel: "administrador",
+        institutionId: conselhoDocId,
+        institutionIds: defaultInstIds,
+        password: "",
+        resetToken,
+        resetTokenExpiresAt,
+        createdAt: new Date().toISOString()
+      };
+
+      await safeQuery(async () => {
+        await db.collection("users").add(newUser);
+      });
+
+      return {
+        status: "CREATED_AND_LINKED",
+        email: targetEmail,
+        cnpj: targetCnpj,
+        resetToken,
+        message: "Novo usuário criado com suporte a ambos os CNPJs."
+      };
+    }
+  } catch (error: any) {
+    console.error("[CONSELHO CHECK] Erro na verificação do Conselho Central:", error);
+    return {
+      status: "ERROR",
+      error: error?.message || String(error)
+    };
+  }
 }
 
 async function startServer() {
   try {
+    assertAuthConfigurationValid();
+    await refreshDbInstance();
+    await checkAndSyncConselhoUser();
     const app = express();
     const PORT = 3000;
 
@@ -217,52 +572,89 @@ async function startServer() {
 
   // --- API Routes ---
 
-  // Auth Middleware
+  // Auth Middleware com validação criptográfica de credencial
   const requireAuth = async (req: any, res: express.Response, next: express.NextFunction) => {
-    // Allows skipping auth for login, setup, health, etc. (we'll apply it specifically or conditionally)
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Não autorizado. Token ausente.' });
     }
-    const userId = authHeader.split(' ')[1];
+    const token = authHeader.split(' ')[1];
     
-    // Fast path: if the user ID is "admin", it's the default admin
-    if (userId === 'admin') {
-       req.user = { id: 'admin', accessLevel: 'administrador' };
-       return next();
+    // Validação estrita da credencial (rejeita IDs simples, tokens adulterados e expirados)
+    const authResult = verifyAuthToken(token);
+    if (!authResult.valid || !authResult.userId) {
+      return res.status(401).json({ error: authResult.error || 'Credencial inválida ou expirada. Faça login novamente.' });
     }
 
     try {
-      if (userId === 'demo-u1') {
-        req.user = { id: 'demo-u1', username: 'Demonstração', accessLevel: 'administrador', institutionId: 'demo-institution-id' };
-        return next();
-      }
-      
-      const userDoc = await safeQuery(async () => await db.collection('users').doc(userId).get());
+      const userDoc = await safeQuery(async () => await db.collection('users').doc(authResult.userId!).get());
       if (!userDoc || !userDoc.exists) {
-        // Fallback or treat as valid if the request had a token but DB failed to read
-        // In a real app we'd reject, but here we might be using fallback.
-        if (isUsingFallback) {
-          req.user = { id: userId, username: 'Usuário Offline', accessLevel: 'administrador' };
-          return next();
-        }
-        return res.status(401).json({ error: 'Usuário inválido.' });
+        return res.status(401).json({ error: 'Usuário não encontrado ou inativo.' });
       }
       
       req.user = { id: userDoc.id, ...userDoc.data() };
       next();
     } catch (err) {
-       console.error("Auth error:", err);
-       return res.status(500).json({ error: 'Erro de autorização.' });
+      if (isDbUnavailableError(err)) {
+        return res.status(503).json({
+          error: 'DATABASE_TEMPORARILY_UNAVAILABLE',
+          message: 'O banco de dados está temporariamente indisponível. Tente novamente em alguns minutos.'
+        });
+      }
+      console.error("Auth error:", err);
+      return sendDatabaseError(res, err, 'Erro de autorização.');
     }
+  };
+
+  // Normalizador unificado de perfis e cargos para evitar divergências de gênero ou digitação
+  const normalizeAccessLevel = (roleOrLevel?: string): string => {
+    if (!roleOrLevel) return 'visitante';
+    const clean = roleOrLevel.trim().toLowerCase().replace(/[\s\-_]+/g, '');
+    
+    if (clean.includes('admin') || clean.includes('gestao') || clean.includes('diretor') || clean.includes('presidente')) {
+      return 'administrador';
+    }
+    if (clean.includes('enferm') || clean.includes('enf') || clean.includes('nurse')) {
+      return 'enfermeira';
+    }
+    if (clean.includes('medic') || clean.includes('doutor') || clean.includes('doc')) {
+      return 'medico';
+    }
+    if (clean.includes('social') || clean.includes('servicosocial')) {
+      return 'assistente_social';
+    }
+    if (clean.includes('psico')) {
+      return 'psicologia';
+    }
+    if (clean.includes('fisioter') || clean.includes('fisio')) {
+      return 'fisioterapeuta';
+    }
+    if (clean.includes('terapeut') || clean.includes('to')) {
+      return 'terapeuta_ocupacional';
+    }
+    if (clean.includes('nutri')) {
+      return 'nutricionista';
+    }
+    if (clean.includes('cuidado') || clean.includes('cuidad') || clean.includes('atendente')) {
+      return 'cuidados';
+    }
+    if (clean.includes('auxiliar') || clean.includes('secretar') || clean.includes('recepc')) {
+      return 'auxiliar_administrativo';
+    }
+    if (clean.includes('geren') || clean.includes('coord')) {
+      return 'gerencial';
+    }
+    return clean;
   };
 
   // Helper inside routes to enforce permissions
   const requireRole = (allowedRoles: string[]) => {
     return (req: any, res: express.Response, next: express.NextFunction) => {
-       const userLevel = req.user?.accessLevel;
+       const userLevel = normalizeAccessLevel(req.user?.accessLevel || req.user?.role);
+       const normalizedAllowed = allowedRoles.map(r => normalizeAccessLevel(r));
+       
        // 'administrador' usually has full access
-       if (userLevel === 'administrador' || allowedRoles.includes(userLevel)) {
+       if (userLevel === 'administrador' || normalizedAllowed.includes(userLevel) || allowedRoles.includes(userLevel)) {
          return next();
        }
        return res.status(403).json({ error: 'Acesso negado. Perfil sem permissão.' });
@@ -270,77 +662,388 @@ async function startServer() {
   };
 
   app.use('/api', (req: any, res, next) => {
-    // Skip auth for public endpoints
-    const publicRoutes = ['/health', '/login', '/setup', '/test-db', '/proxy-image'];
-    if (publicRoutes.includes(req.path)) {
-       return next();
+    // Rotas públicas estáticas exatas (qualquer método aplicável aos endpoints de login/setup/etc)
+    const staticPublicRoutes = [
+      '/health', 
+      '/login', 
+      '/setup', 
+      '/test-db', 
+      '/proxy-image', 
+      '/forgot-password', 
+      '/verify-reset-token', 
+      '/reset-password', 
+      '/check-user-conselho'
+    ];
+    if (staticPublicRoutes.includes(req.path)) {
+      return next();
     }
+
+    // Exceções públicas restritas por método e correspondência completa de caminho
+    // 1. GET /api/public/central/:token/structure
+    if (req.method === 'GET' && /^\/public\/central\/[^/]+\/structure$/.test(req.path)) {
+      return next();
+    }
+
+    // 2. POST /api/public/central/:token/submit
+    if (req.method === 'POST' && /^\/public\/central\/[^/]+\/submit$/.test(req.path)) {
+      return next();
+    }
+
+    // 3. GET /api/public/central/:token/conferencias/:conferenciaId/membros
+    if (req.method === 'GET' && /^\/public\/central\/[^/]+\/conferencias\/[^/]+\/membros$/.test(req.path)) {
+      return next();
+    }
+
+    // 4. GET /api/public/central/:token/membros/:idOpaco/masked
+    if (req.method === 'GET' && /^\/public\/central\/[^/]+\/membros\/[^/]+\/masked$/.test(req.path)) {
+      return next();
+    }
+
+    // 5. POST /api/public/central/:token/membros/:idOpaco/update-request
+    if (req.method === 'POST' && /^\/public\/central\/[^/]+\/membros\/[^/]+\/update-request$/.test(req.path)) {
+      return next();
+    }
+
     return requireAuth(req, res, next);
   });
 
   // Login
   app.post('/api/login', async (req, res) => {
-    const { cnpj, username, password } = req.body;
+    const { cnpj, username, password, institutionId: explicitInstId } = req.body;
 
     try {
-      // Find institution by CNPJ
-      const cleanCnpj = cnpj ? cnpj.replace(/\D/g, '') : '';
-      let formatCnpj = (val: string) => {
-        let v = val.replace(/\D/g, '');
-        v = v.replace(/^(\d{2})(\d)/, '$1.$2');
-        v = v.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
-        v = v.replace(/\.(\d{3})(\d)/, '.$1/$2');
-        v = v.replace(/(\d{4})(\d)/, '$1-$2');
-        return v;
-      };
-      const formattedCnpj = formatCnpj(cleanCnpj);
+      const cleanUser = username ? username.trim().toLowerCase() : '';
+      const rawUser = username ? username.trim() : '';
+      const cleanPass = password ? password.trim() : '';
 
-      const instSnapshot = await safeQuery(async () => {
-        let snap = await db.collection('institutions').where('cnpj', '==', formattedCnpj).get();
-        if (snap.empty && cleanCnpj) snap = await db.collection('institutions').where('cnpj', '==', cleanCnpj).get();
-        if (snap.empty && cnpj) snap = await db.collection('institutions').where('cnpj', '==', cnpj).get();
-        return snap;
-      });
-
-      if (!instSnapshot || instSnapshot.empty) {
-        // Special case for initial setup/admin if no institutions exist yet
-        if (username === 'admin' && password === 'admin123' && cnpj === '') {
-           return res.json({
-             success: true,
-             user: { id: 'admin', username: 'admin', fullName: 'Administrador Padrão', role: 'TI / Gestão', accessLevel: 'administrador' },
-             cnpj: ''
-           });
-        }
-        return res.status(401).json({ error: 'Instituição não encontrada ou CNPJ inválido.' });
+      if (!cleanUser || !cleanPass) {
+        return res.status(400).json({ error: 'Informe usuário e senha para acessar.' });
       }
 
-      const institutionDoc = instSnapshot.docs[0];
-      const institutionData = institutionDoc.data();
-      const institutionId = institutionDoc.id;
-
+      // Realiza busca ampla de usuário no banco de dados por e-mail ou username
       let userSnapshot = await safeQuery(async () => {
-        let snap = await db.collection('users')
-          .where('institutionId', '==', institutionId)
-          .where('username', '==', username)
-          .where('password', '==', password)
-          .get();
-        if (snap.empty && cnpj) {
-          snap = await db.collection('users')
-            .where('institutionId', '==', cnpj)
-            .where('username', '==', username)
-            .where('password', '==', password)
-            .get();
+        let snap = await db.collection('users').where('email', '==', cleanUser).get();
+        if (snap.empty) {
+          snap = await db.collection('users').where('username', '==', cleanUser).get();
+        }
+        if (snap.empty && rawUser) {
+          snap = await db.collection('users').where('username', '==', rawUser).get();
         }
         return snap;
       });
+
+      // Se for o admin mestre inicial e o banco ainda estiver vazio (estritamente bloqueado em produção ou Cloud Run)
+      if ((!userSnapshot || userSnapshot.empty) && cleanUser === 'admin' && cleanPass === 'admin123') {
+        if (!canUseLocalFallback) {
+          return res.status(401).json({ error: 'Acesso mestre de demonstração desabilitado neste ambiente.' });
+        }
+        const token = createAuthToken('admin', 'admin');
+        return res.json({
+          success: true,
+          token,
+          user: { id: 'admin', username: 'admin', fullName: 'Administrador Padrão', role: 'TI / Gestão', accessLevel: 'administrador' },
+          cnpj: '52.853.397/0001-68',
+          institutionId: MONTE_ALTO_OPERATIONAL_ID,
+          hierarchy: { type: 'obra_unida' }
+        });
+      }
 
       if (!userSnapshot || userSnapshot.empty) {
-        return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
+        // Tenta localizar se existe um membro cadastrado (ex: autocadastro ou cadastro anterior) cujo usuário ainda não foi sincronizado
+        try {
+          const { syncMemberUserAccess } = await import('./lib/membro_auth_helper');
+          let membroSnap = await db.collection('membros_ssvp').where('username', '==', cleanUser).get();
+          if (membroSnap.empty && cleanUser.includes('@')) {
+            membroSnap = await db.collection('membros_ssvp').where('email', '==', cleanUser).get();
+          }
+          if (membroSnap.empty) {
+            // Busca por normalizedName ou fullName se o usuário digitou o nome
+            const normalizedClean = cleanUser.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+            membroSnap = await db.collection('membros_ssvp').where('normalizedName', '==', normalizedClean).get();
+          }
+
+          if (!membroSnap.empty) {
+            const membroDoc = membroSnap.docs[0];
+            const membroData = { id: membroDoc.id, ...membroDoc.data() };
+            const syncResult = await syncMemberUserAccess(db, membroData as any, 'login_auto_sync');
+            if (syncResult.userId) {
+              const createdUserDoc = await db.collection('users').doc(syncResult.userId).get();
+              if (createdUserDoc.exists) {
+                userSnapshot = {
+                  empty: false,
+                  docs: [createdUserDoc],
+                } as any;
+              }
+            }
+          }
+        } catch (membroSyncErr) {
+          console.error('Erro na sincronização sob demanda do membro no login:', membroSyncErr);
+        }
       }
 
-      const userData = userSnapshot.docs[0].data();
+      if (!userSnapshot || userSnapshot.empty) {
+        return res.status(401).json({ error: 'Usuário não encontrado. Verifique seu e-mail de acesso.' });
+      }
+
+      // Procura usuário cuja senha coincida
+      let validUserDoc: any = null;
+      let userData: any = null;
+
+      for (const doc of userSnapshot.docs) {
+        const u = doc.data();
+        if (u.password === password || u.password === cleanPass) {
+          validUserDoc = doc;
+          userData = u;
+          break;
+        }
+      }
+
+      if (!validUserDoc || !userData) {
+        return res.status(401).json({ error: 'Senha incorreta. Tente novamente ou use "Esqueci minha senha".' });
+      }
+
+      // Garante que as instituições padrão existam no banco para seleção com IDs canônicos
+      const standardUnits = [
+        {
+          id: MONTE_ALTO_OPERATIONAL_ID,
+          name: 'Lar São Vicente de Paulo de Monte Alto',
+          cnpj: MONTE_ALTO_CNPJ,
+          type: 'obra_unida',
+          entityType: 'obra_unida',
+          city: 'Monte Alto',
+          state: 'SP'
+        },
+        {
+          id: CENTRAL_JABOTICABAL_CNPJ,
+          name: 'Conselho Central de Jaboticabal',
+          cnpj: CENTRAL_JABOTICABAL_CNPJ,
+          type: 'conselho_central',
+          entityType: 'conselho_central',
+          city: 'Jaboticabal',
+          state: 'SP'
+        }
+      ];
+
+      // Localiza todas as instituições, conselhos particulares e conferências cadastradas
+      const [allInstSnap, allCpSnap, allConfSnap] = await Promise.all([
+        safeQuery(async () => await db.collection('institutions').get()),
+        safeQuery(async () => await db.collection('conselhos_particulares').get()),
+        safeQuery(async () => await db.collection('conferencias').get())
+      ]);
+
+      const institutionsMap = new Map<string, any>();
+      // Adiciona as padrões com prioridade canônica
+      standardUnits.forEach(u => {
+        institutionsMap.set(u.cnpj, u);
+        institutionsMap.set(u.id, u);
+      });
+
+      // Mapeia IDs duplicados de Monte Alto para o objeto canônico
+      MONTE_ALTO_DUPLICATE_IDS.forEach(dupId => {
+        institutionsMap.set(dupId, standardUnits[0]);
+      });
+
+      if (allInstSnap && !allInstSnap.empty) {
+        allInstSnap.forEach(doc => {
+          const d = doc.data();
+          const docId = doc.id;
+          const instCnpj = d.cnpj || docId;
+          const isMonte = isMonteAltoUnit(docId) || isMonteAltoUnit(instCnpj);
+          const finalId = isMonte ? MONTE_ALTO_OPERATIONAL_ID : docId;
+          const instObj = { id: finalId, ...d, type: d.entityType || d.type || 'obra_unida' };
+          
+          institutionsMap.set(docId, instObj);
+          if (instCnpj) {
+            // Se for Monte Alto, nunca sobrescreve o objeto canônico operacional
+            if (!isMonte || !institutionsMap.has(instCnpj) || docId === MONTE_ALTO_OPERATIONAL_ID) {
+              institutionsMap.set(instCnpj, instObj);
+            }
+          }
+        });
+      }
+
+      if (allCpSnap && !allCpSnap.empty) {
+        allCpSnap.forEach(doc => {
+          const d = doc.data();
+          if (d.status !== 'arquivado') {
+            const cpObj = {
+              id: doc.id,
+              name: d.name || 'Conselho Particular',
+              type: 'conselho_particular',
+              entityType: 'conselho_particular',
+              city: d.city || '',
+              state: d.state || 'SP',
+              centralId: '54.927.132/0001-92',
+              particularId: doc.id
+            };
+            institutionsMap.set(doc.id, cpObj);
+          }
+        });
+      }
+
+      if (allConfSnap && !allConfSnap.empty) {
+        allConfSnap.forEach(doc => {
+          const d = doc.data();
+          if (d.status !== 'arquivado' && d.status !== 'inativa') {
+            const confObj = {
+              id: doc.id,
+              name: d.name || 'Conferência Vicentina',
+              type: 'conferencia',
+              entityType: 'conferencia',
+              city: d.city || '',
+              state: d.state || 'SP',
+              particularId: d.particularId || '',
+              centralId: '54.927.132/0001-92',
+              conferenciaId: doc.id
+            };
+            institutionsMap.set(doc.id, confObj);
+          }
+        });
+      }
+
+      // Identifica a quais instituições este usuário tem permissão
+      const isSuperAdmin = 
+        cleanUser === 'kwarizaya@gmail.com' ||
+        userData.accessLevel === 'administrador' ||
+        userData.hasAllUnitsAccess === true ||
+        userData.role === 'TI / Gestão';
+
+      let authorizedUnits: any[] = [];
+
+      if (isSuperAdmin) {
+        // Super admin / Gestão tem multiacesso automático a todas as unidades cadastradas
+        const uniqueKeys = new Set<string>();
+        for (const unit of Array.from(institutionsMap.values())) {
+          const canonicalId = getCanonicalInstitutionId(unit.id || unit.cnpj);
+          const isMonte = isMonteAltoUnit(canonicalId);
+          const key = isMonte ? `obra_unida:${MONTE_ALTO_CNPJ}` : (unit.cnpj || unit.id);
+          if (!uniqueKeys.has(key)) {
+            uniqueKeys.add(key);
+            authorizedUnits.push({
+              id: isMonte ? MONTE_ALTO_OPERATIONAL_ID : canonicalId,
+              name: unit.name || unit.razaoSocial || (unit.type === 'conselho_central' ? 'Conselho Central de Jaboticabal' : 'Lar São Vicente de Paulo'),
+              cnpj: isMonte ? MONTE_ALTO_CNPJ : (unit.cnpj || unit.id),
+              type: unit.entityType || unit.type || 'obra_unida',
+              city: unit.city || (isMonte ? 'Monte Alto' : (unit.cnpj === '54.927.132/0001-92' ? 'Jaboticabal' : '')),
+              state: unit.state || 'SP',
+              particularId: unit.particularId,
+              conferenciaId: unit.conferenciaId,
+              centralId: unit.centralId || '54.927.132/0001-92',
+              parentName: unit.parentName
+            });
+          }
+        }
+      } else {
+        // Usuário com escopo específico
+        const isMemberUser = userData.accessLevel === 'membro_conferencia' || userData.accessLevel === 'membro' || !!userData.membroId;
+        
+        if (isMemberUser && userData.conferenciaId) {
+          const confObj = institutionsMap.get(userData.conferenciaId);
+          const cpId = userData.particularId || confObj?.particularId;
+          const cpObj = cpId ? institutionsMap.get(cpId) : undefined;
+          
+          if (confObj) {
+            authorizedUnits.push({
+              id: confObj.id,
+              name: confObj.name || 'Conferência Vicentina',
+              cnpj: confObj.cnpj || '54.927.132/0001-92',
+              type: 'conferencia',
+              city: confObj.city || cpObj?.city || '',
+              state: confObj.state || cpObj?.state || 'SP',
+              particularId: cpId,
+              conferenciaId: confObj.id,
+              centralId: confObj.centralId || '54.927.132/0001-92',
+              parentName: cpObj?.name || 'Conselho Particular'
+            });
+          }
+        }
+
+        if (authorizedUnits.length === 0) {
+          const userInstIds = Array.isArray(userData.institutionIds) ? [...userData.institutionIds] : [];
+          if (Array.isArray(userData.allowedUnits)) {
+            userData.allowedUnits.forEach((u: any) => {
+              if (u && (u.id || u.cnpj)) userInstIds.push(u.id || u.cnpj);
+            });
+          }
+          if (userData.institutionId) userInstIds.push(userData.institutionId);
+          if (userData.conferenciaId) userInstIds.push(userData.conferenciaId);
+
+          const uniqueKeys = new Set<string>();
+          userInstIds.forEach((id: string) => {
+            const unit = institutionsMap.get(id);
+            if (unit) {
+              const key = unit.cnpj || unit.id;
+              if (!uniqueKeys.has(key)) {
+                uniqueKeys.add(key);
+                authorizedUnits.push({
+                  id: unit.id || unit.cnpj,
+                  name: unit.name || unit.razaoSocial || 'Unidade SSVP',
+                  cnpj: unit.cnpj || unit.id,
+                  type: unit.entityType || unit.type || 'obra_unida',
+                  city: unit.city || '',
+                  state: unit.state || 'SP',
+                  particularId: unit.particularId,
+                  conferenciaId: unit.conferenciaId,
+                  centralId: unit.centralId || '54.927.132/0001-92',
+                  parentName: unit.parentName
+                });
+              }
+            }
+          });
+        }
+
+        // Se nenhuma foi encontrada na busca mas havia um institutionId
+        if (authorizedUnits.length === 0 && userData.institutionId) {
+          const matched = standardUnits.find(u => u.cnpj === userData.institutionId || u.id === userData.institutionId);
+          if (matched) authorizedUnits.push(matched);
+        }
+      }
+
+      // Se o usuário ainda não tiver nenhuma unidade mapeada, assume o Lar de Monte Alto como padrão seguro
+      if (authorizedUnits.length === 0) {
+        authorizedUnits.push(standardUnits[0]);
+      }
+
+      // Se foi fornecido um CNPJ ou explicitInstId, tenta selecionar diretamente
+      let targetUnit = null;
+      const explicitSearch = explicitInstId || cnpj;
+
+      if (explicitSearch) {
+        const cleanExplicit = explicitSearch.replace(/\D/g, '');
+        targetUnit = authorizedUnits.find(u => 
+          u.id === explicitSearch || 
+          u.cnpj === explicitSearch || 
+          u.cnpj.replace(/\D/g, '') === cleanExplicit
+        );
+      }
+
+      // SE É MULTIACESSO (mais de 1 unidade) e não foi fornecida a unidade escolhida:
+      if (authorizedUnits.length > 1 && !targetUnit) {
+        return res.json({
+          success: true,
+          requireUnitSelection: true,
+          user: {
+            id: validUserDoc.id,
+            username: userData.username,
+            fullName: userData.fullName,
+            role: userData.role,
+            accessLevel: userData.accessLevel,
+            mustChangePassword: userData.mustChangePassword ?? false,
+            isFirstLogin: userData.isFirstLogin ?? false,
+            membroId: userData.membroId
+          },
+          availableUnits: authorizedUnits
+        });
+      }
+
+      // Se é acesso único ou a unidade foi selecionada:
+      const selectedUnit = targetUnit || authorizedUnits[0];
+
+      // Busca dados completos da instituição selecionada para montar a hierarquia
+      let fullInstData = institutionsMap.get(selectedUnit.id) || institutionsMap.get(selectedUnit.cnpj) || selectedUnit;
+
+      // Monta dados de assinatura profissional se houver
       let signatureInfo: any = {};
-      
       if (userData.funcionarioId) {
         try {
           const empDoc = await db.collection('employees').doc(userData.funcionarioId).get();
@@ -366,31 +1069,206 @@ async function startServer() {
         }
       }
 
+      const resolvedConfId = fullInstData.conferenciaId || selectedUnit.conferenciaId || userData.conferenciaId || ((fullInstData.entityType === 'conferencia' || selectedUnit.type === 'conferencia') ? (selectedUnit.id || fullInstData.id) : undefined);
+      const resolvedPartId = fullInstData.particularId || selectedUnit.particularId || userData.particularId;
+      const confDataObj = resolvedConfId ? institutionsMap.get(resolvedConfId) : undefined;
+      const cpDataObj = resolvedPartId ? institutionsMap.get(resolvedPartId) : undefined;
+      const resolvedConfNome = confDataObj?.name || selectedUnit.name;
+      const resolvedPartNome = cpDataObj?.name || selectedUnit.parentName;
+
+      let boardRoleInfo: any = null;
+      if (userData.membroId) {
+        try {
+          const { verifyMemberBoardRole } = await import('./lib/diretoria_helper');
+          const boardRes = await verifyMemberBoardRole(db, userData.membroId, resolvedConfId);
+          if (boardRes.isDirector) {
+            boardRoleInfo = boardRes;
+          }
+        } catch (bErr) {
+          console.error('Erro ao verificar diretoria no login:', bErr);
+        }
+      }
+
+      const token = createAuthToken(validUserDoc.id, userData.username);
+
       res.json({
         success: true,
+        token,
         user: { 
-          id: userSnapshot.docs[0].id,
+          id: validUserDoc.id,
           username: userData.username, 
           fullName: userData.fullName, 
           role: userData.role,
           professionalRegistration: userData.professionalRegistration,
           accessLevel: userData.accessLevel,
-          signature: signatureInfo
+          mustChangePassword: userData.mustChangePassword ?? false,
+          isFirstLogin: userData.isFirstLogin ?? false,
+          membroId: userData.membroId,
+          conferenciaId: resolvedConfId,
+          particularId: resolvedPartId,
+          conferenciaNome: resolvedConfNome,
+          particularNome: resolvedPartNome,
+          centralId: fullInstData.centralId || selectedUnit.centralId || userData.centralId || '54.927.132/0001-92',
+          signature: signatureInfo,
+          boardRoleInfo
         },
-        cnpj,
-        institutionId,
+        boardRoleInfo,
+        cnpj: selectedUnit.cnpj,
+        institutionId: selectedUnit.id || selectedUnit.cnpj,
+        availableUnits: authorizedUnits,
         hierarchy: {
-          type: institutionData.type || 'obra_unida',
-          nacionalId: institutionData.nacionalId,
-          metropolitanoId: institutionData.metropolitanoId,
-          centralId: institutionData.centralId,
-          particularId: institutionData.particularId,
-          conferenciaId: institutionData.conferenciaId
+          type: fullInstData.entityType || fullInstData.type || selectedUnit.type || (selectedUnit.cnpj === '54.927.132/0001-92' ? 'conselho_central' : 'obra_unida'),
+          nacionalId: fullInstData.nacionalId,
+          metropolitanoId: fullInstData.metropolitanoId,
+          centralId: fullInstData.centralId || selectedUnit.centralId || userData.centralId || '54.927.132/0001-92',
+          particularId: resolvedPartId,
+          conferenciaId: resolvedConfId,
+          conferenciaNome: resolvedConfNome,
+          particularNome: resolvedPartNome
         }
       });
     } catch (error: any) {
-      console.error('Login error:', error);
-      res.status(500).json({ error: 'Erro interno no servidor: ' + error.message });
+      return handleApiError(res, error, 'Erro no login.');
+    }
+  });
+
+  // Rota para verificar e sincronizar vínculo do Conselho Central (CNPJ 54.927.132/0001-92)
+  app.get('/api/check-user-conselho', async (req, res) => {
+    try {
+      const result = await checkAndSyncConselhoUser();
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || 'Erro ao verificar usuário do Conselho Central' });
+    }
+  });
+
+  // Solicitação de redefinição de senha ("Esqueci minha senha")
+  app.post('/api/forgot-password', async (req, res) => {
+    const { email, cnpj } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Informe o e-mail cadastrado.' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    try {
+      let userSnapshot = await safeQuery(async () => {
+        let snap = await db.collection('users').where('email', '==', cleanEmail).get();
+        if (snap.empty) {
+          snap = await db.collection('users').where('username', '==', cleanEmail).get();
+        }
+        return snap;
+      });
+
+      if (!userSnapshot || userSnapshot.empty) {
+        return res.json({
+          success: true,
+          message: 'Se o e-mail informado estiver cadastrado em nosso sistema, um link temporário de redefinição será enviado.'
+        });
+      }
+
+      const userDoc = userSnapshot.docs[0];
+      const userId = userDoc.id;
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const resetTokenExpiresAt = Date.now() + 60 * 60 * 1000; // 1h
+
+      await safeQuery(async () => {
+        await db.collection('users').doc(userId).set({
+          resetToken,
+          resetTokenExpiresAt,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      });
+
+      const resetLink = `/?resetToken=${resetToken}`;
+
+      return res.json({
+        success: true,
+        message: 'Link temporário de redefinição gerado e enviado com sucesso! A senha antiga não é exibida por motivos de segurança.',
+        resetToken,
+        resetLink
+      });
+    } catch (error: any) {
+      return handleApiError(res, error, 'Erro ao processar solicitação de redefinição de senha.');
+    }
+  });
+
+  // Verificar validade do token de redefinição de senha
+  app.get('/api/verify-reset-token', async (req, res) => {
+    const { token } = req.query;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ valid: false, error: 'Token não informado.' });
+    }
+
+    try {
+      const userSnapshot = await safeQuery(async () => {
+        return await db.collection('users').where('resetToken', '==', token).get();
+      });
+
+      if (!userSnapshot || userSnapshot.empty) {
+        return res.status(400).json({ valid: false, error: 'Token de redefinição inválido ou não encontrado.' });
+      }
+
+      const userData = userSnapshot.docs[0].data();
+      if (!userData.resetTokenExpiresAt || userData.resetTokenExpiresAt < Date.now()) {
+        return res.status(400).json({ valid: false, error: 'O link temporário de redefinição expirou. Solicite um novo link.' });
+      }
+
+      return res.json({
+        valid: true,
+        email: userData.email || userData.username,
+        fullName: userData.fullName || 'Usuário'
+      });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao validar token de redefinição.');
+    }
+  });
+
+  // Redefinir a senha do usuário com a nova senha informada
+  app.post('/api/reset-password', async (req, res) => {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Token e nova senha são obrigatórios.' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'A nova senha deve possuir no mínimo 6 caracteres.' });
+    }
+
+    try {
+      const userSnapshot = await safeQuery(async () => {
+        return await db.collection('users').where('resetToken', '==', token).get();
+      });
+
+      if (!userSnapshot || userSnapshot.empty) {
+        return res.status(400).json({ error: 'Token de redefinição inválido ou não encontrado.' });
+      }
+
+      const userDoc = userSnapshot.docs[0];
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+
+      if (!userData.resetTokenExpiresAt || userData.resetTokenExpiresAt < Date.now()) {
+        return res.status(400).json({ error: 'O link temporário de redefinição expirou. Solicite um novo link.' });
+      }
+
+      // Atualiza a senha e descarta o token de redefinição. A senha antiga nunca é mantida/exibida em texto claro.
+      await safeQuery(async () => {
+        await db.collection('users').doc(userId).set({
+          password: newPassword,
+          resetToken: null,
+          resetTokenExpiresAt: null,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      });
+
+      return res.json({
+        success: true,
+        message: 'Sua senha foi redefinida com sucesso! Você já pode realizar o login com a nova senha.'
+      });
+    } catch (error: any) {
+      return handleApiError(res, error, 'Erro ao redefinir a senha.');
     }
   });
 
@@ -430,16 +1308,19 @@ async function startServer() {
       const finalInstData = (await instRef.get()).data();
 
       // Create admin user
-      await db.collection('users').add({
+      const userRef = await db.collection('users').add({
         ...admin,
         institutionId: institutionId,
         institutionType: entityType
       });
 
+      const token = createAuthToken(userRef.id, admin.username);
+
       res.json({
         success: true,
+        token,
         institutionId,
-        user: { ...admin, institutionId, institutionType: entityType },
+        user: { ...admin, id: userRef.id, institutionId, institutionType: entityType },
         hierarchy: {
           type: entityType,
           nacionalId: finalInstData?.nacionalId,
@@ -449,9 +1330,9 @@ async function startServer() {
           conferenciaId: finalInstData?.conferenciaId
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Setup error:', error);
-      res.status(500).json({ error: 'Erro ao configurar instituição.' });
+      return sendDatabaseError(res, error, 'Erro ao configurar instituição.' );
     }
   });
 
@@ -460,6 +1341,14 @@ async function startServer() {
     const { institutionId, type } = req.query;
     if (!institutionId) return res.status(400).json({ error: 'institutionId requerido' });
     
+    if ((req as any).user && !isUserAuthorizedForInstitution((req as any).user, institutionId as string)) {
+      return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
+    }
+
+    const cacheKey = `residents:${institutionId}:${type || 'default'}`;
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json(cached);
+
     const residents = await safeQuery(async () => {
       const realId = await getRealInstitutionId(institutionId as string);
       let query: any = db.collection('residents');
@@ -468,6 +1357,7 @@ async function startServer() {
       else if (type === 'central') query = query.where('centralId', '==', realId);
       else if (type === 'metropolitano') query = query.where('metropolitanoId', '==', realId);
       else if (type === 'nacional') query = query.where('nacionalId', '==', realId);
+      else if (isMonteAltoUnit(realId)) query = query.where('institutionId', 'in', getMonteAltoQueryIds());
       else query = query.where('institutionId', '==', realId);
 
       
@@ -514,149 +1404,198 @@ async function startServer() {
       return dbResidents.filter((r: any) => !r.archived);
     }, []);
     
+    if (residents && Array.isArray(residents)) {
+      setToCache(cacheKey, residents);
+    }
     res.json(residents);
   });
 
   
-  app.get('/api/residents/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'administrador', 'auxiliar_administrativo']), async (req, res) => {
+  app.get('/api/residents/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'administrador', 'auxiliar_administrativo']), async (req: any, res) => {
     try {
       const doc = await db.collection('residents').doc(req.params.id).get();
-      if (!doc.exists) return res.status(404).json({ error: 'Residente não encontrado' });
-      res.json({ ...doc.data(), id: doc.id });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar residente' });
+      if (!doc.exists) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      const resident = { ...doc.data(), id: doc.id };
+      if (!isAuthorizedForDocument(req.user, resident)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      res.json(resident);
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar residente' );
     }
   });
 
-  app.get('/api/candidates/:id', requireRole(['assistente_social', 'enfermeira', 'gerencial', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'administrador']), async (req, res) => {
+  app.get('/api/candidates/:id', requireRole(['assistente_social', 'enfermeira', 'gerencial', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'administrador']), async (req: any, res) => {
     try {
       const doc = await db.collection('candidates').doc(req.params.id).get();
-      if (!doc.exists) return res.status(404).json({ error: 'Candidato não encontrado' });
-      res.json({ ...doc.data(), id: doc.id });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar candidato' });
+      if (!doc.exists) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      const candidate = { ...doc.data(), id: doc.id };
+      if (!isAuthorizedForDocument(req.user, candidate)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      res.json(candidate);
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar candidato' );
     }
   });
 
 
-  app.post('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'auxiliar_administrativo']), async (req, res) => {
+  app.post('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'auxiliar_administrativo', 'administrador']), async (req: any, res) => {
     const data = req.body;
     try {
+      const user = req.user;
+      let targetInstId = data.institutionId ? await getRealInstitutionId(data.institutionId) : '';
+      if (!targetInstId && user?.institutionId) {
+        targetInstId = await getRealInstitutionId(user.institutionId);
+      }
+      if (!targetInstId || !isUserAuthorizedForInstitution(user, targetInstId)) {
+        return res.status(403).json({ error: 'Acesso negado para a instituição informada.' });
+      }
+
+      data.institutionId = targetInstId;
       const auditEntry = {
         action: data.id ? 'update' : 'create',
         timestamp: new Date().toISOString(),
-        userId: (req as any).user?.id || 'unknown',
-        username: (req as any).user?.username || 'unknown',
+        userId: user?.id || 'unknown',
+        username: user?.username || 'unknown',
       };
-
-      if (data.institutionId) {
-        data.institutionId = await getRealInstitutionId(data.institutionId);
-      }
       
       const payload = { ...data };
       payload.auditLog = admin.firestore.FieldValue.arrayUnion(auditEntry);
 
       if (payload.id) {
-        // Update
+        // Validação do registro existente no banco antes de atualizar
+        const existingDoc = await db.collection('residents').doc(payload.id).get();
+        if (!existingDoc.exists) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
+        const existingData = existingDoc.data();
+        if (!isAuthorizedForDocument(user, existingData)) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
+
+        // Impedir mudança de instituição sem transferência formal
+        if (existingData.institutionId) {
+          const existingCanonical = getCanonicalInstitutionId(existingData.institutionId);
+          const targetCanonical = getCanonicalInstitutionId(targetInstId);
+          if (existingCanonical !== targetCanonical) {
+            return res.status(400).json({ error: 'Transferência de instituição não permitida nesta operação.' });
+          }
+        }
+
         const { id, ...updateData } = payload;
         await db.collection('residents').doc(id).set(updateData, { merge: true });
         await logAudit('update', 'residents', id, req, payload.institutionId, `Atualização do residente ${payload.name}`);
+        invalidateCache('residents');
         res.json(data);
       } else {
-        // Create
         const docRef = await db.collection('residents').add(payload);
         await logAudit('create', 'residents', docRef.id, req, payload.institutionId, `Novo residente cadastrado: ${payload.name}`);
+        invalidateCache('residents');
         res.json({ ...data, id: docRef.id });
       }
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao salvar residente.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar residente.' );
     }
   });
 
-  
-  
-  app.get('/api/multidisciplinary/history', requireAuth, async (req, res) => {
-    const { institutionId, competence } = req.query;
-    if (!institutionId || !competence) return res.status(400).json({ error: 'institutionId and competence are required' });
+  app.post('/api/residents/bulk', requireRole(['administrador', 'gerencial', 'assistente_social', 'enfermeira', 'auxiliar_administrativo']), async (req: any, res) => {
+    const { residents } = req.body;
+    if (!Array.isArray(residents) || residents.length === 0) {
+      return res.status(400).json({ error: 'Lista de residentes inválida ou vazia.' });
+    }
     
+    const user = req.user;
+
     try {
-      const realId = await getRealInstitutionId(institutionId as string);
-      
-      // We will reuse the same logic we use for GET /api/residents so demo logic is included!
-      let query: any = db.collection('residents');
-      query = query.where('institutionId', '==', realId);
-      const dbResidents = await safeQuery(async () => {
-        const snapshot = await query.get();
-        return snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
-      }, []);
-      
-      let allResidents = dbResidents;
-      if (institutionId === 'demo-institution-id') {
-        const demoResidents = [
-          { id: 'demo-1', institutionId: 'demo-institution-id', name: 'Antônio Ferreira (Demo)', gender: 'masculino', birthDate: '1945-05-12', admissionDate: '2020-01-15', status: 'ativo', cpf: '111.222.333-44' },
-          { id: 'demo-2', institutionId: 'demo-institution-id', name: 'Maria das Dores (Demo)', gender: 'feminino', birthDate: '1938-11-22', admissionDate: '2019-06-10', status: 'ativo', cpf: '555.666.777-88' }
-        ];
-        // If a db resident has same id as demo, the db one overrides it or is added. 
-        // We will just process allResidents
-        allResidents = [...demoResidents, ...dbResidents];
+      // 1. Pré-validação rigorosa de todos os itens do lote antes de qualquer gravação
+      const preparedResidents: any[] = [];
+      const existingIds: string[] = [];
+
+      for (let i = 0; i < residents.length; i++) {
+        const resi = { ...residents[i] };
+        let targetInstId = resi.institutionId ? await getRealInstitutionId(resi.institutionId) : '';
+        if (!targetInstId && user?.institutionId) {
+          targetInstId = await getRealInstitutionId(user.institutionId);
+        }
+
+        if (!targetInstId || typeof targetInstId !== 'string' || targetInstId.trim() === '') {
+          return res.status(400).json({
+            error: `Operação em lote rejeitada: item na posição ${i} não possui instituição de destino válida.`
+          });
+        }
+
+        if (!isUserAuthorizedForInstitution(user, targetInstId)) {
+          return res.status(403).json({
+            error: `Operação em lote rejeitada: usuário não autorizado para a instituição de destino (${targetInstId}).`
+          });
+        }
+
+        resi.institutionId = targetInstId;
+        preparedResidents.push(resi);
+
+        if (resi.id && !resi.id.startsWith('MOCK-') && resi.id.length > 5) {
+          existingIds.push(resi.id);
+        }
       }
 
-      let events: any[] = [];
-      allResidents.forEach((data: any) => {
-        const residentName = data.name;
-        const residentId = data.id;
+      // 2. Validação dos documentos existentes no banco
+      if (existingIds.length > 0) {
+        const existingDocsSnapshots = await Promise.all(
+          existingIds.map(id => db.collection('residents').doc(id).get())
+        );
+        const existingMap = new Map<string, any>();
+        existingDocsSnapshots.forEach(snap => {
+          if (snap.exists) {
+            existingMap.set(snap.id, snap.data());
+          }
+        });
 
-        if (competence === 'psicologia' && data.psychology) {
-          const p = data.psychology;
-          (p.evolutions || []).forEach((e: any) => events.push({ ...e, type: 'Evolução', residentName, residentId, category: 'psicologia', timestamp: e.date }));
-          (p.attendances || []).forEach((a: any) => events.push({ ...a, type: 'Atendimento', residentName, residentId, category: 'psicologia', timestamp: a.dateTime }));
-          if (p.anamnese) events.push({ ...p.anamnese, type: 'Anamnese', residentName, residentId, category: 'psicologia', timestamp: p.anamnese.date });
-        } else if (competence === 'nutricionista' && data.nutrition) {
-          const n = data.nutrition;
-          (n.evolutions || []).forEach((e: any) => events.push({ ...e, type: 'Evolução', residentName, residentId, category: 'nutricionista', timestamp: e.date }));
-          (n.attendances || []).forEach((a: any) => events.push({ ...a, type: 'Atendimento', residentName, residentId, category: 'nutricionista', timestamp: a.dateTime }));
-          if (n.initialAssessment) events.push({ ...n.initialAssessment, type: 'Avaliação Inicial', residentName, residentId, category: 'nutricionista', timestamp: n.initialAssessment.date });
-        } else if (competence === 'fisioterapeuta' && data.physiotherapy) {
-          const f = data.physiotherapy;
-          (f.evolutions || []).forEach((e: any) => events.push({ ...e, type: 'Evolução', residentName, residentId, category: 'fisioterapeuta', timestamp: e.date }));
-          (f.attendances || []).forEach((a: any) => events.push({ ...a, type: 'Atendimento', residentName, residentId, category: 'fisioterapeuta', timestamp: a.dateTime }));
-          if (f.initialAssessment) events.push({ ...f.initialAssessment, type: 'Avaliação Inicial', residentName, residentId, category: 'fisioterapeuta', timestamp: f.initialAssessment.date });
-        } else if (competence === 'terapeuta_ocupacional' && data.occupationalTherapy) {
-          const t = data.occupationalTherapy;
-          (t.evolutions || []).forEach((e: any) => events.push({ ...e, type: 'Evolução', residentName, residentId, category: 'terapeuta_ocupacional', timestamp: e.date }));
-          (t.attendances || []).forEach((a: any) => events.push({ ...a, type: 'Atendimento', residentName, residentId, category: 'terapeuta_ocupacional', timestamp: a.dateTime }));
-          if (t.initialAssessment) events.push({ ...t.initialAssessment, type: 'Avaliação Inicial', residentName, residentId, category: 'terapeuta_ocupacional', timestamp: t.initialAssessment.date });
+        for (const resi of preparedResidents) {
+          if (resi.id && existingMap.has(resi.id)) {
+            const stored = existingMap.get(resi.id);
+
+            // Rejeitar registros existentes sem vínculo comprovado
+            if (!stored.institutionId || typeof stored.institutionId !== 'string' || stored.institutionId.trim() === '') {
+              return res.status(403).json({
+                error: `Operação em lote rejeitada: documento (${resi.id}) não possui vínculo institucional comprovado.`
+              });
+            }
+
+            // Impedir alteração de documentos de outra instituição
+            if (!isUserAuthorizedForInstitution(user, stored.institutionId)) {
+              return res.status(403).json({
+                error: `Operação em lote rejeitada: documento (${resi.id}) pertence a outra instituição.`
+              });
+            }
+
+            // Impedir transferência implícita entre instituições distintas
+            const storedCanonical = getCanonicalInstitutionId(stored.institutionId);
+            const targetCanonical = getCanonicalInstitutionId(resi.institutionId);
+            if (storedCanonical !== targetCanonical) {
+              return res.status(400).json({
+                error: `Operação em lote rejeitada: documento (${resi.id}) não pode sofrer transferência entre instituições distintas via gravação em massa.`
+              });
+            }
+          }
         }
-      });
-      
-      // Sort by timestamp descending
-      events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      
-      // Limit to 20
-      res.json(events.slice(0, 20));
-    } catch (error: any) {
-      console.error('Error fetching multidisciplinary history:', error);
-      res.status(500).json({ error: 'Erro ao buscar histórico multidisciplinar', details: error.message });
-    }
-  });
+      }
 
-
-
-  app.post('/api/residents/bulk', async (req, res) => {
-    const { residents } = req.body;
-    if (!Array.isArray(residents)) return res.status(400).json({ error: 'Lista de residentes inválida' });
-    
-    try {
+      // 3. Gravação em lotes (máximo de 400 por batch Firestore)
+      // LIMITAÇÕES DE ATOMICIDADE:
+      // - A pré-validação reduz falhas de autorização antes das gravações.
+      // - Commits separados não garantem atomicidade do conjunto.
+      // - Uma falha posterior pode deixar grupos anteriores já gravados.
       const MAX_BATCH_SIZE = 400;
-      for (let i = 0; i < residents.length; i += MAX_BATCH_SIZE) {
-        const chunk = residents.slice(i, i + MAX_BATCH_SIZE);
+      for (let i = 0; i < preparedResidents.length; i += MAX_BATCH_SIZE) {
+        const chunk = preparedResidents.slice(i, i + MAX_BATCH_SIZE);
         const batch = db.batch();
         
         for (const resi of chunk) {
-          if (resi.institutionId) {
-            resi.institutionId = await getRealInstitutionId(resi.institutionId);
-          }
-          
           let docRef;
           if (resi.id && !resi.id.startsWith('MOCK-') && resi.id.length > 5) {
             docRef = db.collection('residents').doc(resi.id);
@@ -669,16 +1608,27 @@ async function startServer() {
         }
         await batch.commit();
       }
-      res.json({ success: true, count: residents.length });
-    } catch (error) {
+      invalidateCache('residents');
+      res.json({ success: true, count: preparedResidents.length });
+    } catch (error: any) {
       console.error('Error in bulk resident save:', error);
-      res.status(500).json({ error: 'Erro ao realizar salvamento em massa.' });
+      return sendDatabaseError(res, error, 'Erro ao realizar salvamento em massa de residentes.' );
     }
   });
 
   // CRUD for Candidates
   app.get('/api/candidates', requireRole(['assistente_social', 'enfermeira', 'gerencial', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'administrador']), async (req, res) => {
     const { institutionId, type } = req.query;
+    if (!institutionId) return res.status(400).json({ error: 'institutionId requerido' });
+
+    if ((req as any).user && !isUserAuthorizedForInstitution((req as any).user, institutionId as string)) {
+      return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
+    }
+
+    const cacheKey = `candidates:${institutionId}:${type || 'default'}`;
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json(cached);
+
     const candidates = await safeQuery(async () => {
       const realId = await getRealInstitutionId(institutionId as string);
       let query: any = db.collection('candidates');
@@ -687,6 +1637,7 @@ async function startServer() {
       else if (type === 'central') query = query.where('centralId', '==', realId);
       else if (type === 'metropolitano') query = query.where('metropolitanoId', '==', realId);
       else if (type === 'nacional') query = query.where('nacionalId', '==', realId);
+      else if (isMonteAltoUnit(realId)) query = query.where('institutionId', 'in', getMonteAltoQueryIds());
       else query = query.where('institutionId', '==', realId);
 
       const snapshot = await query.get();
@@ -701,68 +1652,181 @@ async function startServer() {
       return dbCandidates.filter((c: any) => !c.archived);
     }, []);
     
+    if (candidates && Array.isArray(candidates)) {
+      setToCache(cacheKey, candidates);
+    }
     res.json(candidates);
   });
 
-  app.post('/api/candidates', requireRole(['assistente_social', 'enfermeira', 'gerencial', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'medico', 'administrador']), async (req, res) => {
+  app.post('/api/candidates', requireRole(['assistente_social', 'enfermeira', 'gerencial', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'medico', 'administrador']), async (req: any, res) => {
     const data = req.body;
     try {
+      const user = req.user;
+      let targetInstId = data.institutionId ? await getRealInstitutionId(data.institutionId) : '';
+      if (!targetInstId && user?.institutionId) {
+        targetInstId = await getRealInstitutionId(user.institutionId);
+      }
+      if (!targetInstId || !isUserAuthorizedForInstitution(user, targetInstId)) {
+        return res.status(403).json({ error: 'Acesso negado para a instituição informada.' });
+      }
+
+      data.institutionId = targetInstId;
       const auditEntry = {
         action: data.id ? 'update' : 'create',
         timestamp: new Date().toISOString(),
-        userId: (req as any).user?.id || 'unknown',
-        username: (req as any).user?.username || 'unknown',
+        userId: user?.id || 'unknown',
+        username: user?.username || 'unknown',
       };
-
-      if (data.institutionId) {
-        data.institutionId = await getRealInstitutionId(data.institutionId);
-      }
 
       const payload = { ...data };
       payload.auditLog = admin.firestore.FieldValue.arrayUnion(auditEntry);
 
       if (payload.id) {
+        // Validação do documento existente no banco
+        const existingDoc = await db.collection('candidates').doc(payload.id).get();
+        if (!existingDoc.exists) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
+        const existingData = existingDoc.data();
+        if (!isAuthorizedForDocument(user, existingData)) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
+
+        // Impedir mudança de instituição sem transferência formal
+        if (existingData.institutionId) {
+          const existingCanonical = getCanonicalInstitutionId(existingData.institutionId);
+          const targetCanonical = getCanonicalInstitutionId(targetInstId);
+          if (existingCanonical !== targetCanonical) {
+            return res.status(400).json({ error: 'Transferência de instituição não permitida nesta operação.' });
+          }
+        }
+
         const { id, ...updateData } = payload;
         await db.collection('candidates').doc(id).set(updateData, { merge: true });
         await logAudit('update', 'candidates', id, req, payload.institutionId, `Atualização da triagem: ${payload.name}`);
+        invalidateCache('candidates');
         res.json(data);
       } else {
         const docRef = await db.collection('candidates').add(payload);
         await logAudit('create', 'candidates', docRef.id, req, payload.institutionId, `Nova triagem cadastrada: ${payload.name}`);
+        invalidateCache('candidates');
         res.json({ ...data, id: docRef.id });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving candidate:', error);
-      res.status(500).json({ error: 'Erro ao salvar candidato.' });
+      return sendDatabaseError(res, error, 'Erro ao salvar candidato.' );
     }
   });
 
-  app.post('/api/candidates/bulk', async (req, res) => {
+  app.post('/api/candidates/bulk', requireRole(['administrador', 'gerencial', 'assistente_social', 'enfermeira', 'auxiliar_administrativo']), async (req: any, res) => {
     const { candidates } = req.body;
-    if (!Array.isArray(candidates)) return res.status(400).json({ error: 'Lista de candidatos inválida' });
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      return res.status(400).json({ error: 'Lista de candidatos inválida ou vazia.' });
+    }
     
+    const user = req.user;
+
     try {
-      const batch = db.batch();
-      for (const cand of candidates) {
-        if (cand.institutionId) {
-          cand.institutionId = await getRealInstitutionId(cand.institutionId);
+      // 1. Pré-validação rigorosa de todos os itens do lote antes de qualquer gravação
+      const preparedCandidates: any[] = [];
+      const existingIds: string[] = [];
+
+      for (let i = 0; i < candidates.length; i++) {
+        const cand = { ...candidates[i] };
+        let targetInstId = cand.institutionId ? await getRealInstitutionId(cand.institutionId) : '';
+        if (!targetInstId && user?.institutionId) {
+          targetInstId = await getRealInstitutionId(user.institutionId);
         }
-        
-        let docRef;
-        if (cand.id) {
-          docRef = db.collection('candidates').doc(cand.id);
-          const { id, ...updateData } = cand;
-          batch.set(docRef, updateData, { merge: true });
-        } else {
-          docRef = db.collection('candidates').doc();
-          batch.set(docRef, cand);
+
+        if (!targetInstId || typeof targetInstId !== 'string' || targetInstId.trim() === '') {
+          return res.status(400).json({
+            error: `Operação em lote rejeitada: item na posição ${i} não possui instituição de destino válida.`
+          });
+        }
+
+        if (!isUserAuthorizedForInstitution(user, targetInstId)) {
+          return res.status(403).json({
+            error: `Operação em lote rejeitada: usuário não autorizado para a instituição de destino (${targetInstId}).`
+          });
+        }
+
+        cand.institutionId = targetInstId;
+        preparedCandidates.push(cand);
+
+        if (cand.id && !cand.id.startsWith('MOCK-') && cand.id.length > 5) {
+          existingIds.push(cand.id);
         }
       }
-      await batch.commit();
-      res.json({ success: true, count: candidates.length });
-    } catch (error) {
+
+      // 2. Validação dos documentos existentes no banco
+      if (existingIds.length > 0) {
+        const existingDocsSnapshots = await Promise.all(
+          existingIds.map(id => db.collection('candidates').doc(id).get())
+        );
+        const existingMap = new Map<string, any>();
+        existingDocsSnapshots.forEach(snap => {
+          if (snap.exists) {
+            existingMap.set(snap.id, snap.data());
+          }
+        });
+
+        for (const cand of preparedCandidates) {
+          if (cand.id && existingMap.has(cand.id)) {
+            const stored = existingMap.get(cand.id);
+
+            // Rejeitar registros existentes sem vínculo comprovado
+            if (!stored.institutionId || typeof stored.institutionId !== 'string' || stored.institutionId.trim() === '') {
+              return res.status(403).json({
+                error: `Operação em lote rejeitada: documento (${cand.id}) não possui vínculo institucional comprovado.`
+              });
+            }
+
+            // Impedir alteração de documentos de outra instituição
+            if (!isUserAuthorizedForInstitution(user, stored.institutionId)) {
+              return res.status(403).json({
+                error: `Operação em lote rejeitada: documento (${cand.id}) pertence a outra instituição.`
+              });
+            }
+
+            // Impedir transferência implícita entre instituições distintas
+            const storedCanonical = getCanonicalInstitutionId(stored.institutionId);
+            const targetCanonical = getCanonicalInstitutionId(cand.institutionId);
+            if (storedCanonical !== targetCanonical) {
+              return res.status(400).json({
+                error: `Operação em lote rejeitada: documento (${cand.id}) não pode sofrer transferência entre instituições distintas via gravação em massa.`
+              });
+            }
+          }
+        }
+      }
+
+      // 3. Gravação em lotes (limite de 400 por batch)
+      // LIMITAÇÕES DE ATOMICIDADE:
+      // - A pré-validação reduz falhas de autorização antes das gravações.
+      // - Commits separados não garantem atomicidade do conjunto.
+      // - Uma falha posterior pode deixar grupos anteriores já gravados.
+      const MAX_BATCH_SIZE = 400;
+      for (let i = 0; i < preparedCandidates.length; i += MAX_BATCH_SIZE) {
+        const chunk = preparedCandidates.slice(i, i + MAX_BATCH_SIZE);
+        const batch = db.batch();
+        for (const cand of chunk) {
+          let docRef;
+          if (cand.id && !cand.id.startsWith('MOCK-') && cand.id.length > 5) {
+            docRef = db.collection('candidates').doc(cand.id);
+            const { id, ...updateData } = cand;
+            batch.set(docRef, updateData, { merge: true });
+          } else {
+            docRef = db.collection('candidates').doc();
+            batch.set(docRef, cand);
+          }
+        }
+        await batch.commit();
+      }
+      invalidateCache('candidates');
+      res.json({ success: true, count: preparedCandidates.length });
+    } catch (error: any) {
       console.error('Error in bulk candidate save:', error);
-      res.status(500).json({ error: 'Erro ao realizar salvamento em massa.' });
+      return sendDatabaseError(res, error, 'Erro ao realizar salvamento em massa de candidatos.' );
     }
   });
 
@@ -778,7 +1842,7 @@ async function startServer() {
         firestoreDbId: firebaseConfig.firestoreDatabaseId
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      return sendDatabaseError(res, e, e.message );
     }
   });
 
@@ -786,6 +1850,11 @@ async function startServer() {
     const { institutionId } = req.query;
     if (!institutionId) return res.status(400).json({ error: 'ID da instituição não informado' });
     
+    // Validação de escopo de autorização se o usuário estiver autenticado
+    if ((req as any).user && !isUserAuthorizedForInstitution((req as any).user, institutionId as string)) {
+      return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
+    }
+
     try {
       const demoData = {
         id: 'demo-institution-id',
@@ -796,13 +1865,21 @@ async function startServer() {
         type: 'obra_unida'
       };
 
-      // Tentar buscar por ID direto
+      const isMonte = isMonteAltoUnit(institutionId as string);
+
+      // Tentar buscar por ID direto em institutions
       let doc: any = null;
-      if (!(institutionId as string).includes("/")) {
+
+      // Se for Monte Alto, priorizar consulta direta ao documento operacional principal NquBdSy0A3ixzHnyj0YF
+      if (isMonte) {
+        doc = await db.collection("institutions").doc(MONTE_ALTO_OPERATIONAL_ID).get();
+      }
+
+      if ((!doc || !doc.exists) && !(institutionId as string).includes("/")) {
         doc = await db.collection("institutions").doc(institutionId as string).get();
       }
 
-      // Tentar buscar por CNPJ (formatado e não formatado)
+      // Tentar buscar por CNPJ (formatado e não formatado) em institutions
       if (!doc || !doc.exists) {
         let cleanCnpj = (institutionId as string).replace(/\D/g, '');
         let formattedCnpj = cleanCnpj;
@@ -818,23 +1895,76 @@ async function startServer() {
           snapshot = await db.collection("institutions").where("cnpj", "==", institutionId).get();
         }
         
-        if (!snapshot.empty) doc = snapshot.docs[0];
+        if (!snapshot.empty) {
+          // Se for Monte Alto, priorizar NquBdSy0A3ixzHnyj0YF se estiver no snapshot
+          const foundMonte = isMonte ? snapshot.docs.find((d: any) => d.id === MONTE_ALTO_OPERATIONAL_ID) : null;
+          doc = foundMonte || snapshot.docs[0];
+        }
+      }
+
+      // Suporte a Unidades Vicentinas: Se não achou em institutions, busca em conferencias
+      if (!doc || !doc.exists) {
+        const confDoc = await db.collection("conferencias").doc(institutionId as string).get();
+        if (confDoc.exists) {
+          const confData = confDoc.data() || {};
+          return res.json({
+            id: confDoc.id,
+            name: confData.name || 'Conferência Vicentina',
+            entityType: 'conferencia',
+            type: 'conferencia',
+            city: confData.city || '',
+            state: confData.state || 'SP',
+            particularId: confData.particularId || '',
+            centralId: confData.centralId || '54.927.132/0001-92',
+            ...confData
+          });
+        }
+      }
+
+      // Suporte a Unidades Vicentinas: Se não achou, busca em conselhos_particulares
+      if (!doc || !doc.exists) {
+        const cpDoc = await db.collection("conselhos_particulares").doc(institutionId as string).get();
+        if (cpDoc.exists) {
+          const cpData = cpDoc.data() || {};
+          return res.json({
+            id: cpDoc.id,
+            name: cpData.name || 'Conselho Particular',
+            entityType: 'particular',
+            type: 'particular',
+            city: cpData.city || '',
+            state: cpData.state || 'SP',
+            centralId: cpData.centralId || '54.927.132/0001-92',
+            ...cpData
+          });
+        }
       }
 
       if (!doc || !doc.exists) {
+        if (isMonte) {
+          return res.json({
+            id: MONTE_ALTO_OPERATIONAL_ID,
+            name: 'Lar São Vicente de Paulo de Monte Alto',
+            cnpj: MONTE_ALTO_CNPJ,
+            type: 'obra_unida',
+            entityType: 'obra_unida',
+            city: 'Monte Alto',
+            state: 'SP'
+          });
+        }
         if (institutionId === 'demo-institution-id' || institutionId === '00.111.222/0001-33') return res.json(demoData);
         return res.status(404).json({ error: 'Instituição não encontrada' });
       }
 
       const dbData = doc.data() || {};
+      const finalId = isMonte ? MONTE_ALTO_OPERATIONAL_ID : doc.id;
       if (institutionId === 'demo-institution-id' || institutionId === '00.111.222/0001-33') {
-        return res.json({ ...demoData, ...dbData, id: doc.id });
+        return res.json({ ...demoData, ...dbData, id: finalId });
       }
-      return res.json({ ...dbData, id: doc.id });
+      return res.json({ ...dbData, id: finalId });
       
     } catch (error: any) {
       console.error('API Settings Error:', error);
-      return res.status(500).json({ error: 'Erro de conexão no banco de dados' });
+      return sendDatabaseError(res, error, 'Erro de conexão no banco de dados');
     }
   });
 
@@ -863,9 +1993,9 @@ async function startServer() {
       }
 
       res.json({ success: true, message: 'Mensagem de teste enviada com sucesso!' });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Telegram test network error:', error);
-      res.status(500).json({ error: 'Erro de conexão com a API do Telegram.' });
+      return sendDatabaseError(res, error, 'Erro de conexão com a API do Telegram.' );
     }
   });
 
@@ -886,6 +2016,24 @@ async function startServer() {
       // Normalização
       if (settings.entityType) settings.type = settings.entityType;
       if (settings.type) settings.entityType = settings.type;
+
+      // Verifica se é uma Conferência cadastrada
+      const confRef = db.collection("conferencias").doc(institutionId);
+      const confDoc = await confRef.get();
+      if (confDoc.exists) {
+        await confRef.set(settings, { merge: true });
+        const updated = await confRef.get();
+        return res.json({ success: true, ...updated.data(), id: confRef.id, entityType: 'conferencia', type: 'conferencia' });
+      }
+
+      // Verifica se é um Conselho Particular cadastrado
+      const cpRef = db.collection("conselhos_particulares").doc(institutionId);
+      const cpDoc = await cpRef.get();
+      if (cpDoc.exists) {
+        await cpRef.set(settings, { merge: true });
+        const updated = await cpRef.get();
+        return res.json({ success: true, ...updated.data(), id: cpRef.id, entityType: 'particular', type: 'particular' });
+      }
 
       // Se for a unidade de demonstração e o documento não existir, vamos criá-lo sem erro 404
       let instRef: any = null;
@@ -916,71 +2064,139 @@ async function startServer() {
       await instRef.set(settings, { merge: true });
       const updated = await instRef.get();
       res.json({ success: true, ...updated.data(), id: instRef.id });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Settings save error:', error);
-      res.status(500).json({ error: 'Erro ao salvar configurações.' });
+      return sendDatabaseError(res, error, 'Erro ao salvar configurações.' );
     }
   });
 
+  // Helper para identificar erros de cota e responder rápido com HTTP 503
+  function isQuotaError(error: any): boolean {
+    if (!error) return false;
+    const code = error.code || error.status;
+    const errStr = String(error.message || error.details || error);
+    return code === 8 || code === 'RESOURCE_EXHAUSTED' || errStr.includes('RESOURCE_EXHAUSTED') || errStr.includes('Quota exceeded');
+  }
+
+  // Cache temporário em memória para deduplicação de mensagens no mural
+  const recentMuralPosts = new Map<string, { timestamp: number; result: any }>();
+
   // Mural Messages
-  app.get('/api/mural', async (req: any, res) => {
+  app.get('/api/mural', requireAuth, async (req: any, res) => {
     const { institutionId } = req.query;
     const accessLevel = req.user?.accessLevel;
     const username = req.user?.username;
 
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório' });
+    }
+
+    if (!isUserAuthorizedForInstitution(req.user, institutionId)) {
+      return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
+    }
+
+    const cacheKey = `mural:${institutionId}:${accessLevel || 'guest'}:${username || 'anon'}`;
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json(cached);
+
     try {
-      const snapshot = await db.collection('muralMessages')
-        .where('institutionId', '==', institutionId)
-        .orderBy('timestamp', 'asc')
+      const isMonte = isMonteAltoUnit(institutionId as string);
+      let query: any = db.collection('muralMessages');
+
+      if (isMonte) {
+        query = query.where('institutionId', 'in', getMonteAltoQueryIds());
+      } else {
+        query = query.where('institutionId', '==', institutionId);
+      }
+
+      // Retorna apenas as 50 mensagens mais recentes
+      const snapshot = await query
+        .orderBy('timestamp', 'desc')
+        .limit(50)
         .get();
         
-      const messages = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
+      let messages = snapshot.docs
+        .map(doc => ({ ...doc.data(), id: doc.id }))
+        .filter((item: any) => !item.archived)
+        .reverse(); // Ordena cronologicamente do mais antigo ao mais recente para exibição
       
-      // Filtra mensagens do mural baseado na visibilidade e no usuário
-      const filteredMessages = messages.filter((msg: any) => {
-        const isAuthor = msg.author === username;
-        
-        let visArray: string[] = [];
-        if (Array.isArray(msg.visibilidade)) {
-           visArray = msg.visibilidade;
-        } else if (typeof msg.visibilidade === 'string') {
-           visArray = [msg.visibilidade];
-        } else if (msg.isPublic) {
-           visArray = ['publico'];
-        } else {
-           visArray = ['admin'];
-        }
-        
-        if (visArray.includes('publico')) return true;
-        
-        if (visArray.includes('privado')) {
-           return isAuthor; // Só o próprio autor pode ver
-        }
+      // Filtra mensagens do mural baseado na visibilidade compartilhada e no usuário
+      const filteredMessages = messages.filter((msg: any) => isUserAuthorizedToViewMuralMessage(req.user, msg));
 
-        if (visArray.includes('admin')) {
-           // Se for restrito, apenas se for autor ou se tiver papel que permita ver coisas restritas admin
-           const viewAdminRoles = ['administrador', 'gerencial', 'enfermeira', 'medico', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'assistente_social'];
-           return isAuthor || viewAdminRoles.includes(accessLevel);
+      // Elimina N+1: Usa dados gravados na mensagem ou faz busca em lote única para autores ausentes
+      const missingAuthorUserIds = new Set<string>();
+      filteredMessages.forEach((msg: any) => {
+        if (!msg.authorDisplayName && !msg.authorName && msg.authorUserId) {
+          missingAuthorUserIds.add(msg.authorUserId);
         }
-
-        return true;
       });
 
+      if (missingAuthorUserIds.size > 0) {
+        const authorMap = new Map<string, any>();
+        const idsArray = Array.from(missingAuthorUserIds).slice(0, 30);
+        try {
+          // Busca em lote única
+          const usersSnap = await db.collection('users').where(FieldPath.documentId(), 'in', idsArray).get();
+          usersSnap.docs.forEach(doc => authorMap.set(doc.id, doc.data()));
+        } catch (err) {
+          console.warn("Aviso ao buscar autores em lote:", err);
+        }
+
+        filteredMessages.forEach((msg: any) => {
+          if (!msg.authorDisplayName && !msg.authorName && msg.authorUserId) {
+            const uData = authorMap.get(msg.authorUserId);
+            if (uData) {
+              msg.authorDisplayName = uData.fullName || uData.username;
+              msg.authorFunction = uData.role || '';
+              msg.authorName = msg.authorDisplayName;
+              msg.authorRole = msg.authorFunction;
+            }
+          }
+        });
+      }
+
+      if (filteredMessages) {
+        setToCache(cacheKey, filteredMessages);
+      }
       res.json(filteredMessages);
     } catch (error) {
+      if (isQuotaError(error)) {
+        return res.status(503).json({ error: 'Cota de requisições do banco de dados excedida (RESOURCE_EXHAUSTED). Tente novamente mais tarde.', code: 'RESOURCE_EXHAUSTED' });
+      }
       console.error('Error fetching mural:', error);
-      res.status(500).json({ error: 'Erro ao buscar mural.' });
+      return sendDatabaseError(res, error, );
     }
   });
 
-  app.post('/api/mural', async (req: any, res) => {
+  app.post('/api/mural', requireAuth, async (req: any, res) => {
     const data = req.body;
     try {
+      const user = req.user;
+      let targetInstId = data.institutionId ? await getRealInstitutionId(data.institutionId) : '';
+      if (!targetInstId && user?.institutionId) {
+        targetInstId = await getRealInstitutionId(user.institutionId);
+      }
+      if (!targetInstId || !isUserAuthorizedForInstitution(user, targetInstId)) {
+        return res.status(403).json({ error: 'Acesso negado para postar no mural desta instituição.' });
+      }
+      data.institutionId = targetInstId;
+
       if (!data.timestamp) {
         data.timestamp = Date.now();
       }
+
+      // Prevenção contra envio duplicado no servidor (deduplicação por hash de texto + usuário em janela de 5s)
+      const authorId = user?.username || data.author || 'anon';
+      const dedupeKey = `${data.institutionId}_${authorId}_${(data.text || '').trim()}`;
+      const now = Date.now();
+      const existing = recentMuralPosts.get(dedupeKey);
+
+      if (existing && (now - existing.timestamp < 5000)) {
+        console.log(`[Mural] Post duplicado ignorado para a chave: ${dedupeKey}`);
+        return res.json(existing.result);
+      }
       
-      // Auto-identify author from session
+      // Auto-identify author from session and record directly onto document to prevent N+1 queries
       if (req.user) {
         data.authorUserId = req.user.id;
         data.authorEmail = req.user.username;
@@ -993,6 +2209,8 @@ async function startServer() {
         data.authorDisplayName = req.user.fullName || req.user.username;
         data.authorFunction = req.user.role || '';
         data.authorSignatureText = sigTextFallback;
+        data.authorName = data.authorDisplayName;
+        data.authorRole = data.authorFunction;
 
         if (req.user.funcionarioId) {
           try {
@@ -1015,7 +2233,6 @@ async function startServer() {
               data.authorRegistryUf = empData?.ufRegistro || '';
               data.authorSignatureText = sigText;
               
-              // Override legacy fields just in case
               data.authorName = nomeStr;
               data.authorRole = funcaoStr;
             }
@@ -1026,6 +2243,17 @@ async function startServer() {
       }
 
       const docRef = await db.collection('muralMessages').add(data);
+      const resultObj = { ...data, id: docRef.id };
+
+      // Registra no cache de deduplicação
+      recentMuralPosts.set(dedupeKey, { timestamp: now, result: resultObj });
+      // Limpa cache antigo se ficar grande
+      if (recentMuralPosts.size > 100) {
+        for (const [k, v] of recentMuralPosts.entries()) {
+          if (now - v.timestamp > 10000) recentMuralPosts.delete(k);
+        }
+      }
+
       await logAudit('create', 'mural', docRef.id, req, data.institutionId, 'Nova mensagem no mural', { title: data.title });
       
       // Enviar notificação para o Telegram
@@ -1067,9 +2295,46 @@ async function startServer() {
         }
       }
 
-      res.json({ ...data, id: docRef.id });
+      invalidateCache('mural');
+      res.json(resultObj);
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao salvar mensagem no mural.' });
+      if (isQuotaError(error)) {
+        return res.status(503).json({ error: 'Cota de requisições do banco de dados excedida (RESOURCE_EXHAUSTED). Tente novamente mais tarde.', code: 'RESOURCE_EXHAUSTED' });
+      }
+      return sendDatabaseError(res, error, );
+    }
+  });
+
+  app.get('/api/mural/:id', requireAuth, async (req: any, res) => {
+    try {
+      const doc = await db.collection('muralMessages').doc(req.params.id).get();
+      if (!doc.exists) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      const message = { ...doc.data(), id: doc.id };
+      if (!isUserAuthorizedToViewMuralMessage(req.user, message)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      res.json(message);
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar mensagem do mural');
+    }
+  });
+
+  app.delete('/api/mural/:id', requireRole(['administrador', 'gerencial', 'assistente_social', 'enfermeira']), async (req: any, res) => {
+    try {
+      const doc = await db.collection('muralMessages').doc(req.params.id).get();
+      if (!doc.exists) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      if (!isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await db.collection('muralMessages').doc(req.params.id).update({ archived: true });
+      invalidateCache('mural');
+      res.json({ success: true });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao arquivar mensagem do mural');
     }
   });
 
@@ -1078,6 +2343,10 @@ async function startServer() {
     try {
       const q = req.query.q as string;
       const realId = await getRealInstitutionId((req as any).user.institutionId);
+      const cacheKey = `employees:${realId}:${q || 'all'}`;
+      const cached = getFromCache(cacheKey);
+      if (cached) return res.json(cached);
+
       const snapshot = await db.collection('employees').where('institutionId', '==', realId).get();
       const employees = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
       const filtered = employees.filter(e => !e.archived);
@@ -1090,9 +2359,12 @@ async function startServer() {
           (e.funcao && e.funcao.toLowerCase().includes(query))
         );
       }
+      if (result) {
+        setToCache(cacheKey, result);
+      }
       res.json(result);
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar funcionários.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar funcionários.' );
     }
   });
 
@@ -1111,14 +2383,16 @@ async function startServer() {
       if (data.id) {
         const { id, ...updateData } = data;
         await db.collection('employees').doc(id).set(updateData, { merge: true });
+        invalidateCache('employees');
         res.json(data);
       } else {
         const docRef = await db.collection('employees').add(data);
+        invalidateCache('employees');
         res.json({ ...data, id: docRef.id });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving employee to Firestore:', error);
-      res.status(500).json({ error: 'Erro ao salvar funcionário.' });
+      return sendDatabaseError(res, error, 'Erro ao salvar funcionário.' );
     }
   });
 
@@ -1145,25 +2419,46 @@ async function startServer() {
         }
       });
       await batch.commit();
+      invalidateCache('employees');
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Bulk save error for employees:', error);
-      res.status(500).json({ error: 'Erro de bulk em funcionários' });
+      return sendDatabaseError(res, error, 'Erro de bulk em funcionários' );
     }
   });
 
-  app.delete('/api/employees/:id', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
+  app.get('/api/employees/:id', requireAuth, async (req: any, res) => {
+    try {
+      const doc = await db.collection('employees').doc(req.params.id).get();
+      if (!doc.exists) return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      const emp = { ...doc.data(), id: doc.id };
+      if (!isAuthorizedForDocument(req.user, emp)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      res.json(emp);
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar funcionário');
+    }
+  });
+
+  app.delete('/api/employees/:id', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
     const { id } = req.params;
     try {
+      const doc = await db.collection('employees').doc(id).get();
+      if (!doc.exists) return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      if (!isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
       await db.collection('employees').doc(id).update({
         archived: true,
         archivedAt: Date.now(),
-        archivedBy: (req as any).user?.id || 'unknown',
+        archivedBy: req.user?.id || 'unknown',
         status: 'inativo'
       });
+      invalidateCache('employees');
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao arquivar funcionário' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao arquivar funcionário' );
     }
   });
 
@@ -1181,7 +2476,7 @@ async function startServer() {
       shifts.sort((a: any, b: any) => (a.ordem || 0) - (b.ordem || 0));
       res.json(shifts);
     } catch (e: any) {
-      res.status(500).json({ error: 'Erro ao buscar turnos', details: e.message, stack: e.stack });
+      return sendDatabaseError(res, e, 'Erro ao buscar turnos');
     }
   });
 
@@ -1200,7 +2495,7 @@ async function startServer() {
       res.json(protocols);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: 'Erro ao buscar condutas SOS' });
+      return sendDatabaseError(res, e, 'Erro ao buscar condutas SOS' );
     }
   });
 
@@ -1236,7 +2531,7 @@ async function startServer() {
       }
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: 'Erro ao salvar conduta SOS' });
+      return sendDatabaseError(res, e, 'Erro ao salvar conduta SOS' );
     }
   });
 
@@ -1268,19 +2563,38 @@ async function startServer() {
         res.json({ ...saveData, id: docRef.id });
       }
     } catch (e: any) {
-      res.status(500).json({ error: 'Erro ao salvar turno' });
+      return sendDatabaseError(res, e, 'Erro ao salvar turno' );
     }
   });
 
-  app.delete('/api/shifts/:id', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
+  app.get('/api/shifts/:id', requireAuth, async (req: any, res) => {
     try {
+      const doc = await db.collection('shifts').doc(req.params.id).get();
+      if (!doc.exists) return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      const shift = { ...doc.data(), id: doc.id };
+      if (!isAuthorizedForDocument(req.user, shift)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      res.json(shift);
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar turno');
+    }
+  });
+
+  app.delete('/api/shifts/:id', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+    try {
+      const doc = await db.collection('shifts').doc(req.params.id).get();
+      if (!doc.exists) return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      if (!isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
       await db.collection('shifts').doc(req.params.id).update({
         status: 'inativo',
         atualizadoEm: new Date().toISOString()
       });
       res.json({ success: true });
-    } catch (error) {
-       res.status(500).json({ error: 'Erro ao inativar turno' });
+    } catch (error: any) {
+       return sendDatabaseError(res, error, 'Erro ao inativar turno' );
     }
   });
 
@@ -1299,7 +2613,7 @@ async function startServer() {
       const docRef = await db.collection('procedure_logs').add(dataToSave);
       res.json({ ...dataToSave, id: docRef.id });
     } catch (e: any) {
-      res.status(500).json({ error: 'Erro ao salvar procedimento' });
+      return sendDatabaseError(res, e, 'Erro ao salvar procedimento' );
     }
   });
 
@@ -1318,7 +2632,7 @@ async function startServer() {
       const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(logs);
     } catch (e: any) {
-      res.status(500).json({ error: 'Erro ao buscar procedimentos' });
+      return sendDatabaseError(res, e, 'Erro ao buscar procedimentos' );
     }
   });
 
@@ -1358,17 +2672,142 @@ async function startServer() {
       const meals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(meals.sort((a: any, b: any) => a.ordem - b.ordem));
     } catch (e: any) {
-      res.status(500).json({ error: 'Erro ao buscar refeições' });
+      return sendDatabaseError(res, e, 'Erro ao buscar refeições' );
+    }
+  });
+
+  // ========== /SYSTEM-UNITS ==========
+  app.get('/api/system-units', async (req, res) => {
+    try {
+      const units: any[] = [];
+      const uniqueKeys = new Set<string>();
+
+      const addUnit = (unit: any) => {
+        const canonicalId = getCanonicalInstitutionId(unit.id || unit.cnpj);
+        const isMonte = isMonteAltoUnit(canonicalId);
+        const key = isMonte ? `obra_unida:${MONTE_ALTO_CNPJ}` : `${unit.type || 'unit'}-${unit.id || unit.cnpj || unit.name}`;
+        if (!uniqueKeys.has(key)) {
+          uniqueKeys.add(key);
+          units.push({
+            ...unit,
+            id: isMonte ? MONTE_ALTO_OPERATIONAL_ID : (unit.id || canonicalId),
+            cnpj: isMonte ? MONTE_ALTO_CNPJ : unit.cnpj
+          });
+        }
+      };
+
+      // 1. Conselho Central Padrão
+      addUnit({
+        id: CENTRAL_JABOTICABAL_CNPJ,
+        name: 'Conselho Central de Jaboticabal',
+        type: 'conselho_central',
+        cnpj: CENTRAL_JABOTICABAL_CNPJ,
+        city: 'Jaboticabal',
+        state: 'SP'
+      });
+
+      // 2. Obras Unidas Padrão
+      addUnit({
+        id: MONTE_ALTO_OPERATIONAL_ID,
+        name: 'Lar São Vicente de Paulo de Monte Alto',
+        type: 'obra_unida',
+        cnpj: MONTE_ALTO_CNPJ,
+        city: 'Monte Alto',
+        state: 'SP'
+      });
+
+      // 3. Instituições salvas no Firestore
+      const instSnap = await safeQuery(async () => await db.collection('institutions').get());
+      if (instSnap && !instSnap.empty) {
+        instSnap.forEach((doc: any) => {
+          const d = doc.data();
+          addUnit({
+            id: doc.id,
+            name: d.name || d.razaoSocial || 'Instituição SSVP',
+            type: d.entityType || d.type || 'obra_unida',
+            cnpj: d.cnpj || '',
+            city: d.city || '',
+            state: d.state || 'SP'
+          });
+        });
+      }
+
+      // 4. Conselhos Particulares cadastrados
+      const cpSnap = await safeQuery(async () => await db.collection('conselhos_particulares').get());
+      const cpMap = new Map<string, string>();
+      if (cpSnap && !cpSnap.empty) {
+        cpSnap.forEach((doc: any) => {
+          const d = doc.data();
+          cpMap.set(doc.id, d.name || 'Conselho Particular');
+          if (d.status !== 'arquivado') {
+            addUnit({
+              id: doc.id,
+              name: d.name || 'Conselho Particular',
+              type: 'conselho_particular',
+              city: d.city || '',
+              state: d.state || 'SP',
+              parentName: 'Conselho Central de Jaboticabal'
+            });
+          }
+        });
+      }
+
+      // 5. Conferências Vicentinas cadastradas
+      const confSnap = await safeQuery(async () => await db.collection('conferencias').get());
+      if (confSnap && !confSnap.empty) {
+        confSnap.forEach((doc: any) => {
+          const d = doc.data();
+          if (d.status !== 'arquivado' && d.status !== 'inativa') {
+            const parentCpName = (d.particularId && cpMap.get(d.particularId)) || d.particularName || 'Conselho Particular';
+            addUnit({
+              id: doc.id,
+              name: d.name || 'Conferência Vicentina',
+              type: 'conferencia',
+              city: d.city || '',
+              state: d.state || 'SP',
+              particularId: d.particularId || '',
+              parentName: parentCpName
+            });
+          }
+        });
+      }
+
+      // 6. Obras Unidas salvas nas settings do Conselho Central
+      const ccSettingsDoc = await safeQuery(async () => await db.collection('institutions').doc('54.927.132/0001-92').get());
+      if (ccSettingsDoc && ccSettingsDoc.exists) {
+        const ccData = ccSettingsDoc.data();
+        if (Array.isArray(ccData?.obrasUnidas)) {
+          ccData.obrasUnidas.forEach((obra: any) => {
+            addUnit({
+              id: obra.id || `obra-${obra.name}`,
+              name: obra.name || 'Obra Unida',
+              type: 'obra_unida',
+              cnpj: obra.cnpj || '',
+              city: obra.city || '',
+              state: obra.state || 'SP',
+              parentName: 'Conselho Central de Jaboticabal'
+            });
+          });
+        }
+      }
+
+      res.json(units);
+    } catch (error: any) {
+      console.error('Erro ao buscar unidades do sistema:', error);
+      return sendDatabaseError(res, error, 'Erro ao carregar unidades do sistema');
     }
   });
 
   // ========== /USERS ==========
   app.get('/api/users', requireRole(['administrador', 'gerencial']), async (req, res) => {
-    const { institutionId } = req.query;
+    const { institutionId, all } = req.query;
     try {
       const realId = await getRealInstitutionId(institutionId as string);
       
       const snapshot = await safeQuery(async () => {
+        if (all === 'true') {
+          return await db.collection('users').get();
+        }
         let snap = await db.collection('users').where('institutionId', '==', realId).get();
         if (snap.empty) {
           // Fallback: Check if they are saved under the CNPJ string
@@ -1395,8 +2834,8 @@ async function startServer() {
       }
       
       res.json(finalUsers);
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar usuários.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar usuários.' );
     }
   });
 
@@ -1426,9 +2865,9 @@ async function startServer() {
         await logAudit('create', 'users', docRef.id, req, data.institutionId, `Novo usuário cadastrado: ${payload.username}`);
         res.json({ ...data, id: docRef.id });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving user to Firestore:', error);
-      res.status(500).json({ error: 'Erro ao salvar usuário no banco de dados.' });
+      return sendDatabaseError(res, error, 'Erro ao salvar usuário no banco de dados.' );
     }
   });
 
@@ -1450,7 +2889,7 @@ async function startServer() {
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
-      res.status(500).json({ error: 'Erro ao arquivar usuário.' });
+      return sendDatabaseError(res, error, );
     }
   });
 
@@ -1465,9 +2904,9 @@ async function startServer() {
       const snapshot = await db.collection('jobCandidates').where('institutionId', '==', realId).get();
       const jobCandidates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(jobCandidates);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao buscar candidatos a vagas', error);
-      res.status(500).json({ error: 'Erro ao buscar candidatos a vagas' });
+      return sendDatabaseError(res, error, 'Erro ao buscar candidatos a vagas' );
     }
   });
 
@@ -1487,49 +2926,66 @@ async function startServer() {
 
       await db.collection('jobCandidates').doc(candidateData.id).set(candidateData);
       res.json({ success: true, candidate: candidateData });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar candidato a vaga', error);
-      res.status(500).json({ error: 'Erro ao salvar candidato a vaga' });
+      return sendDatabaseError(res, error, 'Erro ao salvar candidato a vaga' );
     }
   });
 
-  app.delete('/api/job-candidates/:id', requireRole(['psicologia', 'gerencial', 'administrador']), async (req, res) => {
+  app.delete('/api/job-candidates/:id', requireRole(['psicologia', 'gerencial', 'administrador']), async (req: any, res) => {
     const { id } = req.params;
     try {
+      const doc = await db.collection('jobCandidates').doc(id).get();
+      if (!doc.exists) return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      if (!isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
       await db.collection('jobCandidates').doc(id).delete();
       res.json({ success: true, message: 'Excluído definitivamente com sucesso.' });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao excluir definitivamente o candidato a vaga', error);
-      res.status(500).json({ error: 'Erro ao excluir definitivamente o candidato a vaga' });
+      return sendDatabaseError(res, error, 'Erro ao excluir definitivamente o candidato a vaga' );
     }
   });
 
-  app.delete('/api/candidates/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial']), async (req, res) => {
+  app.delete('/api/candidates/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'administrador']), async (req: any, res) => {
     const { id } = req.params;
     try {
+      const doc = await db.collection('candidates').doc(id).get();
+      if (!doc.exists) return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      if (!isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
       // Inativar em vez de excluir definitivamente
       await db.collection('candidates').doc(id).update({ archived: true, archivedAt: new Date().toISOString() });
+      invalidateCache('candidates');
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
-      if (error.code === 5 || error.message.includes('NOT_FOUND')) {
+      if (error.code === 5 || error.message?.includes('NOT_FOUND')) {
         // Se já não existe, tudo bem
         return res.json({ success: true });
       }
-      res.status(500).json({ error: 'Erro ao arquivar candidato.' });
+      return sendDatabaseError(res, error);
     }
   });
 
-  app.delete('/api/residents/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico']), async (req, res) => {
+  app.delete('/api/residents/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico', 'administrador']), async (req: any, res) => {
     const { id } = req.params;
     try {
+      const doc = await db.collection('residents').doc(id).get();
+      if (!doc.exists) return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      if (!isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
       // Inativar em vez de excluir definitivamente
       await db.collection('residents').doc(id).update({ archived: true, archivedAt: new Date().toISOString() });
+      invalidateCache('residents');
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
-      if (error.code === 5 || error.message.includes('NOT_FOUND')) {
+      if (error.code === 5 || error.message?.includes('NOT_FOUND')) {
         return res.json({ success: true });
       }
-      res.status(500).json({ error: 'Erro ao arquivar residente.' });
+      return sendDatabaseError(res, error);
     }
   });
 
@@ -1543,8 +2999,8 @@ async function startServer() {
         .get();
       const categories = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(categories);
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar categorias de emendas.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar categorias de emendas.' );
     }
   });
 
@@ -1562,8 +3018,8 @@ async function startServer() {
         await logAudit('create', 'amendment_categories', docRef.id, req, realId, `Nova categoria de emenda`);
         res.json({ ...saveData, id: docRef.id });
       }
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao salvar categoria de emenda.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar categoria de emenda.' );
     }
   });
 
@@ -1573,7 +3029,7 @@ async function startServer() {
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
-      res.status(500).json({ error: 'Erro ao arquivar categoria.' });
+      return sendDatabaseError(res, error, );
     }
   });
 
@@ -1586,8 +3042,8 @@ async function startServer() {
         .get();
       const grants = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(grants);
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar emendas.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar emendas.' );
     }
   });
 
@@ -1605,8 +3061,8 @@ async function startServer() {
         await logAudit('create', 'amendment_grants', docRef.id, req, realId, `Nova emenda`);
         res.json({ ...saveData, id: docRef.id });
       }
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao salvar emenda.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar emenda.' );
     }
   });
 
@@ -1616,7 +3072,7 @@ async function startServer() {
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
-      res.status(500).json({ error: 'Erro ao arquivar emenda.' });
+      return sendDatabaseError(res, error, );
     }
   });
 
@@ -1652,9 +3108,9 @@ async function startServer() {
 
       await insertBatch.commit();
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Bootstrap error:', error);
-      res.status(500).json({ error: 'Erro ao realizar bootstrap de emendas.' });
+      return sendDatabaseError(res, error, 'Erro ao realizar bootstrap de emendas.' );
     }
   });
 
@@ -1669,8 +3125,8 @@ async function startServer() {
         .get();
       const visits = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(visits);
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar visitas.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar visitas.' );
     }
   });
 
@@ -1681,8 +3137,8 @@ async function startServer() {
       const docRef = await db.collection('global_visits').add({ ...data, institutionId: realId });
       await logAudit('create', 'global_visits', docRef.id, req, realId, `Nova visita registrada`);
       res.json({ ...data, id: docRef.id, institutionId: realId });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao salvar visita.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar visita.' );
     }
   });
 
@@ -1697,9 +3153,9 @@ async function startServer() {
         .get();
       const messages = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(messages);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching support messages:', error);
-      res.status(500).json({ error: 'Erro ao buscar mensagens.' });
+      return sendDatabaseError(res, error, 'Erro ao buscar mensagens.' );
     }
   });
 
@@ -1717,9 +3173,9 @@ async function startServer() {
       const docRef = await db.collection('support_messages').add(newMessage);
       await logAudit('create', 'support_messages', docRef.id, req, realId, `Nova solicitação de suporte`);
       res.json({ ...newMessage, id: docRef.id });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving support message:', error);
-      res.status(500).json({ error: 'Erro ao enviar mensagem.' });
+      return sendDatabaseError(res, error, 'Erro ao enviar mensagem.' );
     }
   });
 
@@ -1730,13 +3186,20 @@ async function startServer() {
     const { institutionId } = req.query;
     try {
       const realId = await getRealInstitutionId(institutionId as string);
+      const cacheKey = `agenda:${realId}`;
+      const cached = getFromCache(cacheKey);
+      if (cached) return res.json(cached);
+
       const snapshot = await db.collection('agenda_events')
         .where('institutionId', '==', realId)
         .get();
       const events = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
+      if (events) {
+        setToCache(cacheKey, events);
+      }
       res.json(events);
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar agenda.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar agenda.' );
     }
   });
 
@@ -1747,24 +3210,131 @@ async function startServer() {
       if (data.id && data.id.length > 10) {
         await db.collection('agenda_events').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
         await logAudit('update', 'agenda_events', data.id, req, realId, `Atualização do evento: ${data.title}`);
+        invalidateCache('agenda');
         res.json({ ...data, id: data.id, institutionId: realId });
       } else {
         const docRef = await db.collection('agenda_events').add({ ...data, institutionId: realId });
         await logAudit('create', 'agenda_events', docRef.id, req, realId, `Novo evento na agenda: ${data.title}`);
+        invalidateCache('agenda');
         res.json({ ...data, id: docRef.id, institutionId: realId });
       }
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao salvar evento.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar evento.' );
     }
   });
 
   app.delete('/api/agenda/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico']), async (req, res) => {
     try {
       await db.collection('agenda_events').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      invalidateCache('agenda');
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
-      res.status(500).json({ error: 'Erro ao arquivar evento.' });
+      return sendDatabaseError(res, error, );
+    }
+  });
+
+  // Multidisciplinary History API
+  app.get('/api/multidisciplinary/history', requireAuth, async (req, res) => {
+    const { institutionId, competence } = req.query;
+    try {
+      const realId = await getRealInstitutionId(institutionId as string);
+      const snapshot = await db.collection('residents').where('institutionId', '==', realId).get();
+      const events: any[] = [];
+
+      snapshot.docs.forEach((doc: any) => {
+        const r = doc.data();
+        const residentName = r.name || 'Sem Nome';
+
+        if (competence === 'psicologia' && r.psychology) {
+          if (r.psychology.attendances && Array.isArray(r.psychology.attendances)) {
+            r.psychology.attendances.forEach((att: any) => {
+              events.push({
+                residentName,
+                residentId: doc.id,
+                type: 'Atendimento',
+                timestamp: att.dateTime || att.date || new Date().toISOString(),
+                attendanceEvolution: att.descricaoAtendimento || att.attendanceEvolution || '',
+                notes: att.privateNotes || att.muralNotes || '',
+                signature: att.signature || '',
+                interventionType: att.interventionType || ''
+              });
+            });
+          }
+          if (r.psychology.evolutions && Array.isArray(r.psychology.evolutions)) {
+            r.psychology.evolutions.forEach((evo: any) => {
+              events.push({
+                residentName,
+                residentId: doc.id,
+                type: 'Evolução',
+                timestamp: evo.date || new Date().toISOString(),
+                attendanceEvolution: evo.notes || '',
+                signature: evo.signature || ''
+              });
+            });
+          }
+        } else if (competence === 'nutricionista' && r.nutrition) {
+          if (r.nutrition.attendances && Array.isArray(r.nutrition.attendances)) {
+            r.nutrition.attendances.forEach((att: any) => {
+              events.push({
+                residentName,
+                residentId: doc.id,
+                type: 'Atendimento',
+                timestamp: att.date || new Date().toISOString(),
+                attendanceEvolution: att.notes || '',
+                signature: att.signature || ''
+              });
+            });
+          }
+        } else if (competence === 'assistente_social' && r.socialWork) {
+          if (r.socialWork.evolutions && Array.isArray(r.socialWork.evolutions)) {
+            r.socialWork.evolutions.forEach((evo: any) => {
+              events.push({
+                residentName,
+                residentId: doc.id,
+                type: evo.title || 'Ação Social',
+                timestamp: evo.date ? (evo.time ? `${evo.date}T${evo.time}:00` : `${evo.date}T12:00:00`) : new Date().toISOString(),
+                attendanceEvolution: evo.description || '',
+                notes: evo.referrals || '',
+                signature: evo.professionalName || 'Assistente Social',
+                interventionType: evo.type || 'atendimento_individual'
+              });
+            });
+          }
+        } else if (competence === 'terapeuta_ocupacional' && r.occupationalTherapy) {
+          if (r.occupationalTherapy.attendances && Array.isArray(r.occupationalTherapy.attendances)) {
+            r.occupationalTherapy.attendances.forEach((att: any) => {
+              events.push({
+                residentName,
+                residentId: doc.id,
+                type: 'Atendimento',
+                timestamp: att.dateTime || new Date().toISOString(),
+                attendanceEvolution: att.attendanceEvolution || '',
+                signature: att.signature || ''
+              });
+            });
+          }
+        } else if (competence === 'fisioterapeuta' && r.physiotherapy) {
+          if (r.physiotherapy.attendances && Array.isArray(r.physiotherapy.attendances)) {
+            r.physiotherapy.attendances.forEach((att: any) => {
+              events.push({
+                residentName,
+                residentId: doc.id,
+                type: 'Atendimento',
+                timestamp: att.dateTime || new Date().toISOString(),
+                attendanceEvolution: att.attendanceEvolution || '',
+                signature: att.signature || ''
+              });
+            });
+          }
+        }
+      });
+
+      events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      res.json(events.slice(0, 30));
+    } catch (error: any) {
+      console.error('Error fetching multidisciplinary history:', error);
+      res.json([]);
     }
   });
 
@@ -1778,8 +3348,8 @@ async function startServer() {
         .get();
       const events = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(events);
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar atividades em grupo.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar atividades em grupo.' );
     }
   });
 
@@ -1796,8 +3366,8 @@ async function startServer() {
         await logAudit('create', 'group_activities', docRef.id, req, realId, `Nova atividade em grupo: ${data.title}`);
         res.json({ ...data, id: docRef.id, institutionId: realId });
       }
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao salvar atividade em grupo.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar atividade em grupo.' );
     }
   });
 
@@ -1815,9 +3385,9 @@ async function startServer() {
         .get();
       const handovers = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id }));
       res.json(handovers);
-    } catch (error) {
+    } catch (error: any) {
        console.error("Handover search error:", error);
-       res.status(500).json({ error: 'Erro ao buscar histórico de plantão' });
+       return sendDatabaseError(res, error, 'Erro ao buscar histórico de plantão' );
     }
   });
 
@@ -1833,9 +3403,9 @@ async function startServer() {
         const docRef = await db.collection('handovers').add({ ...data, institutionId: realId });
         res.json({ ...data, id: docRef.id, institutionId: realId });
       }
-    } catch (error) {
+    } catch (error: any) {
        console.error("Handover save error:", error);
-       res.status(500).json({ error: 'Erro ao salvar plantão' });
+       return sendDatabaseError(res, error, 'Erro ao salvar plantão' );
     }
   });
 
@@ -1845,7 +3415,7 @@ async function startServer() {
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
-      res.status(500).json({ error: 'Erro ao arquivar atividade.' });
+      return sendDatabaseError(res, error, );
     }
   });
 
@@ -1863,9 +3433,9 @@ async function startServer() {
       const snapshot = await query.get();
       const movements = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
       res.json(movements);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      res.status(500).json({ error: 'Erro ao buscar movimentações de estoque' });
+      return sendDatabaseError(res, error, 'Erro ao buscar movimentações de estoque' );
     }
   });
 
@@ -1876,9 +3446,9 @@ async function startServer() {
       const docRef = db.collection('medication_stock_movements').doc();
       await docRef.set({ ...data, id: docRef.id });
       res.json({ success: true, id: docRef.id });
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      res.status(500).json({ error: 'Erro ao salvar movimentação de estoque' });
+      return sendDatabaseError(res, error, 'Erro ao salvar movimentação de estoque' );
     }
   });
 
@@ -1899,9 +3469,9 @@ async function startServer() {
       const snapshot = await query.get();
       const logs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
       res.json(logs);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      res.status(500).json({ error: 'Erro ao buscar logs de ministração' });
+      return sendDatabaseError(res, error, 'Erro ao buscar logs de ministração' );
     }
   });
 
@@ -1918,9 +3488,9 @@ async function startServer() {
       }
       await docRef.set({ ...data }, { merge: true });
       res.json({ success: true, id: docRef.id });
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      res.status(500).json({ error: 'Erro ao salvar log de ministração' });
+      return sendDatabaseError(res, error, 'Erro ao salvar log de ministração' );
     }
   });
 
@@ -1934,8 +3504,8 @@ async function startServer() {
         .get();
       const inventory = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(inventory);
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar estoque de medicamentos.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar estoque de medicamentos.' );
     }
   });
 
@@ -1959,8 +3529,8 @@ async function startServer() {
       }
       await batch.commit();
       res.json(newItems);
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao salvar estoque em massa.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar estoque em massa.' );
     }
   });
 
@@ -1975,8 +3545,8 @@ async function startServer() {
         .get();
       const companions = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
       res.json(companions);
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar acompanhantes.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar acompanhantes.' );
     }
   });
 
@@ -1993,8 +3563,8 @@ async function startServer() {
         await logAudit('create', 'companions', docRef.id, req, realId, `Novo acompanhante cadastrado: ${data.name}`);
         res.json({ ...data, id: docRef.id, institutionId: realId });
       }
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao salvar acompanhante.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar acompanhante.' );
     }
   });
 
@@ -2004,7 +3574,7 @@ async function startServer() {
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
-      res.status(500).json({ error: 'Erro ao arquivar acompanhante.' });
+      return sendDatabaseError(res, error, );
     }
   });
 
@@ -2019,9 +3589,9 @@ async function startServer() {
         .get();
       const items = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })).filter((item: any) => !item.archived);
       res.json(items);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching benefactors:', error);
-      res.status(500).json({ error: 'Erro ao buscar benfeitores.' });
+      return sendDatabaseError(res, error, 'Erro ao buscar benfeitores.' );
     }
   });
 
@@ -2037,9 +3607,9 @@ async function startServer() {
         const docRef = await db.collection('benefactors').add({ ...data, institutionId: realId, archived: false, createdAt: new Date().toISOString() });
         res.json({ ...data, id: docRef.id, institutionId: realId });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving benefactor:', error);
-      res.status(500).json({ error: 'Erro ao salvar benfeitor.' });
+      return sendDatabaseError(res, error, 'Erro ao salvar benfeitor.' );
     }
   });
 
@@ -2047,8 +3617,8 @@ async function startServer() {
     try {
       await db.collection('benefactors').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao inativar benfeitor.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao inativar benfeitor.' );
     }
   });
 
@@ -2084,9 +3654,9 @@ async function startServer() {
         items = created;
       }
       res.json(items);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching donation categories:', error);
-      res.status(500).json({ error: 'Erro ao buscar categorias.' });
+      return sendDatabaseError(res, error, 'Erro ao buscar categorias.' );
     }
   });
 
@@ -2102,8 +3672,8 @@ async function startServer() {
         const docRef = await db.collection('donation_categories').add({ ...data, institutionId: realId, archived: false });
         res.json({ ...data, id: docRef.id, institutionId: realId });
       }
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao salvar categoria.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar categoria.' );
     }
   });
 
@@ -2111,8 +3681,8 @@ async function startServer() {
     try {
       await db.collection('donation_categories').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao excluir categoria de doação.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao excluir categoria de doação.' );
     }
   });
 
@@ -2135,9 +3705,9 @@ async function startServer() {
       const snapshot = await queryRef.get();
       const items = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })).filter((item: any) => !item.archived);
       res.json(items);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching donations:', error);
-      res.status(500).json({ error: 'Erro ao buscar doações.' });
+      return sendDatabaseError(res, error, 'Erro ao buscar doações.' );
     }
   });
 
@@ -2153,9 +3723,9 @@ async function startServer() {
         const docRef = await db.collection('finance_donations').add({ ...data, institutionId: realId, archived: false, createdAt: new Date().toISOString() });
         res.json({ ...data, id: docRef.id, institutionId: realId });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving finance donation:', error);
-      res.status(500).json({ error: 'Erro ao salvar doação financeira.' });
+      return sendDatabaseError(res, error, 'Erro ao salvar doação financeira.' );
     }
   });
 
@@ -2163,10 +3733,295 @@ async function startServer() {
     try {
       await db.collection('finance_donations').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao inativar doação.' });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao inativar doação.' );
     }
   });
+
+  // --- CARNÊS DE BENFEITORES API ---
+  app.get('/api/carnes', async (req: any, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string || req.query.institutionId as string;
+      if (!institutionId) return res.json([]);
+      const realId = await getRealInstitutionId(institutionId as string);
+      let queryRef: any = db.collection('carnes').where('institutionId', '==', realId);
+      
+      const { ano } = req.query;
+      if (ano) {
+        queryRef = queryRef.where('ano', '==', Number(ano));
+      }
+
+      const snapshot = await queryRef.get();
+      const items = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })).filter((item: any) => !item.archived);
+      res.json(items);
+    } catch (error: any) {
+      console.error('Error fetching carnes:', error);
+      return sendDatabaseError(res, error, 'Erro ao buscar carnês.');
+    }
+  });
+
+  app.post('/api/carnes', async (req: any, res) => {
+    const { id, ...data } = req.body;
+    try {
+      const institutionId = req.headers['x-institution-id'] as string || req.body.institutionId;
+      const realId = await getRealInstitutionId(institutionId);
+
+      // Helper to generate default 12 parcelas if not provided
+      if (!data.parcelas || !Array.isArray(data.parcelas) || data.parcelas.length === 0) {
+        const ano = Number(data.ano) || new Date().getFullYear();
+        const valorParcela = Number(data.valorParcela) || 0;
+        const meses = [
+          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+        ];
+        data.parcelas = meses.map((mes, index) => {
+          const num = index + 1;
+          const mesStr = num < 10 ? `0${num}` : `${num}`;
+          return {
+            numero: num,
+            mesReferencia: `${mes}/${ano}`,
+            vencimento: `${ano}-${mesStr}-10`,
+            valor: valorParcela,
+            pago: false
+          };
+        });
+      }
+
+      if (id && id.length > 10) {
+        await db.collection('carnes').doc(id).set({ ...data, institutionId: realId }, { merge: true });
+        res.json({ ...data, id, institutionId: realId });
+      } else {
+        const docRef = await db.collection('carnes').add({
+          ...data,
+          institutionId: realId,
+          status: data.status || 'ativo',
+          archived: false,
+          createdAt: new Date().toISOString()
+        });
+        res.json({ ...data, id: docRef.id, institutionId: realId });
+      }
+    } catch (error: any) {
+      console.error('Error saving carne:', error);
+      return sendDatabaseError(res, error, 'Erro ao salvar carnê.');
+    }
+  });
+
+  app.post('/api/carnes/:id/pay-parcelas', async (req: any, res) => {
+    const { id } = req.params;
+    const { numeros, dataPagamento, formaPagamento, categoryId, categoryName, notes, userResponsible } = req.body;
+    
+    if (!Array.isArray(numeros) || numeros.length === 0) {
+      return res.status(400).json({ error: 'Nenhuma parcela selecionada para baixa.' });
+    }
+
+    try {
+      const docRef = db.collection('carnes').doc(id);
+      const responsible = userResponsible || (req.user && req.user.nome) || 'Operador do Sistema';
+      const paymentDate = dataPagamento || new Date().toISOString().split('T')[0];
+      const method = formaPagamento || 'PIX';
+
+      let updatedCarneData: any = null;
+      const createdDonations: any[] = [];
+
+      await db.runTransaction(async (transaction: any) => {
+        const docSnap = await transaction.get(docRef);
+        if (!docSnap.exists) {
+          throw new Error('CARNE_NOT_FOUND');
+        }
+
+        const carneData = docSnap.data();
+        const realId = carneData.institutionId;
+        let parcelas = carneData.parcelas || [];
+
+        // Verify if any selected parcela is already paid
+        const alreadyPaid = parcelas.filter((p: any) => numeros.includes(p.numero) && p.pago);
+        if (alreadyPaid.length > 0) {
+          const numerosJaPagos = alreadyPaid.map((p: any) => p.numero).join(', ');
+          throw new Error(`ALREADY_PAID:${numerosJaPagos}`);
+        }
+
+        for (let i = 0; i < parcelas.length; i++) {
+          const p = parcelas[i];
+          if (numeros.includes(p.numero) && !p.pago) {
+            const donationRef = db.collection('finance_donations').doc();
+            const donationData = {
+              carneId: id,
+              benefactorId: carneData.benefactorId || '',
+              benefactorName: carneData.benefactorName || 'Benfeitor',
+              parcelaNumero: p.numero,
+              mesReferencia: p.mesReferencia || `Mês ${p.numero}`,
+              categoryId: categoryId || carneData.categoryId || '',
+              categoryName: categoryName || carneData.categoryName || 'Carnês de mensalidade',
+              value: Number(p.valor) || Number(carneData.valorParcela) || 0,
+              date: paymentDate,
+              paymentMethod: method,
+              campaign: 'Carnês de Mensalidade',
+              userResponsible: responsible,
+              notes: notes ? `${notes} (Folha ${p.numero}/12)` : `Baixa de Carnê - Folha ${p.numero}/12 (${p.mesReferencia})`,
+              institutionId: realId,
+              archived: false,
+              createdAt: new Date().toISOString()
+            };
+
+            transaction.set(donationRef, donationData);
+            createdDonations.push({ id: donationRef.id, ...donationData });
+
+            parcelas[i] = {
+              ...p,
+              pago: true,
+              dataPagamento: paymentDate,
+              formaPagamento: method,
+              donationId: donationRef.id,
+              userResponsible: responsible,
+              observacao: notes || p.observacao || ''
+            };
+          }
+        }
+
+        const allPaid = parcelas.every((p: any) => p.pago);
+        const newStatus = allPaid ? 'quitado' : carneData.status || 'ativo';
+
+        transaction.update(docRef, {
+          parcelas,
+          status: newStatus,
+          updatedAt: new Date().toISOString(),
+          lastPaidAt: new Date().toISOString(),
+          lastPaidBy: responsible
+        });
+
+        updatedCarneData = {
+          id,
+          ...carneData,
+          parcelas,
+          status: newStatus,
+          createdDonations
+        };
+      });
+
+      res.json(updatedCarneData);
+    } catch (error: any) {
+      if (error.message === 'CARNE_NOT_FOUND') {
+        return res.status(404).json({ error: 'Carnê não encontrado.' });
+      }
+      if (error.message && error.message.startsWith('ALREADY_PAID:')) {
+        const nums = error.message.split('ALREADY_PAID:')[1];
+        return res.status(400).json({ error: `A(s) folha(s) ${nums} já constam como paga(s).` });
+      }
+      console.error('Error paying carne parcelas:', error);
+      return sendDatabaseError(res, error, 'Erro ao dar baixa nas parcelas do carnê.');
+    }
+  });
+
+  app.delete('/api/carnes/:id', async (req: any, res) => {
+    try {
+      await db.collection('carnes').doc(req.params.id).update({ archived: true, status: 'cancelado', archivedAt: new Date().toISOString() });
+      res.json({ success: true });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao cancelar carnê.');
+    }
+  });
+
+  app.post('/api/carnes/:id/log-whatsapp', async (req: any, res) => {
+    const { id } = req.params;
+    const { messageType, parcelaNumero, textPreview, phone, userResponsible } = req.body;
+    try {
+      const docRef = db.collection('carnes').doc(id);
+      const docSnap = await docRef.get();
+      if (!docSnap.exists) {
+        return res.status(404).json({ error: 'Carnê não encontrado.' });
+      }
+
+      const carneData = docSnap.data();
+      const responsible = userResponsible || (req.user && req.user.nome) || 'Operador do Sistema';
+      const logEntry = {
+        id: db.collection('carnes').doc().id,
+        date: new Date().toISOString(),
+        messageType,
+        parcelaNumero: parcelaNumero || null,
+        textPreview: textPreview || '',
+        phone: phone || '',
+        userResponsible: responsible,
+        status: 'preparada_aberta'
+      };
+
+      const whatsappLogs = carneData.whatsappLogs || [];
+      whatsappLogs.unshift(logEntry);
+
+      await docRef.update({
+        whatsappLogs,
+        lastWhatsAppAt: logEntry.date,
+        lastWhatsAppBy: responsible,
+        updatedAt: new Date().toISOString()
+      });
+
+      res.json({ success: true, logEntry, whatsappLogs });
+    } catch (error: any) {
+      console.error('Error logging whatsapp communication:', error);
+      return sendDatabaseError(res, error, 'Erro ao registrar comunicação via WhatsApp.');
+    }
+  });
+
+  // --- CONTROLE DA CAIXINHA (FUNDO FIXO / DINHEIRO) API ---
+  app.get('/api/caixinha', async (req: any, res) => {
+    try {
+      const institutionId = req.headers['x-institution-id'] as string || req.query.institutionId as string;
+      if (!institutionId) return res.json([]);
+      const realId = await getRealInstitutionId(institutionId as string);
+      let queryRef: any = db.collection('caixinha_movements').where('institutionId', '==', realId);
+
+      const { startDate, endDate } = req.query;
+      if (startDate) {
+        queryRef = queryRef.where('date', '>=', startDate);
+      }
+      if (endDate) {
+        queryRef = queryRef.where('date', '<=', endDate);
+      }
+
+      const snapshot = await queryRef.get();
+      const items = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })).filter((item: any) => !item.archived);
+      items.sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''));
+      res.json(items);
+    } catch (error: any) {
+      console.error('Error fetching caixinha movements:', error);
+      return sendDatabaseError(res, error, 'Erro ao buscar movimentações da caixinha.');
+    }
+  });
+
+  app.post('/api/caixinha', async (req: any, res) => {
+    const { id, ...data } = req.body;
+    try {
+      const institutionId = req.headers['x-institution-id'] as string || req.body.institutionId;
+      const realId = await getRealInstitutionId(institutionId);
+      if (id && id.length > 10) {
+        await db.collection('caixinha_movements').doc(id).set({ ...data, institutionId: realId, updatedAt: new Date().toISOString() }, { merge: true });
+        res.json({ ...data, id, institutionId: realId });
+      } else {
+        const docRef = await db.collection('caixinha_movements').add({
+          ...data,
+          institutionId: realId,
+          archived: false,
+          createdAt: new Date().toISOString()
+        });
+        res.json({ ...data, id: docRef.id, institutionId: realId });
+      }
+    } catch (error: any) {
+      console.error('Error saving caixinha movement:', error);
+      return sendDatabaseError(res, error, 'Erro ao salvar movimentação da caixinha.');
+    }
+  });
+
+  app.delete('/api/caixinha/:id', async (req: any, res) => {
+    try {
+      await db.collection('caixinha_movements').doc(req.params.id).update({
+        archived: true,
+        archivedAt: new Date().toISOString()
+      });
+      res.json({ success: true });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao excluir movimentação da caixinha.');
+    }
+  });
+
 
   // --- CUSTOM PRODUCT STOCK & MOVEMENT MODULE ---
   app.get('/api/stock-products', requireRole(['administrador', 'gerencial', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'auxiliar_administrativo']), async (req, res) => {
@@ -2174,15 +4029,22 @@ async function startServer() {
       const institutionId = req.headers['x-institution-id'] as string;
       if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
       
+      const cacheKey = `stock-products:${institutionId}`;
+      const cached = getFromCache(cacheKey);
+      if (cached) return res.json(cached);
+
       const snapshot = await db.collection('product_stock')
         .where('institutionId', '==', institutionId)
         .get();
       
       const items = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      if (items) {
+        setToCache(cacheKey, items);
+      }
       res.json(items);
     } catch (error: any) {
       console.error('Error fetching stock products:', error);
-      res.status(500).json({ error: 'Erro ao buscar produtos em estoque.' });
+      return sendDatabaseError(res, error, 'Erro ao buscar produtos em estoque.' );
     }
   });
 
@@ -2194,41 +4056,172 @@ async function startServer() {
       const item = req.body;
       const itemId = item.id || Date.now().toString();
       
-      const data: any = {
-        name: item.name || '',
-        unit: item.unit || '',
-        category: (item.category || 'ALIMENTAÇÃO').toUpperCase(),
-        currentStock: Number(item.currentStock) || 0,
-        minStock: Number(item.minStock) || 0,
-        status: item.status || 'Disponível',
-        estimatedCost: item.estimatedCost !== undefined ? Number(item.estimatedCost) || null : null,
-        institutionId,
-        updatedAt: new Date().toISOString()
-      };
+      const normKey = getNormalizedProductKey(item.name || '', item.category || 'ALIMENTAÇÃO', item.unit || '');
+      const lockDocId = crypto.createHash('sha256').update(`${institutionId}||${normKey}`).digest('hex');
 
-      if (data.currentStock === 0) {
-        data.status = 'Comprar';
-      } else if (data.currentStock < data.minStock) {
-        data.status = 'Alerta';
-      } else {
-        data.status = 'Disponível';
+      const productRef = db.collection('product_stock').doc(itemId);
+      const lockRef = db.collection('stock_product_keys').doc(lockDocId);
+
+      const txnResult = await db.runTransaction(async (transaction) => {
+        // --- 1. ALL READS FIRST ---
+        const lockSnap = await transaction.get(lockRef);
+        const existingProductSnap = item.id ? await transaction.get(productRef) : null;
+
+        let otherProdSnap: any = null;
+        if (lockSnap.exists) {
+          const lockData = lockSnap.data();
+          if (lockData && lockData.productId !== itemId) {
+            otherProdSnap = await transaction.get(db.collection('product_stock').doc(lockData.productId));
+          }
+        }
+
+        let legacyMatchDoc: any = null;
+        if (!lockSnap.exists) {
+          const querySnap = await transaction.get(db.collection('product_stock'));
+          for (const doc of querySnap.docs) {
+            if (doc.id === itemId) continue;
+            const d = doc.data();
+            if (d.institutionId && d.institutionId !== institutionId) continue;
+            const k = getNormalizedProductKey(d.name || '', d.category || '', d.unit || '');
+            if (k === normKey) {
+              legacyMatchDoc = { id: doc.id, name: d.name || '', category: d.category || '', unit: d.unit || '' };
+              break;
+            }
+          }
+        }
+
+        let oldLockRef: any = null;
+        if (existingProductSnap && existingProductSnap.exists) {
+          const oldData = existingProductSnap.data();
+          if (oldData) {
+            const oldKey = getNormalizedProductKey(oldData.name || '', oldData.category || '', oldData.unit || '');
+            if (oldKey !== normKey) {
+              const oldLockDocId = crypto.createHash('sha256').update(`${institutionId}||${oldKey}`).digest('hex');
+              oldLockRef = db.collection('stock_product_keys').doc(oldLockDocId);
+            }
+          }
+        }
+
+        // --- 2. CHECK CONFLICTS & WRITE LOCK IF LEGACY ---
+        if (lockSnap.exists) {
+          const lockData = lockSnap.data();
+          if (lockData && lockData.productId !== itemId) {
+            const otherData = otherProdSnap && otherProdSnap.exists ? otherProdSnap.data() : null;
+            return {
+              conflict: true,
+              existingProductId: lockData.productId,
+              existingProduct: {
+                id: lockData.productId,
+                name: otherData?.name || '',
+                category: otherData?.category || '',
+                unit: otherData?.unit || ''
+              }
+            };
+          }
+        }
+
+        if (legacyMatchDoc) {
+          // Write lock pointing to the legacy existing product
+          transaction.set(lockRef, {
+            institutionId,
+            normalizedKey: normKey,
+            productId: legacyMatchDoc.id,
+            createdAt: new Date().toISOString()
+          });
+
+          return {
+            conflict: true,
+            existingProductId: legacyMatchDoc.id,
+            existingProduct: {
+              id: legacyMatchDoc.id,
+              name: legacyMatchDoc.name || '',
+              category: legacyMatchDoc.category || '',
+              unit: legacyMatchDoc.unit || ''
+            }
+          };
+        }
+
+        // --- 3. WRITE PHASE ---
+        if (oldLockRef) {
+          transaction.delete(oldLockRef);
+        }
+
+        const data: any = {
+          name: item.name || '',
+          unit: item.unit || '',
+          category: (item.category || 'ALIMENTAÇÃO').toUpperCase(),
+          currentStock: Number(item.currentStock) || 0,
+          minStock: Number(item.minStock) || 0,
+          status: item.status || 'Disponível',
+          estimatedCost: item.estimatedCost !== undefined ? Number(item.estimatedCost) || null : null,
+          institutionId,
+          updatedAt: new Date().toISOString()
+        };
+
+        if (data.currentStock === 0) {
+          data.status = 'Comprar';
+        } else if (data.currentStock < data.minStock) {
+          data.status = 'Alerta';
+        } else {
+          data.status = 'Disponível';
+        }
+
+        transaction.set(productRef, data, { merge: true });
+
+        transaction.set(lockRef, {
+          institutionId,
+          normalizedKey: normKey,
+          productId: itemId,
+          createdAt: new Date().toISOString()
+        });
+
+        return {
+          success: true,
+          item: { id: itemId, ...data }
+        };
+      });
+
+      if (txnResult.conflict) {
+        return res.status(409).json({
+          code: 'PRODUCT_DUPLICATE',
+          existingProductId: txnResult.existingProductId,
+          existingProduct: txnResult.existingProduct,
+          error: 'Já existe um produto idêntico cadastrado nesta instituição.'
+        });
       }
 
-      await db.collection('product_stock').doc(itemId).set(data, { merge: true });
-      res.json({ success: true, item: { id: itemId, ...data } });
+      invalidateCache('stock');
+      res.json({ success: true, item: txnResult.item });
     } catch (error: any) {
       console.error('Error saving stock product:', error);
-      res.status(500).json({ error: 'Erro ao salvar produto em estoque.' });
+      return sendDatabaseError(res, error, 'Erro ao salvar produto em estoque.' );
     }
   });
 
   app.delete('/api/stock-products/:id', requireRole(['administrador', 'gerencial', 'auxiliar_administrativo']), async (req, res) => {
     try {
-      await db.collection('product_stock').doc(req.params.id).delete();
+      const productId = req.params.id;
+      const productRef = db.collection('product_stock').doc(productId);
+
+      await db.runTransaction(async (transaction) => {
+        const prodSnap = await transaction.get(productRef);
+        if (!prodSnap.exists) return;
+
+        const prodData = prodSnap.data();
+        if (prodData && prodData.institutionId) {
+          const normKey = getNormalizedProductKey(prodData.name || '', prodData.category || '', prodData.unit || '');
+          const lockDocId = crypto.createHash('sha256').update(`${prodData.institutionId}||${normKey}`).digest('hex');
+          const lockRef = db.collection('stock_product_keys').doc(lockDocId);
+          transaction.delete(lockRef);
+        }
+        transaction.delete(productRef);
+      });
+
+      invalidateCache('stock');
       res.json({ success: true });
     } catch (error: any) {
       console.error('Error deleting stock product:', error);
-      res.status(500).json({ error: 'Erro ao excluir produto do estoque.' });
+      return sendDatabaseError(res, error, 'Erro ao excluir produto do estoque.' );
     }
   });
 
@@ -2270,8 +4263,18 @@ async function startServer() {
           updatedAt: new Date().toISOString()
         };
         
+        const normKey = getNormalizedProductKey(data.name, data.category, data.unit);
+        const lockDocId = crypto.createHash('sha256').update(`${institutionId}||${normKey}`).digest('hex');
+        const lockRef = db.collection('stock_product_keys').doc(lockDocId);
+
         batch.set(ref, data, { merge: true });
-        count++;
+        batch.set(lockRef, {
+          institutionId,
+          normalizedKey: normKey,
+          productId: id,
+          createdAt: new Date().toISOString()
+        }, { merge: true });
+        count += 2;
         
         if (count % batchSize === 0) {
           await batch.commit();
@@ -2286,7 +4289,7 @@ async function startServer() {
       res.json({ success: true, count });
     } catch (error: any) {
       console.error('Error bootstrapping stock products:', error);
-      res.status(500).json({ error: 'Erro ao carregar catálogo de produtos.' });
+      return sendDatabaseError(res, error, 'Erro ao carregar catálogo de produtos.' );
     }
   });
 
@@ -2314,7 +4317,7 @@ async function startServer() {
       }
     } catch (error: any) {
       console.error('Error fetching stock movements:', error);
-      res.status(500).json({ error: 'Erro ao buscar movimentações de estoque.' });
+      return sendDatabaseError(res, error, 'Erro ao buscar movimentações de estoque.' );
     }
   });
 
@@ -2399,7 +4402,7 @@ async function startServer() {
       res.json({ success: true, movement: { id: mvRef.id, ...movementDoc }, newStock, newStatus });
     } catch (error: any) {
       console.error('Error registering stock movement:', error);
-      res.status(500).json({ error: 'Erro ao registrar movimentação de estoque.' });
+      return sendDatabaseError(res, error, 'Erro ao registrar movimentação de estoque.' );
     }
   });
 
@@ -2416,7 +4419,7 @@ async function startServer() {
       res.json(suppliers);
     } catch (error: any) {
       console.error('Error fetching suppliers:', error);
-      res.status(500).json({ error: 'Erro ao buscar fornecedores.' });
+      return sendDatabaseError(res, error, 'Erro ao buscar fornecedores.' );
     }
   });
 
@@ -2451,7 +4454,7 @@ async function startServer() {
       }
     } catch (error: any) {
       console.error('Error saving supplier:', error);
-      res.status(500).json({ error: 'Erro ao salvar fornecedor.' });
+      return sendDatabaseError(res, error, 'Erro ao salvar fornecedor.' );
     }
   });
 
@@ -2474,7 +4477,7 @@ async function startServer() {
       res.json({ success: true });
     } catch (error: any) {
       console.error('Error deleting supplier:', error);
-      res.status(500).json({ error: 'Erro ao excluir fornecedor.' });
+      return sendDatabaseError(res, error, 'Erro ao excluir fornecedor.' );
     }
   });
 
@@ -2491,7 +4494,7 @@ async function startServer() {
       res.json(donors);
     } catch (error: any) {
       console.error('Error fetching donors:', error);
-      res.status(500).json({ error: 'Erro ao buscar doadores.' });
+      return sendDatabaseError(res, error, 'Erro ao buscar doadores.' );
     }
   });
 
@@ -2523,7 +4526,7 @@ async function startServer() {
       }
     } catch (error: any) {
       console.error('Error saving donor:', error);
-      res.status(500).json({ error: 'Erro ao salvar doador.' });
+      return sendDatabaseError(res, error, 'Erro ao salvar doador.' );
     }
   });
 
@@ -2546,10 +4549,1630 @@ async function startServer() {
       res.json({ success: true });
     } catch (error: any) {
       console.error('Error deleting donor:', error);
-      res.status(500).json({ error: 'Erro ao excluir doador.' });
+      return sendDatabaseError(res, error, 'Erro ao excluir doador.' );
     }
   });
-  
+
+  // --- Gestão da Hierarquia SSVP (Conselhos Particulares e Conferências) ---
+
+  async function getServiceAuthContext(req: any): Promise<ServiceAuthContext> {
+    if (!req.user) {
+      return { allowed: false };
+    }
+    const user = req.user;
+    const headerInstId = req.headers['x-institution-id'];
+    const rawInstId = headerInstId || user.cnpj || user.institutionId || (Array.isArray(user.institutionIds) && user.institutionIds[0]);
+
+    if (!rawInstId) {
+      return { allowed: false };
+    }
+
+    let resolvedCentralId = '54.927.132/0001-92';
+    const strId = String(rawInstId);
+
+    // Se o identificador for uma conferência ou conselho particular, recupera o centralId da entidade
+    if (strId !== '54.927.132/0001-92' && !strId.includes('/')) {
+      const confDoc = await safeQuery(async () => await db.collection('conferencias').doc(strId).get());
+      if (confDoc && confDoc.exists) {
+        resolvedCentralId = confDoc.data()?.centralId || '54.927.132/0001-92';
+      } else {
+        const cpDoc = await safeQuery(async () => await db.collection('conselhos_particulares').doc(strId).get());
+        if (cpDoc && cpDoc.exists) {
+          resolvedCentralId = cpDoc.data()?.centralId || '54.927.132/0001-92';
+        } else {
+          const fallbackId = await getRealInstitutionId(strId);
+          if (fallbackId) resolvedCentralId = fallbackId;
+        }
+      }
+    } else {
+      const resolved = await getRealInstitutionId(strId);
+      if (resolved) resolvedCentralId = resolved;
+    }
+
+    const isUserAdmin =
+      user.accessLevel === 'administrador' ||
+      user.accessLevel === 'super_admin' ||
+      user.role === 'admin' ||
+      user.isAdmin === true;
+
+    return {
+      allowed: true,
+      validatedCentralId: resolvedCentralId,
+      userId: user.id || user.username || 'system',
+      isAdmin: isUserAdmin,
+      conferenciaId: user.conferenciaId,
+      particularId: user.particularId,
+      accessLevel: user.accessLevel,
+      role: user.role,
+      institutionId: String(rawInstId),
+    };
+  }
+
+  // 1. Listar Conselhos Particulares
+  app.get('/api/conselhos-particulares', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreConselhoParticularRepository(db);
+      const { status, limit, cursor } = req.query;
+
+      const parsedLimit = limit !== undefined ? Number(limit) : undefined;
+      const result = await listConselhosParticulares(authContext, repo, {
+        status: status as any,
+        limit: parsedLimit,
+        cursor: cursor ? String(cursor) : undefined,
+      });
+
+      if (!result.success) {
+        const statusCode = result.code === 'UNAUTHORIZED' ? 403 : result.code === 'INVALID_OPTIONS' ? 400 : 500;
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao listar Conselhos Particulares.');
+    }
+  });
+
+  // 2. Criar Conselho Particular
+  app.post('/api/conselhos-particulares', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreConselhoParticularRepository(db);
+
+      const result = await createConselhoParticular(req.body, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'DUPLICATE_NAME') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.status(201).json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao criar Conselho Particular.');
+    }
+  });
+
+  // 3. Atualizar Conselho Particular
+  app.put('/api/conselhos-particulares/:id', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreConselhoParticularRepository(db);
+
+      const result = await updateConselhoParticular(id, req.body, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'DUPLICATE_NAME' || result.code === 'IMMUTABLE_FIELD_MODIFIED' || result.code === 'INSTITUTION_SCOPE_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao atualizar Conselho Particular.');
+    }
+  });
+
+  // 4. Inativar Conselho Particular
+  app.post('/api/conselhos-particulares/:id/inativar', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreConselhoParticularRepository(db);
+
+      const result = await inactivateConselhoParticular(id, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'ACTIVE_CHILDREN_EXIST' || result.code === 'ALREADY_INACTIVE') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao inativar Conselho Particular.');
+    }
+  });
+
+  // 5. Listar Conferências subordinadas ao Conselho Particular
+  app.get('/api/conselhos-particulares/:particularId/conferencias', async (req: any, res) => {
+    try {
+      const { particularId } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreConferenciaRepository(db);
+      const { status, limit, cursor } = req.query;
+
+      const parsedLimit = limit !== undefined ? Number(limit) : undefined;
+      const result = await listConferencias(particularId, authContext, repo, {
+        status: status as any,
+        limit: parsedLimit,
+        cursor: cursor ? String(cursor) : undefined,
+      });
+
+      if (!result.success) {
+        const statusCode = result.code === 'UNAUTHORIZED' ? 403 : result.code === 'INVALID_OPTIONS' ? 400 : 500;
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      if (result.success && result.data?.items) {
+        const items = result.data.items;
+        const now = Date.now();
+        await Promise.all(items.map(async (conf: any) => {
+          const lastReconciled = conf.countsCache?.lastReconciledAt ? Date.parse(conf.countsCache.lastReconciledAt) : 0;
+          if (!conf.countsCache || (now - lastReconciled > 15000)) {
+            try {
+              const counts = await recalculateConferenciaMemberCounts(db, conf.id);
+              if (counts) {
+                conf.countsCache = counts;
+              }
+            } catch (err) {
+              console.error(`Erro ao atualizar countsCache em tempo real para ${conf.id}:`, err);
+            }
+          }
+        }));
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao listar Conferências.');
+    }
+  });
+
+  // 6. Criar Conferência vinculada ao Conselho Particular
+  app.post('/api/conselhos-particulares/:particularId/conferencias', async (req: any, res) => {
+    try {
+      const { particularId } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreConferenciaRepository(db);
+
+      const result = await createConferencia(particularId, req.body, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'DUPLICATE_NAME' || result.code === 'PARTICULAR_SCOPE_MISMATCH' || result.code === 'INSTITUTION_SCOPE_MISMATCH' || result.code === 'PARENT_NOT_FOUND' || result.code === 'PARENT_INACTIVE' || result.code === 'PARENT_CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.status(201).json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao criar Conferência.');
+    }
+  });
+
+  // 7. Atualizar Conferência
+  app.put('/api/conselhos-particulares/:particularId/conferencias/:id', async (req: any, res) => {
+    try {
+      const { particularId, id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreConferenciaRepository(db);
+
+      const result = await updateConferencia(id, particularId, req.body, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'DUPLICATE_NAME' || result.code === 'IMMUTABLE_FIELD_MODIFIED' || result.code === 'PARTICULAR_SCOPE_MISMATCH' || result.code === 'INSTITUTION_SCOPE_MISMATCH' || result.code === 'PARENT_NOT_FOUND' || result.code === 'PARENT_INACTIVE' || result.code === 'PARENT_CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao atualizar Conferência.');
+    }
+  });
+
+  // 8. Inativar Conferência
+  app.post('/api/conselhos-particulares/:particularId/conferencias/:id/inativar', async (req: any, res) => {
+    try {
+      const { particularId, id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreConferenciaRepository(db);
+
+      const result = await inactivateConferencia(id, particularId, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'ALREADY_INACTIVE' || result.code === 'ACTIVE_MEMBERS_EXIST' || result.code === 'INSTITUTION_SCOPE_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao inativar Conferência.');
+    }
+  });
+
+  // 8b. Obter Dados de uma Conferência por ID
+  app.get('/api/conferencias/:id', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const repo = new FirestoreConferenciaRepository(db);
+      const conf = await repo.getById(id);
+      if (!conf) {
+        return res.status(404).json({ error: 'Conferência não encontrada.', code: 'CONFERENCIA_NOT_FOUND' });
+      }
+
+      return res.json(conf);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao buscar Conferência.');
+    }
+  });
+
+  // 9. Listar Membros da Conferência
+  app.get('/api/conferencias/:conferenciaId/membros', async (req: any, res) => {
+    try {
+      const { conferenciaId } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreMembroRepository(db);
+      const { status, type } = req.query;
+
+      const result = await listMembrosConferencia(conferenciaId, authContext, repo, {
+        status: status as any,
+        type: type as any,
+      });
+
+      if (!result.success) {
+        const statusCode = result.code === 'UNAUTHORIZED' ? 403 : result.code === 'CONFERENCIA_NOT_FOUND' ? 404 : 400;
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao listar membros da Conferência.');
+    }
+  });
+
+  // 10. Cadastrar Membro na Conferência
+  app.post('/api/conferencias/:conferenciaId/membros', async (req: any, res) => {
+    try {
+      const { conferenciaId } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreMembroRepository(db);
+
+      const result = await createMembroConferencia(conferenciaId, req.body, authContext, repo);
+
+      if (!result.success || !result.data) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'CONFERENCIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      let finalData = result.data;
+      try {
+        const { syncMemberUserAccess } = await import('./lib/membro_auth_helper');
+        const syncRes = await syncMemberUserAccess(db, result.data, authContext.userId);
+        if (syncRes.userId) {
+          finalData = {
+            ...result.data,
+            userId: syncRes.userId,
+            username: syncRes.username,
+            hasAccess: syncRes.hasAccess,
+            accessStatus: syncRes.accessStatus,
+          };
+        }
+      } catch (syncErr) {
+        console.error('Erro na sincronização de acesso do novo membro:', syncErr);
+      }
+
+      return res.status(201).json(finalData);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao cadastrar membro.');
+    }
+  });
+
+  // 11. Atualizar Membro da Conferência
+  app.put('/api/conferencias/:conferenciaId/membros/:id', async (req: any, res) => {
+    try {
+      const { conferenciaId, id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreMembroRepository(db);
+
+      const result = await updateMembroConferencia(id, conferenciaId, req.body, authContext, repo);
+
+      if (!result.success || !result.data) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'MEMBRO_NOT_FOUND' || result.code === 'CONFERENCIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      let finalData = result.data;
+      try {
+        const { syncMemberUserAccess } = await import('./lib/membro_auth_helper');
+        const syncRes = await syncMemberUserAccess(db, result.data, authContext.userId);
+        if (syncRes.userId) {
+          finalData = {
+            ...result.data,
+            userId: syncRes.userId,
+            username: syncRes.username,
+            hasAccess: syncRes.hasAccess,
+            accessStatus: syncRes.accessStatus,
+          };
+        }
+      } catch (syncErr) {
+        console.error('Erro na sincronização de acesso do membro atualizado:', syncErr);
+      }
+
+      return res.json(finalData);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao atualizar dados do membro.');
+    }
+  });
+
+  // 12. Inativar Membro da Conferência
+  app.post('/api/conferencias/:conferenciaId/membros/:id/inativar', async (req: any, res) => {
+    try {
+      const { conferenciaId, id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreMembroRepository(db);
+
+      const result = await inactivateMembroConferencia(id, conferenciaId, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'MEMBRO_NOT_FOUND' || result.code === 'CONFERENCIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'ALREADY_INACTIVE' || result.code === 'CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao inativar membro.');
+    }
+  });
+
+  // 13. Gestão Administrativa de Acesso do Membro (Gerar, Redefinir Senha, Bloquear, Desbloquear)
+  app.post('/api/conferencias/:conferenciaId/membros/:id/access-action', async (req: any, res) => {
+    try {
+      const { conferenciaId, id } = req.params;
+      const { action } = req.body;
+      const authContext = await getServiceAuthContext(req);
+
+      const { accessActionMembroConferencia } = await import('./lib/membro_service');
+      const result = await accessActionMembroConferencia(id, conferenciaId, action, authContext, db);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'MEMBRO_NOT_FOUND' || result.code === 'CONFERENCIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json({ success: true, data: result.data });
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao executar ação de acesso do membro.');
+    }
+  });
+
+  // --- REGULARIZAÇÃO EM LOTE DOS MEMBROS ANTIGOS (CARGA INICIAL - FASE 3) ---
+
+  // 1. Prévia da Regularização (Somente Leitura)
+  app.post('/api/membros/regularizacao-acessos/previa', async (req: any, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Autenticação necessária.' });
+      }
+
+      const isAdmin =
+        req.user.accessLevel === 'administrador' ||
+        req.user.accessLevel === 'super_admin' ||
+        req.user.role === 'admin' ||
+        req.user.isAdmin === true;
+
+      if (!isAdmin) {
+        return res.status(403).json({
+          error: 'Acesso restrito ao administrador do Conselho Central.',
+          code: 'FORBIDDEN',
+        });
+      }
+
+      if (isUsingFallback || !activeDb || activeDb.constructor?.name === 'LocalDbFallback') {
+        return res.status(503).json({
+          error: 'Operação interrompida: a regularização de acessos só pode ser executada conectada ao Cloud Firestore oficial, sem uso de fallbacks locais.',
+          code: 'FALLBACK_BLOCKED',
+        });
+      }
+
+      const authContext = await getServiceAuthContext(req);
+      const { previewMemberAccessRegularization } = await import('./lib/membro_auth_helper');
+      const result = await previewMemberAccessRegularization(db, authContext.validatedCentralId);
+
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || 'Erro ao gerar prévia da regularização.' });
+      }
+
+      return res.json(result);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao obter prévia da regularização de acessos.');
+    }
+  });
+
+  // 2. Execução da Regularização em Lote (Idempotente)
+  app.post('/api/membros/regularizacao-acessos/executar', async (req: any, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Autenticação necessária.' });
+      }
+
+      const isAdmin =
+        req.user.accessLevel === 'administrador' ||
+        req.user.accessLevel === 'super_admin' ||
+        req.user.role === 'admin' ||
+        req.user.isAdmin === true;
+
+      if (!isAdmin) {
+        return res.status(403).json({
+          error: 'Acesso restrito ao administrador do Conselho Central.',
+          code: 'FORBIDDEN',
+        });
+      }
+
+      if (isUsingFallback || !activeDb || activeDb.constructor?.name === 'LocalDbFallback') {
+        return res.status(503).json({
+          error: 'Operação interrompida: a regularização de acessos só pode ser executada conectada ao Cloud Firestore oficial, sem uso de fallbacks locais.',
+          code: 'FALLBACK_BLOCKED',
+        });
+      }
+
+      const authContext = await getServiceAuthContext(req);
+      const { executeMemberAccessRegularization } = await import('./lib/membro_auth_helper');
+      const result = await executeMemberAccessRegularization(
+        db,
+        authContext.userId || req.user.id || 'admin',
+        authContext.validatedCentralId
+      );
+
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || 'Erro ao executar regularização de acessos.' });
+      }
+
+      return res.json(result);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao executar regularização de acessos.');
+    }
+  });
+
+
+  // =========================================================================
+  // --- ROTAS DO MÓDULO DE FAMÍLIAS ASSISTIDAS E SINDICÂNCIA SSVP ---
+  // =========================================================================
+
+  // 1. Listar Famílias de uma Conferência (ou filtrado por CP)
+  app.get('/api/conferencias/:conferenciaId/familias', async (req: any, res) => {
+    try {
+      const { conferenciaId } = req.params;
+      const { status, search, particularId } = req.query;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreFamiliaRepository(db);
+
+      const result = await listFamiliasService(
+        conferenciaId,
+        authContext,
+        repo,
+        {
+          status: status as any,
+          search: search as string,
+          particularId: particularId as string,
+        }
+      );
+
+      if (!result.success) {
+        const statusCode = result.code === 'UNAUTHORIZED' ? 403 : result.code === 'CONFERENCIA_NOT_FOUND' ? 404 : 400;
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao listar famílias assistidas.');
+    }
+  });
+
+  // 2. Cadastrar Nova Família com Ficha de Sindicância (1ª Visita)
+  app.post('/api/conferencias/:conferenciaId/familias', async (req: any, res) => {
+    try {
+      const { conferenciaId } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreFamiliaRepository(db);
+
+      const result = await createFamiliaService(conferenciaId, req.body, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'CONFERENCIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.status(201).json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao cadastrar ficha de família assistida.');
+    }
+  });
+
+  // 3. Atualizar Ficha de Sindicância / Dados da Família
+  app.put('/api/familias/:id', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreFamiliaRepository(db);
+
+      const result = await updateFamiliaService(id, req.body, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'FAMILIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao atualizar dados da família assistida.');
+    }
+  });
+
+  // 4. Arquivar Família
+  app.post('/api/familias/:id/arquivar', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { motivo, detalhes } = req.body || {};
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreFamiliaRepository(db);
+
+      const result = await archiveFamiliaService(id, motivo, detalhes, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'FAMILIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao arquivar família assistida.');
+    }
+  });
+
+  // 5. Desarquivar Família
+  app.post('/api/familias/:id/desarquivar', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreFamiliaRepository(db);
+
+      const result = await unarchiveFamiliaService(id, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'FAMILIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao desarquivar família assistida.');
+    }
+  });
+
+  // 6. Listar Visitas de uma Família
+  app.get('/api/familias/:id/visitas', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Não autorizado.', code: 'UNAUTHORIZED' });
+      }
+
+      const repo = new FirestoreFamiliaRepository(db);
+      const familia = await repo.getFamiliaById(id);
+      if (!familia) {
+        return res.status(404).json({ error: 'Família não encontrada.', code: 'FAMILIA_NOT_FOUND' });
+      }
+      if (familia.centralId && familia.centralId !== authContext.validatedCentralId) {
+        return res.status(409).json({ error: 'Acesso negado a família de outro conselho.', code: 'CENTRAL_MISMATCH' });
+      }
+      if (!authContext.isAdmin && authContext.conferenciaId && familia.conferenciaId !== authContext.conferenciaId) {
+        return res.status(403).json({ error: 'Acesso negado a visitas de família de outra Conferência.', code: 'UNAUTHORIZED' });
+      }
+
+      const visitas = await repo.listVisitasByFamilia(id);
+      return res.json(visitas);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao listar histórico de visitas.');
+    }
+  });
+
+  // 7. Registrar Nova Visita (com seleção de visitadores, entrega de cesta e comentários)
+  app.post('/api/familias/:id/visitas', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      const repo = new FirestoreFamiliaRepository(db);
+
+      const result = await createVisitaService(id, req.body, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'FAMILIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'CENTRAL_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.status(201).json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao registrar visita à família.');
+    }
+  });
+
+  // 8. Controle Mensal de Cestas por Conferência
+  app.get('/api/conferencias/:conferenciaId/controle-cestas', async (req: any, res) => {
+    try {
+      const { conferenciaId } = req.params;
+      const mesAno = (req.query.mesAno as string) || new Date().toISOString().substring(0, 7);
+      const authContext = await getServiceAuthContext(req);
+
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Não autorizado.', code: 'UNAUTHORIZED' });
+      }
+
+      const repo = new FirestoreFamiliaRepository(db);
+      const conf = await repo.getConferenciaById(conferenciaId);
+      if (!conf) {
+        return res.status(404).json({ error: 'Conferência não encontrada.', code: 'CONFERENCIA_NOT_FOUND' });
+      }
+      if (conf.centralId && conf.centralId !== authContext.validatedCentralId) {
+        return res.status(409).json({ error: 'Conferência pertence a outro conselho central.', code: 'CENTRAL_MISMATCH' });
+      }
+
+      if (!authContext.isAdmin && authContext.conferenciaId && conferenciaId !== authContext.conferenciaId) {
+        return res.status(403).json({ error: 'Acesso negado ao controle de cestas de outra Conferência.', code: 'UNAUTHORIZED' });
+      }
+
+      const stats = await repo.getControleCestasMensal(conferenciaId, mesAno);
+      return res.json(stats);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao obter controle mensal de cestas.');
+    }
+  });
+
+  // --- Perfil Pessoal do Vicentino Autenticado (Meu Perfil) ---
+
+  // 8b. Obter Perfil do Próprio Membro Autenticado
+  app.get('/api/me/perfil-membro', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.userId) {
+        return res.status(401).json({ error: 'Não autenticado.', code: 'UNAUTHORIZED' });
+      }
+
+      const { getPerfilMembroAutenticado } = await import('./lib/membro_service');
+      const result = await getPerfilMembroAutenticado(authContext, db);
+
+      if (!result.success || !result.data) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 401;
+        else if (result.code === 'MEMBRO_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'CENTRAL_MISMATCH') statusCode = 403;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao obter perfil do membro.');
+    }
+  });
+
+  // 8c. Atualizar Dados Pessoais do Próprio Membro Autenticado
+  app.put('/api/me/perfil-membro', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.userId) {
+        return res.status(401).json({ error: 'Não autenticado.', code: 'UNAUTHORIZED' });
+      }
+
+      const { updatePerfilMembroAutenticado } = await import('./lib/membro_service');
+      const result = await updatePerfilMembroAutenticado(req.body, authContext, db);
+
+      if (!result.success || !result.data) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 401;
+        else if (result.code === 'MEMBRO_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'CENTRAL_MISMATCH') statusCode = 403;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json({ success: true, data: result.data });
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao atualizar perfil do membro.');
+    }
+  });
+
+  // 8d. Verificar dinamicamente se o membro autenticado possui cargo de diretoria ativo
+  app.get('/api/me/diretoria-conferencia', async (req: any, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Não autenticado.', code: 'UNAUTHORIZED' });
+      }
+      const membroId = req.user.membroId;
+      if (!membroId) {
+        return res.json({ isDirector: false, roles: [] });
+      }
+
+      const confId = req.user.conferenciaId || (req.query.conferenciaId as string);
+      const { verifyMemberBoardRole } = await import('./lib/diretoria_helper');
+      const boardInfo = await verifyMemberBoardRole(db, membroId, confId);
+      return res.json(boardInfo);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao verificar cargo na diretoria.');
+    }
+  });
+
+  // 8e. Obter dados estruturais iniciais da Conferência (Acesso restrito à Diretoria ativa)
+  app.get('/api/conferencias/:conferenciaId/gestao-inicial', async (req: any, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Não autenticado.', code: 'UNAUTHORIZED' });
+      }
+      const { conferenciaId } = req.params;
+      const cleanConfId = typeof conferenciaId === 'string' ? conferenciaId.trim() : '';
+      if (!cleanConfId) {
+        return res.status(400).json({ error: 'ID da Conferência é obrigatório.', code: 'MISSING_ID' });
+      }
+
+      const isAdmin =
+        req.user.accessLevel === 'administrador' ||
+        req.user.accessLevel === 'super_admin' ||
+        req.user.role === 'TI / Gestão' ||
+        req.user.role === 'admin' ||
+        req.user.isAdmin === true;
+
+      // Se não for administrador global, valida estritamente se o membro possui vínculo ativo de diretoria nesta conferência
+      if (!isAdmin) {
+        const membroId = req.user.membroId;
+        if (!membroId) {
+          return res.status(403).json({
+            error: 'Acesso negado. Apenas membros com cargo ativo na diretoria desta Conferência podem acessar a gestão.',
+            code: 'FORBIDDEN_NOT_BOARD_MEMBER'
+          });
+        }
+
+        const { verifyMemberBoardRole } = await import('./lib/diretoria_helper');
+        const boardInfo = await verifyMemberBoardRole(db, membroId, cleanConfId);
+
+        if (!boardInfo.isDirector) {
+          return res.status(403).json({
+            error: 'Acesso negado. Apenas membros com cargo ativo na diretoria desta Conferência podem acessar a gestão.',
+            code: 'FORBIDDEN_NOT_BOARD_MEMBER'
+          });
+        }
+      }
+
+      // Consulta os dados da conferência no banco de dados
+      const confDoc = await safeQuery(async () => await db.collection('conferencias').doc(cleanConfId).get());
+      if (!confDoc || !confDoc.exists) {
+        return res.status(404).json({ error: 'Conferência não encontrada.', code: 'CONFERENCIA_NOT_FOUND' });
+      }
+
+      const confData = confDoc.data() || {};
+      if (confData.status === 'inativa' || confData.archived === true) {
+        return res.status(403).json({ error: 'Esta Conferência encontra-se inativa.', code: 'CONFERENCIA_INACTIVE' });
+      }
+
+      // Consulta nome do Conselho Particular pai para exibição informativa
+      let particularNome = '';
+      if (confData.particularId) {
+        const cpDoc = await safeQuery(async () => await db.collection('conselhos_particulares').doc(confData.particularId).get());
+        if (cpDoc && cpDoc.exists) {
+          particularNome = cpDoc.data()?.name || '';
+        }
+      }
+
+      // Retorna estritamente os dados estruturais da própria conferência (sem formulários de edição, financeiro ou estatísticas)
+      return res.json({
+        success: true,
+        conferencia: {
+          id: confDoc.id,
+          name: confData.name || '',
+          code: confData.code || '',
+          status: confData.status || 'ativo',
+          foundationDate: confData.foundationDate || '',
+          aggregationDate: confData.aggregationDate || '',
+          meetingDay: confData.meetingDay || '',
+          meetingTime: confData.meetingTime || '',
+          location: confData.location || '',
+          addressStreet: confData.addressStreet || '',
+          addressNumber: confData.addressNumber || '',
+          addressComplement: confData.addressComplement || '',
+          addressNeighborhood: confData.addressNeighborhood || '',
+          addressCity: confData.addressCity || '',
+          addressState: confData.addressState || 'SP',
+          addressZip: confData.addressZip || '',
+          fullAddress: confData.fullAddress || '',
+          phone: confData.phone || '',
+          email: confData.email || '',
+          startDate: confData.startDate || '',
+          endDate: confData.endDate || '',
+          notes: confData.notes || '',
+          particularId: confData.particularId || '',
+          centralId: confData.centralId || '54.927.132/0001-92',
+          diretoria: {
+            presidente: confData.presidente || null,
+            vicePresidente: confData.vicePresidente || null,
+            secretario: confData.secretario || null,
+            segundoSecretario: confData.segundoSecretario || null,
+            tesoureiro: confData.tesoureiro || null,
+            segundoTesoureiro: confData.segundoTesoureiro || null,
+          }
+        },
+        particularNome,
+        centralNome: 'Conselho Central de Jaboticabal'
+      });
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao obter dados de gestão da Conferência.');
+    }
+  });
+
+  // --- Endpoints para Formulário Público de Autocadastro de Membros ---
+
+  // 13. Consultar Token Público do Conselho Central (Admin autenticado)
+  app.get('/api/hierarchy/central/public-token', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await getCentralPublicTokenConfig(authContext.validatedCentralId, authContext, repo);
+
+      if (!result.success) {
+        return res.status(result.code === 'UNAUTHORIZED' ? 403 : 500).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao consultar token público.');
+    }
+  });
+
+  // 14. Gerar / Regenerar Token Público do Conselho Central (Admin autenticado)
+  app.post('/api/hierarchy/central/public-token/generate', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await generateOrRotateCentralPublicToken(authContext.validatedCentralId, authContext, repo);
+
+      if (!result.success) {
+        return res.status(result.code === 'UNAUTHORIZED' ? 403 : 500).json({ error: result.error, code: result.code });
+      }
+
+      return res.status(201).json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao gerar token público.');
+    }
+  });
+
+  // 15. Revogar Token Público do Conselho Central (Admin autenticado)
+  app.post('/api/hierarchy/central/public-token/revoke', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await revokeCentralPublicToken(authContext.validatedCentralId, authContext, repo);
+
+      if (!result.success) {
+        return res.status(result.code === 'UNAUTHORIZED' ? 403 : 500).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao revogar token público.');
+    }
+  });
+
+  // 16. Consultar Estrutura Pública Hierárquica por Token (Público - sem login)
+  app.get('/api/public/central/:token/structure', async (req: any, res) => {
+    try {
+      const { token } = req.params;
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await getPublicHierarchyStructure(token, repo);
+
+      if (!result.success) {
+        const statusCode =
+          result.code === 'TOKEN_NOT_FOUND' || result.code === 'TOKEN_REVOKED' ? 404 : 500;
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao consultar estrutura do formulário.');
+    }
+  });
+
+  // 17. Submeter Autocadastro de Membro (Público - sem login)
+  app.post('/api/public/central/:token/submit', async (req: any, res) => {
+    try {
+      const { token } = req.params;
+      const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+      const userAgent = req.headers['user-agent'] || '';
+
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await submitPublicMemberRegistration(token, req.body, repo, {
+        ip: String(clientIp),
+        userAgent: String(userAgent),
+      });
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'TOKEN_NOT_FOUND' || result.code === 'TOKEN_REVOKED') statusCode = 404;
+        else if (result.code === 'PARTICULAR_NOT_FOUND' || result.code === 'CONFERENCIA_NOT_FOUND') statusCode = 404;
+        else if (
+          result.code === 'PARTICULAR_INACTIVE' ||
+          result.code === 'CONFERENCIA_INACTIVE' ||
+          result.code === 'HIERARCHY_MISMATCH'
+        )
+          statusCode = 409;
+        else if (result.code === 'DUPLICATE_SUBMISSION_COOLDOWN' || result.code === 'RATE_LIMIT_EXCEEDED') statusCode = 429;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({
+          error: result.error,
+          code: result.code,
+          errors: result.errors,
+        });
+      }
+
+      // Se o membro foi criado automaticamente, recalcula os contadores da conferência
+      if (result.data?.status === 'processado_automaticamente' && req.body?.conferenciaId) {
+        try {
+          await recalculateConferenciaMemberCounts(db, req.body.conferenciaId);
+        } catch (recalcErr) {
+          console.error('Erro ao recalcular contagem de membros após autocadastro público:', recalcErr);
+        }
+      }
+
+      return res.status(201).json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao enviar cadastro de membro.');
+    }
+  });
+
+  // 17b. Listagem pública de membros de uma Conferência para complementação de cadastro (Público - sem login)
+  app.get('/api/public/central/:token/conferencias/:conferenciaId/membros', async (req: any, res) => {
+    try {
+      const { token, conferenciaId } = req.params;
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await listPublicConferenciaMembers(token, conferenciaId, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'TOKEN_NOT_FOUND' || result.code === 'TOKEN_REVOKED' || result.code === 'CONFERENCIA_NOT_FOUND') {
+          statusCode = 404;
+        } else if (result.code === 'CONFERENCIA_INACTIVE') {
+          statusCode = 409;
+        } else if (result.code === 'STORAGE_ERROR') {
+          statusCode = 500;
+        }
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao listar membros da conferência.');
+    }
+  });
+
+  // 17c. Consulta pública dos detalhes mascarados do membro selecionado (Público - sem login)
+  app.get('/api/public/central/:token/membros/:idOpaco/masked', async (req: any, res) => {
+    try {
+      const { token, idOpaco } = req.params;
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await getPublicMemberMaskedDetails(token, idOpaco, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (
+          result.code === 'TOKEN_NOT_FOUND' ||
+          result.code === 'TOKEN_REVOKED' ||
+          result.code === 'MEMBER_NOT_FOUND' ||
+          result.code === 'SUBMISSION_NOT_FOUND'
+        ) {
+          statusCode = 404;
+        } else if (result.code === 'INVALID_OPAQUE_TOKEN') {
+          statusCode = 410; // Gone / Expirado
+        } else if (result.code === 'STORAGE_ERROR') {
+          statusCode = 500;
+        }
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao consultar detalhes do membro.');
+    }
+  });
+
+  // 17d. Enviar solicitação de complementação / alteração cadastral de membro (Público - sem login)
+  app.post('/api/public/central/:token/membros/:idOpaco/update-request', async (req: any, res) => {
+    try {
+      const { token, idOpaco } = req.params;
+      const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+      const userAgent = req.headers['user-agent'] || '';
+
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await submitPublicMemberUpdateRequest(token, idOpaco, req.body, repo, {
+        ip: String(clientIp),
+        userAgent: String(userAgent),
+      });
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (
+          result.code === 'TOKEN_NOT_FOUND' ||
+          result.code === 'TOKEN_REVOKED' ||
+          result.code === 'MEMBER_NOT_FOUND' ||
+          result.code === 'SUBMISSION_NOT_FOUND' ||
+          result.code === 'CONFERENCIA_NOT_FOUND'
+        ) {
+          statusCode = 404;
+        } else if (result.code === 'INVALID_OPAQUE_TOKEN') {
+          statusCode = 410;
+        } else if (result.code === 'ALREADY_PENDING_UPDATE' || result.code === 'CONFERENCIA_INACTIVE') {
+          statusCode = 409;
+        } else if (result.code === 'RATE_LIMIT_EXCEEDED') {
+          statusCode = 429;
+        } else if (result.code === 'STORAGE_ERROR') {
+          statusCode = 500;
+        }
+
+        return res.status(statusCode).json({
+          error: result.error,
+          code: result.code,
+          errors: result.errors,
+        });
+      }
+
+      return res.status(201).json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao enviar solicitação de atualização.');
+    }
+  });
+
+  // 18. Listar Solicitações de Autocadastro (Admin / Conselho Central autenticado)
+  app.get('/api/hierarchy/central/submissions', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const { status, particularId, conferenciaId } = req.query;
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await listCentralMemberSubmissions(authContext.validatedCentralId, authContext, repo, {
+        status: status as any,
+        particularId: particularId ? String(particularId) : undefined,
+        conferenciaId: conferenciaId ? String(conferenciaId) : undefined,
+      });
+
+      if (!result.success) {
+        return res.status(result.code === 'UNAUTHORIZED' ? 403 : 500).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao listar solicitações de cadastro.');
+    }
+  });
+
+  // 19. Checar Possíveis Duplicidades de Cadastro (Admin autenticado)
+  app.post('/api/hierarchy/central/submissions/check-duplicates', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const { normalizedName, normalizedPhone, email } = req.body;
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await checkSubmissionDuplicates(
+        authContext.validatedCentralId,
+        String(normalizedName || ''),
+        String(normalizedPhone || ''),
+        email ? String(email) : undefined,
+        authContext,
+        repo
+      );
+
+      if (!result.success) {
+        return res.status(result.code === 'UNAUTHORIZED' ? 403 : 500).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao verificar duplicidades.');
+    }
+  });
+
+  // 20. Aprovar Solicitação de Autocadastro de Membro (Admin autenticado)
+  app.post('/api/hierarchy/central/submissions/:id/approve', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await approveMemberSubmission(
+        id,
+        authContext.validatedCentralId,
+        authContext,
+        repo,
+        req.body?.correctedData || req.body
+      );
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'SUBMISSION_NOT_FOUND' || result.code === 'PARTICULAR_NOT_FOUND' || result.code === 'CONFERENCIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'ALREADY_PROCESSED' || result.code === 'HIERARCHY_MISMATCH') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code, errors: result.errors });
+      }
+
+      // Recalcula contadores da conferência após aprovação bem-sucedida
+      if (result.data?.submission?.conferenciaId) {
+        try {
+          await recalculateConferenciaMemberCounts(db, result.data.submission.conferenciaId);
+        } catch (recalcErr) {
+          console.error('Erro ao recalcular contagem de membros após aprovação:', recalcErr);
+        }
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao aprovar solicitação de cadastro.');
+    }
+  });
+
+  // 20b. Confirmar Cadastro e Enviar Diretamente para a Conferência (Forçar Criação/Atualização)
+  app.post('/api/hierarchy/central/submissions/:id/confirm-send', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await confirmAndSendMemberSubmission(
+        id,
+        authContext.validatedCentralId,
+        authContext,
+        repo,
+        req.body?.overrideData || req.body?.correctedData || req.body
+      );
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'SUBMISSION_NOT_FOUND' || result.code === 'PARTICULAR_NOT_FOUND' || result.code === 'CONFERENCIA_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      // Recalcula contadores da conferência após envio confirmado
+      if (result.data?.conferenciaId) {
+        try {
+          await recalculateConferenciaMemberCounts(db, result.data.conferenciaId);
+        } catch (recalcErr) {
+          console.error('Erro ao recalcular contagem de membros após confirmação de envio:', recalcErr);
+        }
+      }
+
+      return res.json({
+        ...result.data,
+        message: 'Cadastro confirmado e enviado para a Conferência com sucesso!',
+      });
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao confirmar e enviar cadastro para a Conferência.');
+    }
+  });
+
+  // 21. Recusar Solicitação de Autocadastro de Membro (Admin autenticado)
+  app.post('/api/hierarchy/central/submissions/:id/reject', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const { reason } = req.body;
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await rejectMemberSubmission(
+        id,
+        authContext.validatedCentralId,
+        String(reason || ''),
+        authContext,
+        repo
+      );
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'SUBMISSION_NOT_FOUND') statusCode = 404;
+        else if (result.code === 'ALREADY_PROCESSED' || result.code === 'MISSING_REJECTION_REASON') statusCode = 409;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao recusar solicitação de cadastro.');
+    }
+  });
+
+  // 21b. Executar Dry-Run Read-Only de Solicitações Pendentes (Admin autenticado)
+  app.get('/api/hierarchy/central/submissions/dry-run', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await runLegacySubmissionsDryRun(authContext.validatedCentralId, authContext, repo);
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'CONFIG_ERROR') statusCode = 500;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      return res.json(result.data);
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao executar dry-run.');
+    }
+  });
+
+  // 21c. Conciliação e Sincronização em Massa de Solicitações e Membros (Admin autenticado)
+  app.post('/api/hierarchy/central/submissions/reconcile', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      if (!authContext.allowed || !authContext.validatedCentralId) {
+        return res.status(403).json({ error: 'Operação não autorizada.', code: 'UNAUTHORIZED' });
+      }
+
+      const { conferenciaId } = req.body || {};
+      const repo = new FirestorePublicRegistrationRepository(db);
+      const result = await reconcileAndSyncPendingSubmissions(
+        authContext.validatedCentralId,
+        authContext,
+        repo,
+        { targetConferenciaId: conferenciaId ? String(conferenciaId) : undefined }
+      );
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'UNAUTHORIZED') statusCode = 403;
+        else if (result.code === 'CONFIG_ERROR') statusCode = 500;
+        else if (result.code === 'STORAGE_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({ error: result.error, code: result.code });
+      }
+
+      // Recalcula contadores de todas as conferências impactadas
+      if (result.data?.conferenciasUpdated?.length) {
+        for (const confId of result.data.conferenciasUpdated) {
+          try {
+            await recalculateConferenciaMemberCounts(db, confId);
+          } catch (recalcErr) {
+            console.error(`Erro ao recalcular contagem da conferência ${confId} após conciliação:`, recalcErr);
+          }
+        }
+      }
+
+      return res.json({
+        ...result.data,
+        message: `Conciliação concluída: ${result.data.syncedCount} membros criados/sincronizados, ${result.data.alreadyLinkedCount} já vinculados, ${result.data.conferenciasUpdated.length} conferências com contadores atualizados.`,
+      });
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao conciliar solicitações de membros.');
+    }
+  });
+
+  // 22. Importação Única e Idempotente da Estrutura 2026 (Exclusivo para Administrador do Conselho Central de Jaboticabal)
+  app.post('/api/admin/importar-estrutura-2026', async (req: any, res) => {
+    try {
+      const authContext = await getServiceAuthContext(req);
+      const user = req.user || {};
+      const isAdmin = user.accessLevel === 'administrador' || user.role === 'admin' || user.isAdmin === true;
+
+      // 1. Validação de perfil administrativo
+      if (!isAdmin) {
+        return res.status(403).json({
+          error: 'Acesso negado. Apenas administradores podem executar esta operação.',
+          code: 'FORBIDDEN_NOT_ADMIN',
+        });
+      }
+
+      // 2. Resolução estrita do Conselho Central esperado (sem fallback silencioso)
+      const expectedCentralDocId = await resolveExistingInstitutionDocId(EXPECTED_CNPJ);
+      if (!expectedCentralDocId) {
+        return res.status(500).json({
+          error: `Conselho Central com CNPJ ${EXPECTED_CNPJ} não foi localizado no cadastro de instituições.`,
+          code: 'CENTRAL_NOT_FOUND',
+        });
+      }
+
+      // 3. Validação estrita do Conselho Central de Jaboticabal
+      if (!authContext.allowed || authContext.validatedCentralId !== expectedCentralDocId) {
+        return res.status(403).json({
+          error: `Operação restrita ao Conselho Central de Jaboticabal (${EXPECTED_CNPJ}).`,
+          code: 'FORBIDDEN_CENTRAL',
+        });
+      }
+
+      // 4. Proibir e abortar imediatamente se estiver usando LocalDbFallback
+      if (isUsingFallback || !db || (db as any)._isLocalFallback || typeof db.runTransaction !== 'function') {
+        return res.status(500).json({
+          error: 'Operação abortada: banco de dados remoto indisponível ou em modo fallback.',
+          code: 'LOCAL_FALLBACK_PROHIBITED',
+        });
+      }
+
+      // 5. Validação de projeto e banco ativo no Admin SDK
+      const activeProjectId = firebaseConfig.projectId;
+      const activeDatabaseId = firebaseConfig.firestoreDatabaseId;
+
+      if (activeProjectId !== EXPECTED_PROJECT_ID || activeDatabaseId !== EXPECTED_DATABASE_ID) {
+        return res.status(500).json({
+          error: `Alvo do banco inválido. Esperado ${EXPECTED_PROJECT_ID}/${EXPECTED_DATABASE_ID}, ativo ${activeProjectId}/${activeDatabaseId}.`,
+          code: 'INVALID_DATABASE_TARGET',
+        });
+      }
+
+      // 6. Executar importação sem aceitar dados do cliente
+      const result = await executeStructure2026Import(
+        db,
+        user.id || authContext.userId || 'admin-central',
+        authContext.validatedCentralId,
+        expectedCentralDocId,
+        activeProjectId,
+        activeDatabaseId
+      );
+
+      if (!result.success) {
+        let statusCode = 400;
+        if (result.code === 'MIGRATION_ALREADY_EXECUTED') statusCode = 409;
+        else if (result.code === 'FORBIDDEN_CENTRAL' || result.code === 'FORBIDDEN_NOT_ADMIN') statusCode = 403;
+        else if (result.code === 'LOCAL_FALLBACK_PROHIBITED' || result.code === 'INVALID_DATABASE_TARGET') statusCode = 500;
+        else if (result.code === 'PARTIAL_IMPORT_ERROR') statusCode = 500;
+
+        return res.status(statusCode).json({
+          error: result.error,
+          code: result.code,
+          created: result.created,
+          ignored: result.ignored,
+          conflicts: result.conflicts,
+          unimported: result.unimported,
+          migrationCompletedAt: result.migrationCompletedAt,
+        });
+      }
+
+      // Invalida o cache de consultas para refletir imediatamente os novos registros
+      invalidateCache('conselhos_particulares');
+      invalidateCache('conferencias');
+
+      // Auditoria
+      await logAudit(
+        'IMPORT_STRUCTURE_2026',
+        'HIERARCHY',
+        expectedCentralDocId,
+        req,
+        expectedCentralDocId,
+        'Importação única da estrutura 2026 executada com sucesso',
+        {
+          created: result.created,
+          ignored: result.ignored,
+          conflicts: result.conflicts,
+          migrationCompletedAt: result.migrationCompletedAt,
+        }
+      );
+
+      return res.json({
+        success: true,
+        message: 'Estrutura 2026 importada com sucesso no Firestore remoto.',
+        projectId: result.projectId,
+        databaseId: result.databaseId,
+        created: result.created,
+        ignored: result.ignored,
+        conflicts: result.conflicts,
+        unimported: result.unimported,
+        migrationCompletedAt: result.migrationCompletedAt,
+      });
+    } catch (err: any) {
+      return handleApiError(res, err, 'Erro ao executar importação da estrutura 2026.');
+    }
+  });
+
+  // --- AI ASSISTANT (CONSULTIVO MULTI-MÓDULO POR INSTITUIÇÃO) ---
+  app.get('/api/ai-assistant/status', (req, res) => {
+    const hasKey = !!process.env.GEMINI_API_KEY;
+    res.json({
+      active: hasKey,
+      model: 'gemini-3.7-flash',
+      message: hasKey 
+        ? 'Assistente IA ativo e pronto para consultas.' 
+        : 'Chave GEMINI_API_KEY não configurada no ambiente.'
+    });
+  });
+
+  app.post('/api/ai-assistant/ask', async (req, res) => {
+    try {
+      const { question, history = [], institutionId } = req.body;
+
+      if (!question || typeof question !== 'string') {
+        return res.status(400).json({ error: 'Pergunta não informada.' });
+      }
+
+      const resolvedInstId = institutionId || (req as any).user?.institutionId || (req as any).user?.cnpj || (req.headers['x-institution-id'] as string) || '';
+
+      if (!resolvedInstId) {
+        return res.status(400).json({ error: 'Instituição não identificada na sessão.' });
+      }
+
+      // Verify and resolve institution
+      let instDocData: any = null;
+
+      try {
+        const instDoc = await db.collection('institutions').doc(resolvedInstId).get();
+        if (instDoc.exists) {
+          instDocData = instDoc.data();
+        } else {
+          // Try search by CNPJ
+          const cleanInst = resolvedInstId.replace(/[\.\-\/]/g, '');
+          const snap = await db.collection('institutions').where('cnpj', '==', resolvedInstId).get();
+          if (!snap.empty) {
+            instDocData = snap.docs[0].data();
+          } else {
+            const snap2 = await db.collection('institutions').where('cnpj', '==', cleanInst).get();
+            if (!snap2.empty) instDocData = snap2.docs[0].data();
+          }
+        }
+      } catch (e) {
+        console.warn('[AI Assistant] Could not fetch institution doc directly:', e);
+      }
+
+      const instName = instDocData?.name || instDocData?.fantasyName || instDocData?.razaoSocial || 'Instituição SSVP';
+
+      // 1. Build knowledge snapshot of this institution's modules
+      const knowledge = await buildInstitutionKnowledgeContext(db, resolvedInstId, instDocData);
+
+      // 2. Call Gemini
+      const answer = await askAiAssistant(question, history, knowledge, instName);
+
+      return res.json({
+        success: true,
+        answer,
+        institutionName: instName,
+        timestamp: new Date().toISOString()
+      });
+    } catch (err: any) {
+      console.error('[AI Assistant Route Error]:', err);
+      const isMissingKey = err?.message?.includes('GEMINI_API_KEY');
+      return res.status(500).json({
+        error: isMissingKey 
+          ? 'A chave GEMINI_API_KEY não foi configurada no ambiente.' 
+          : (err.message || 'Erro ao processar consulta com o Assistente IA.')
+      });
+    }
+  });
+
+  // Global Error Handler for API routes
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (isDbUnavailableError(err)) {
+      console.error('Database unavailable error caught in global handler:', err?.message || err);
+      return res.status(503).json({
+        error: 'DATABASE_TEMPORARILY_UNAVAILABLE',
+        message: 'O banco de dados está temporariamente indisponível. Tente novamente em alguns minutos.'
+      });
+    }
+    console.error('Uncaught API error:', err);
+    res.status(err.status || 500).json({ error: 'Erro interno no servidor.' });
+  });
+
   // --- Vite / Static Files ---
 
   if (process.env.NODE_ENV !== 'production') {
@@ -2570,6 +6193,7 @@ async function startServer() {
   });
   } catch (error) {
     console.error('SERVER FATAL STARTUP ERROR:', error);
+    process.exit(1);
   }
 }
 

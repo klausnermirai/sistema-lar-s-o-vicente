@@ -139,6 +139,25 @@
         "categories": { "type": "array", "items": { "type": "string" } }
       },
       "required": ["institutionId", "name"]
+    },
+    "CaixinhaMovement": {
+      "title": "CaixinhaMovement",
+      "description": "Cash movements (inflow/outflow) for petty cash / caixinha.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "type": { "type": "string", "enum": ["entrada", "saida"] },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "value": { "type": "number" },
+        "date": { "type": "string" },
+        "responsible": { "type": "string" },
+        "receiptNumber": { "type": "string" },
+        "originDonationId": { "type": "string" },
+        "notes": { "type": "string" },
+        "archived": { "type": "boolean" }
+      },
+      "required": ["institutionId", "type", "description", "value", "date"]
     }
   },
   "firestore": {
@@ -177,6 +196,14 @@
     "suppliers/{supplierId}": {
       "schema": "Supplier",
       "description": "Product suppliers list."
+    },
+    "caixinha_movements/{movementId}": {
+      "schema": "CaixinhaMovement",
+      "description": "Petty cash / caixinha inflow and outflow records."
+    },
+    "familias_assistidas/{familiaId}": {
+      "schema": "AssistedFamily",
+      "description": "Famílias assistidas com Ficha de Sindicância completa e histórico de visitas."
     }
   }
 }

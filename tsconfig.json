@@ -25,5 +25,6 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": ["dist", "node_modules", "tests", "_backup_pre_fix", "_backup_revision_2", "_backup_revision_3", "_backup_revision_4", "_backup_pre_publicacao"]
 }
