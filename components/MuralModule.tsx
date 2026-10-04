@@ -1,12 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MuralMessage, Resident } from '../types';
 import { setLastReadTimestamp, getLastReadTimestamp } from '../lib/muralStore';
-import { fetchResidents, saveMuralMessage } from '../lib/api';
+import { fetchResidents, fetchMural, saveMuralMessage, updateMuralMessage, toggleMuralLikeApi, deleteMuralMessage } from '../lib/api';
 import { sortResidentsByName } from '../lib/utils';
 import { Send, Search, Calendar as CalendarIcon, Download, Copy, MessageCircle, Edit2, Trash2, X, Check, ThumbsUp, Users, ChevronRight, Eye } from 'lucide-react';
-import { collection, query, where, orderBy, limit, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, doc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { getCanonicalInstitutionId, isMonteAltoUnit, getMonteAltoQueryIds } from '../lib/canonical_units';
 
 interface MuralModuleProps {
   institutionId: string;
@@ -40,10 +37,37 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
 
   // Removed viewingDetailsMsg state
 
+  const loadMuralMessages = async (dateValue: string = filterDate, showLoading: boolean = true) => {
+    if (!institutionId) return;
+    if (showLoading) setIsLoading(true);
+
+    try {
+      const data = await fetchMural(institutionId, dateValue || undefined);
+      const msgs = (Array.isArray(data) ? data : []).map((msg: any) => ({
+        ...msg,
+        timestamp: typeof msg.timestamp === 'number' ? msg.timestamp : Number(msg.timestamp) || 0
+      })) as MuralMessage[];
+
+      setMessages(msgs);
+
+      if (!dateValue && msgs.length > 0) {
+        const validTimestamps = msgs.map(m => Number(m.timestamp) || 0).filter(ts => ts > 0);
+        if (validTimestamps.length > 0) {
+          setLastReadTimestamp(institutionId, username, Math.max(...validTimestamps));
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao carregar mural:', error);
+    } finally {
+      if (showLoading) setIsLoading(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (confirm('Deseja realmente apagar esta mensagem?')) {
       try {
-        await deleteDoc(doc(db, 'muralMessages', id));
+        await deleteMuralMessage(id);
+        setMessages(prev => prev.filter(msg => msg.id !== id));
       } catch (err) {
         console.error('Erro ao apagar:', err);
         alert('Erro ao apagar mensagem');
@@ -53,14 +77,11 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
 
   const handleToggleLike = async (msg: MuralMessage) => {
     try {
-      const likes = msg.likes || [];
-      const newLikes = likes.includes(username)
-        ? likes.filter(u => u !== username)
-        : [...likes, username];
-        
-      await updateDoc(doc(db, 'muralMessages', msg.id), {
-        likes: newLikes
-      });
+      const result = await toggleMuralLikeApi(msg.id);
+      const newLikes = Array.isArray(result?.likes) ? result.likes : [];
+      setMessages(prev => prev.map(item =>
+        item.id === msg.id ? { ...item, likes: newLikes } : item
+      ));
     } catch (err) {
       console.error('Erro ao curtir:', err);
     }
@@ -74,9 +95,11 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
   const handleSaveEdit = async () => {
     if (!editingMsgId || !editMsgText.trim()) return;
     try {
-      await updateDoc(doc(db, 'muralMessages', editingMsgId), {
-        text: editMsgText.trim()
-      });
+      const text = editMsgText.trim();
+      await updateMuralMessage(editingMsgId, text);
+      setMessages(prev => prev.map(msg =>
+        msg.id === editingMsgId ? { ...msg, text } : msg
+      ));
       setEditingMsgId(null);
       setEditMsgText('');
     } catch (err) {
@@ -87,50 +110,33 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
 
   useEffect(() => {
     if (!institutionId) return;
-    setIsLoading(true);
 
     if (initialLastRead === null) {
       setInitialLastRead(getLastReadTimestamp(institutionId, username));
     }
 
-    const canonicalId = getCanonicalInstitutionId(institutionId || cnpj);
-    const ids = isMonteAltoUnit(canonicalId) ? getMonteAltoQueryIds() : [canonicalId];
-    if (cnpj && !ids.includes(cnpj)) {
-      ids.push(cnpj);
-    }
+    let cancelled = false;
 
-    // Limita aos 50 mais recentes para otimizar leituras no Firestore
-    const q = query(
-      collection(db, 'muralMessages'),
-      where('institutionId', 'in', ids),
-      orderBy('timestamp', 'desc'),
-      limit(50)
-    );
+    const refresh = async (showLoading: boolean) => {
+      if (cancelled) return;
+      await loadMuralMessages(filterDate, showLoading);
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          ...data,
-          id: doc.id,
-          timestamp: data.timestamp?.toDate?.()?.getTime() || data.timestamp || Date.now()
-        } as MuralMessage;
-      }).sort((a, b) => a.timestamp - b.timestamp);
-      
-      setMessages(msgs);
-      setIsLoading(false);
+    refresh(true);
 
-      if (msgs.length > 0) {
-        const lastTimestamp = Math.max(...msgs.map(m => m.timestamp));
-        setLastReadTimestamp(institutionId, username, lastTimestamp);
-      }
-    }, (error) => {
-      console.error("Error listening to mural messages:", error);
-      setIsLoading(false);
-    });
+    // Sem filtro histórico, atualiza periodicamente a tela usando o cache do backend.
+    // Isso preserva atualização entre usuários sem voltar à consulta problemática do Firestore no cliente.
+    const intervalId = !filterDate
+      ? window.setInterval(() => {
+          refresh(false);
+        }, 30000)
+      : null;
 
-    return () => unsubscribe();
-  }, [institutionId, username]);
+    return () => {
+      cancelled = true;
+      if (intervalId !== null) window.clearInterval(intervalId);
+    };
+  }, [institutionId, username, filterDate]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -157,6 +163,7 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
       await saveMuralMessage(msgData);
       setNewMessage('');
       setNewVisibilidade(['admin']);
+      await loadMuralMessages(filterDate, false);
     } catch (err: any) {
       console.error('Error sending to mural:', err);
       alert(err?.message || 'Erro ao enviar mensagem');
@@ -185,10 +192,6 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
       return false;
     }
 
-    if (filterDate) {
-      const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
-      if (msgDate !== filterDate) return false;
-    }
     if (searchText) {
       if (!msg.text.toLowerCase().includes(searchText.toLowerCase()) && 
           !msg.author.toLowerCase().includes(searchText.toLowerCase())) {
