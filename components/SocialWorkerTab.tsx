@@ -1005,48 +1005,66 @@ export default function SocialWorkerTab({
             </button>
           </div>
 
-          {/* Date, Time and Type */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Data, horário e classificação do atendimento */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
-                Data do Atendimento / Ação *
-              </label>
-              <input
-                type="date"
-                required
-                value={formData.date || ''}
-                onChange={e => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none"
-              />
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Data do Atendimento *</label>
+              <input type="date" required value={formData.date || ''} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none" />
             </div>
-
             <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
-                Horário
-              </label>
-              <input
-                type="time"
-                value={formData.time || ''}
-                onChange={e => setFormData({ ...formData, time: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none"
-              />
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Horário</label>
+              <input type="time" value={formData.time || ''} onChange={e => setFormData({ ...formData, time: e.target.value })} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none" />
             </div>
-
             <div>
-              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
-                Tipo de Ação Social *
-              </label>
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Tipo de Atendimento *</label>
               <select
                 value={formData.type || 'atendimento_individual'}
-                onChange={e => setFormData({ ...formData, type: e.target.value as SocialWorkActionType })}
+                onChange={e => setFormData({ ...formData, type: e.target.value as SocialWorkActionType, subtype: e.target.value === 'atendimento_individual' ? (formData.subtype || 'conversation') : undefined })}
                 className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none"
               >
-                {Object.entries(ACTION_TYPE_CONFIG).map(([key, cfg]) => (
-                  <option key={key} value={key}>{cfg.label}</option>
-                ))}
+                {editingId && formData.type && !['atendimento_individual', 'contato_familia'].includes(formData.type) && (
+                  <option value={formData.type}>{ACTION_TYPE_CONFIG[formData.type]?.label || 'Registro legado'}</option>
+                )}
+                <option value="atendimento_individual">Atendimento Individual</option>
+                <option value="contato_familia">Atendimento Familiar</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Visibilidade *</label>
+              <select
+                value={formData.visibility || 'institutional'}
+                disabled={!!editingId}
+                onChange={e => {
+                  const visibility = e.target.value === 'confidential' ? 'confidential' : 'institutional';
+                  setFormData({ ...formData, visibility, postToMural: visibility === 'institutional' });
+                }}
+                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none disabled:opacity-60"
+              >
+                <option value="institutional">Institucional — vai para o mural</option>
+                <option value="confidential">Sigiloso — somente Serviço Social</option>
               </select>
             </div>
           </div>
+
+          {formData.type === 'atendimento_individual' && (
+            <div>
+              <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Natureza do Atendimento Individual</label>
+              <select value={formData.subtype || 'conversation'} onChange={e => setFormData({ ...formData, subtype: e.target.value as any })} className="w-full md:w-1/2 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none">
+                <option value="conversation">Conversa / Acolhimento</option>
+                <option value="specific_demand">Solução de demanda pontual</option>
+              </select>
+            </div>
+          )}
+
+          {formData.visibility === 'confidential' && (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-start gap-3">
+              <Lock size={18} className="text-slate-600 mt-0.5" />
+              <div>
+                <p className="text-xs font-black text-slate-800 uppercase tracking-wide">Registro sigiloso</p>
+                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">O relato e os encaminhamentos ficarão protegidos fora do documento do residente. O registro não será enviado ao mural e só poderá ser aberto por profissional do Serviço Social após confirmação de identidade.</p>
+              </div>
+            </div>
+          )}
 
           {/* Title / Assunto */}
           <div>
