@@ -104,6 +104,8 @@ const Layout: React.FC<LayoutProps> = ({
   const [isUnitDropdownOpen, setIsUnitDropdownOpen] = useState(false);
 
   const normalizedLevel = (accessLevel || '').trim().toLowerCase().replace(/[\s\-_]+/g, '');
+  const isGlobalController = String(username || '').trim().toLowerCase() === 'kwarizaya@gmail.com';
+  const normalizedEntityType = String(entityType || '').trim().toLowerCase();
   const hasGestaoAccess = 
     normalizedLevel.includes('admin') || 
     normalizedLevel.includes('geren') || 
@@ -327,25 +329,23 @@ const Layout: React.FC<LayoutProps> = ({
 
   const isAdminUser = normalizedLevel.includes('admin') || accessLevel === 'administrador';
 
-  if (isAdminUser) {
-    gestaoItems.push({ id: AppRoute.VICENTINO_CONFERENCIAS, label: 'Conferências Vicentinas', icon: Users });
-    gestaoItems.push({ id: AppRoute.VICENTINO_PARTICULARES, label: 'Conselhos Particulares', icon: Layers });
-    gestaoItems.push({ id: AppRoute.CENTRAL_CONSELHOS, label: 'Conselho Central', icon: Landmark });
-  }
-
   const isMembroConferencia = 
     normalizedLevel.includes('membro') || 
     normalizedLevel === 'membroconferencia' || 
     normalizedLevel === 'conferencia' ||
     (entityType === 'conferencia' && !normalizedLevel.includes('admin'));
 
-  const isVicentino = 
-    entityType === 'central' || 
-    entityType === 'particular' || 
-    entityType === 'conferencia' || 
-    entityType === 'metropolitano' || 
-    entityType === 'nacional' ||
+  const isVicentino =
+    normalizedEntityType === 'central' ||
+    normalizedEntityType === 'conselho_central' ||
+    normalizedEntityType === 'particular' ||
+    normalizedEntityType === 'conselho_particular' ||
+    normalizedEntityType === 'conferencia' ||
+    normalizedEntityType === 'metropolitano' ||
+    normalizedEntityType === 'nacional' ||
     isMembroConferencia;
+
+  const hasVicentinoContext = isVicentino || isGlobalController;
 
   let vicentinoItems: Array<{ id: AppRoute; label: string; icon: any; disabled?: boolean; tag?: string }> = [];
 
@@ -373,7 +373,7 @@ const Layout: React.FC<LayoutProps> = ({
         icon: Settings
       }
     ];
-  } else if (isVicentino || isAdminUser) {
+  } else if (hasVicentinoContext) {
     // 1. Conferências
     vicentinoItems.push({
       id: AppRoute.VICENTINO_CONFERENCIAS,
@@ -423,6 +423,21 @@ const Layout: React.FC<LayoutProps> = ({
       icon: Settings
     });
   }
+
+  const hasVicentinoAccess = vicentinoItems.length > 0;
+
+  useEffect(() => {
+    if (activeCategory === 'vicentino' && !hasVicentinoAccess) {
+      const fallbackCategory = gestaoItems.length > 0 && atendimentoItems.length === 0 ? 'gestao' : 'atendimento';
+      setActiveCategory(fallbackCategory);
+
+      const fallbackItems = fallbackCategory === 'gestao' ? gestaoItems : atendimentoItems;
+      const fallbackIds = fallbackItems.map(i => i.id);
+      if (!fallbackIds.includes(activeRoute)) {
+        setActiveRoute(fallbackIds[0] || AppRoute.HOME);
+      }
+    }
+  }, [activeCategory, hasVicentinoAccess, normalizedEntityType]);
 
   const menuItems = (isVicentino || activeCategory === 'vicentino') 
     ? vicentinoItems 
@@ -509,7 +524,7 @@ const Layout: React.FC<LayoutProps> = ({
             >
               Gestão
             </button>
-            {isAdminUser && (
+            {hasVicentinoAccess && (
               <button 
                 onClick={() => {
                   setActiveCategory('vicentino');
@@ -594,28 +609,39 @@ const Layout: React.FC<LayoutProps> = ({
           })}
         </nav>
 
-        <div className="p-4 border-t border-blue-800/50 hidden md:block">
+        <div className="px-3 py-2 border-t border-blue-800/40 hidden md:block">
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="w-full flex items-center gap-3 p-4 text-blue-100 hover:text-white hover:bg-white/5 rounded-xl transition-all"
+            className={`flex items-center text-blue-200 hover:text-white hover:bg-white/5 rounded-lg transition-all ${
+              isSidebarOpen ? 'w-full gap-2 px-2.5 py-2' : 'w-10 h-10 justify-center mx-auto'
+            }`}
+            title={isSidebarOpen ? 'Recolher menu' : 'Expandir menu'}
           >
-            <Menu size={22} />
-            {isSidebarOpen && <span className="text-[10px] font-black uppercase tracking-widest">Recolher Menu</span>}
+            <Menu size={18} />
+            {isSidebarOpen && <span className="text-[9px] font-bold uppercase tracking-widest">Recolher</span>}
           </button>
         </div>
-        <div className="p-4 md:p-6 border-t bg-gray-50/50 flex flex-col gap-3">
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-tight">Desenvolvido por</span>
-            <span className="text-[11px] font-black text-[#004c99] uppercase tracking-tighter">Mirai - Serviços Inteligentes</span>
-          </div>
+        <div className={`border-t border-blue-100 bg-gray-50/90 ${
+          isSidebarOpen ? 'p-3 flex flex-col gap-2' : 'px-2 py-2 flex flex-col items-center gap-2'
+        }`}>
+          {isSidebarOpen && (
+            <div className="flex flex-col leading-tight">
+              <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Desenvolvido por</span>
+              <span className="text-[9px] font-black text-[#004c99] uppercase tracking-tight">Mirai - Serviços Inteligentes</span>
+            </div>
+          )}
           <button 
             onClick={() => {
               setIsSupportOpen(true);
               setIsMobileMenuOpen(false);
             }}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-[#004c99] text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-blue-800 transition-all shadow-lg shadow-blue-100"
+            className={`flex items-center justify-center text-[#004c99] hover:bg-blue-50 border border-blue-100 rounded-lg font-bold uppercase transition-all ${
+              isSidebarOpen ? 'w-full gap-1.5 py-2 text-[10px] tracking-wider' : 'w-10 h-10'
+            }`}
+            title="Suporte"
           >
-            <HelpCircle size={16} /> Suporte
+            <HelpCircle size={15} />
+            {isSidebarOpen && <span>Suporte</span>}
           </button>
         </div>
         </aside>
