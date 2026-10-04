@@ -329,9 +329,30 @@ export const fetchCandidateById = async (id: string, institutionId: string) => {
   return response.json();
 };
 
-export const fetchMultidisciplinaryHistory = async (institutionId: string, competence: string) => {
+export interface MultidisciplinaryHistoryFilters {
+  residentId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  type?: string;
+  visibility?: string;
+  limit?: number;
+}
+
+export const fetchMultidisciplinaryHistory = async (
+  institutionId: string,
+  competence: string,
+  filters: MultidisciplinaryHistoryFilters = {}
+) => {
   try {
-    const response = await apiFetch(`/api/multidisciplinary/history?institutionId=${institutionId}&competence=${competence}`, {
+    const params = new URLSearchParams({ institutionId, competence });
+    if (filters.residentId) params.set('residentId', filters.residentId);
+    if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+    if (filters.dateTo) params.set('dateTo', filters.dateTo);
+    if (filters.type) params.set('type', filters.type);
+    if (filters.visibility) params.set('visibility', filters.visibility);
+    if (filters.limit) params.set('limit', String(filters.limit));
+
+    const response = await apiFetch(`/api/multidisciplinary/history?${params.toString()}`, {
       headers: getAuthHeaders()
     });
     if (!response.ok) return [];
@@ -342,6 +363,87 @@ export const fetchMultidisciplinaryHistory = async (institutionId: string, compe
     console.error('Erro ao buscar histórico multidisciplinar:', err);
     return [];
   }
+};
+
+export const saveSocialWorkRecord = async (payload: any) => {
+  const response = await apiFetch('/api/social-work/records', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || 'Erro ao registrar atendimento do Serviço Social');
+  }
+  return response.json();
+};
+
+export const updateSocialWorkRecord = async (recordId: string, payload: any) => {
+  const response = await apiFetch(`/api/social-work/records/${encodeURIComponent(recordId)}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || 'Erro ao atualizar atendimento do Serviço Social');
+  }
+  return response.json();
+};
+
+export const deleteSocialWorkRecord = async (residentId: string, recordId: string) => {
+  const params = new URLSearchParams({ residentId });
+  const response = await apiFetch(
+    `/api/social-work/records/${encodeURIComponent(recordId)}?${params.toString()}`,
+    { method: 'DELETE', headers: getAuthHeaders() }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || 'Erro ao excluir atendimento do Serviço Social');
+  }
+  return response.json();
+};
+
+export const createSocialWorkReauthToken = async (password: string) => {
+  const sessionStr = localStorage.getItem('ssvp_session');
+  if (!sessionStr) throw new Error('Sessão expirada. Faça login novamente.');
+
+  const session = JSON.parse(sessionStr);
+  const response = await apiFetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      cnpj: session.cnpj,
+      username: session.username,
+      password,
+      reauthOnly: true
+    })
+  });
+
+  if (!response.ok) throw new Error('Senha incorreta.');
+  const data = await response.json();
+  if (!data?.reauthToken) throw new Error('Não foi possível confirmar sua identidade.');
+  return data.reauthToken as string;
+};
+
+export const unlockConfidentialSocialRecord = async (
+  residentId: string,
+  recordId: string,
+  reauthToken: string
+) => {
+  const response = await apiFetch(
+    `/api/social-work/confidential/${encodeURIComponent(residentId)}/${encodeURIComponent(recordId)}/unlock`,
+    {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ reauthToken })
+    }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || 'Não foi possível abrir o registro sigiloso.');
+  }
+  return response.json();
 };
 
 export const saveCandidate = async (candidate: any) => {
