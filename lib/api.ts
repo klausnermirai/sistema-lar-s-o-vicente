@@ -399,12 +399,16 @@ export const saveSettings = async (institutionId: string, settings: any) => {
   return response.json();
 };
 
-export const fetchMural = async (institutionId: string) => {
-  const response = await apiFetch(`/api/mural?institutionId=${institutionId}`, {
+export const fetchMural = async (institutionId: string, date?: string) => {
+  const params = new URLSearchParams({ institutionId });
+  if (date) params.set('date', date);
+
+  const response = await apiFetch(`/api/mural?${params.toString()}`, {
     headers: getAuthHeaders()
   });
   if (!response.ok) throw new Error('Erro ao buscar mural');
-  return response.json();
+  const data = await response.json();
+  return Array.isArray(data) ? data : [];
 };
 
 export const saveMuralMessage = async (message: any) => {
@@ -414,6 +418,34 @@ export const saveMuralMessage = async (message: any) => {
     body: JSON.stringify(message)
   });
   if (!response.ok) throw new Error('Erro ao salvar no mural');
+  return response.json();
+};
+
+export const updateMuralMessage = async (messageId: string, text: string) => {
+  const response = await apiFetch(`/api/mural/${messageId}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ text })
+  });
+  if (!response.ok) throw new Error('Erro ao editar mensagem do mural');
+  return response.json();
+};
+
+export const toggleMuralLikeApi = async (messageId: string) => {
+  const response = await apiFetch(`/api/mural/${messageId}/like`, {
+    method: 'POST',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao curtir mensagem do mural');
+  return response.json();
+};
+
+export const deleteMuralMessage = async (messageId: string) => {
+  const response = await apiFetch(`/api/mural/${messageId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error('Erro ao apagar mensagem do mural');
   return response.json();
 };
 
