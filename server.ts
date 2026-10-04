@@ -336,6 +336,22 @@ async function getRealInstitutionId(idOrCnpj: string): Promise<string> {
 }
 
 // Resolução estrita: retorna estritamente "" caso o documento institucional não exista no banco
+async function isVisitorPortalInstitution(idOrCnpj: string): Promise<boolean> {
+  if (!idOrCnpj) return false;
+  const realId = await getRealInstitutionId(idOrCnpj);
+  if (!realId) return false;
+  if (isMonteAltoUnit(realId)) return true;
+
+  return await safeQuery(async () => {
+    const doc = await db.collection('institutions').doc(realId).get();
+    if (!doc.exists) return false;
+    const data: any = doc.data() || {};
+    const rawType = String(data.entityType || data.type || data.institutionType || '').trim().toLowerCase();
+    const normalizedType = rawType.replace(/[\s-]+/g, '_');
+    return ['obra_unida', 'obraunida', 'lar', 'ilpi'].includes(normalizedType);
+  }, false);
+}
+
 async function resolveExistingInstitutionDocId(idOrCnpj: string): Promise<string> {
   if (!idOrCnpj) return "";
   const trimmed = idOrCnpj.trim();
@@ -731,7 +747,20 @@ async function startServer() {
       .filter((value: any) => typeof value === 'string' && value.trim() !== '')
       .map((value: string) => value.trim());
 
+    const userLevel = normalizeAccessLevel(req.user?.accessLevel || req.user?.role);
+
     for (const candidateId of candidateIds) {
+      if (userLevel === 'visitante') {
+        const primaryInstitutionId = req.user?.institutionId;
+        if (!primaryInstitutionId) {
+          return res.status(403).json({ error: 'Conta de portaria sem unidade institucional válida.' });
+        }
+        if (getCanonicalInstitutionId(primaryInstitutionId) !== getCanonicalInstitutionId(candidateId)) {
+          return res.status(403).json({ error: 'A conta de portaria está restrita à sua Obra Unida vinculada.' });
+        }
+        continue;
+      }
+
       if (!isUserAuthorizedForInstitution(req.user, candidateId)) {
         return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
       }
@@ -3188,6 +3217,24 @@ async function startServer() {
         return res.status(400).json({ error: 'institutionId é obrigatório.' });
       }
 
+      const targetAccessLevel = normalizeAccessLevel(data.accessLevel || existingData?.accessLevel || data.role || existingData?.role);
+      if (targetAccessLevel === 'visitante') {
+        const primaryInstitutionId = await getRealInstitutionId(data.institutionId);
+        if (!primaryInstitutionId || !(await isVisitorPortalInstitution(primaryInstitutionId))) {
+          return res.status(400).json({ error: 'Contas de Portaria só podem ser vinculadas a uma Obra Unida / Lar / ILPI.' });
+        }
+
+        data.institutionId = primaryInstitutionId;
+        data.isGlobalAdmin = false;
+        data.hasAllUnitsAccess = false;
+        data.institutionIds = [];
+        data.authorizedUnits = [];
+        data.allowedUnits = [];
+        delete data.conferenciaId;
+        delete data.particularId;
+        delete data.centralId;
+      }
+
       const payload = { ...data };
       payload.auditLog = admin.firestore.FieldValue.arrayUnion(auditEntry);
 
@@ -3470,31 +3517,161 @@ async function startServer() {
     }
   });
 
-  // --- Global Visits API ---
-  app.get('/api/global-visits', async (req, res) => {
+  // --- Portal de Visitantes API ---
+  app.get('/api/global-visits', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
     const { institutionId } = req.query;
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório.' });
+    }
+
     try {
-      const realId = await getRealInstitutionId(institutionId as string);
+      const realId = await getRealInstitutionId(institutionId);
+      if (!(await isVisitorPortalInstitution(realId))) {
+        return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
+      }
+
       const snapshot = await db.collection('global_visits')
         .where('institutionId', '==', realId)
-        .orderBy('date', 'desc')
         .get();
-      const visits = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
+
+      const visits = snapshot.docs
+        .map(doc => ({ ...doc.data(), id: doc.id }))
+        .filter((item: any) => !item.archived)
+        .sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')));
+
       res.json(visits);
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao buscar visitas.' );
     }
   });
 
-  app.post('/api/global-visits', requireRole(['visitante', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'administrador', 'medico']), async (req, res) => {
-    const { institutionId, ...data } = req.body;
+  app.post('/api/global-visits', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+    const { institutionId, ...data } = req.body || {};
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório.' });
+    }
+
     try {
       const realId = await getRealInstitutionId(institutionId);
-      const docRef = await db.collection('global_visits').add({ ...data, institutionId: realId });
-      await logAudit('create', 'global_visits', docRef.id, req, realId, `Nova visita registrada`);
+      if (!(await isVisitorPortalInstitution(realId))) {
+        return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
+      }
+
+      const docRef = await db.collection('global_visits').add({
+        ...data,
+        institutionId: realId,
+        createdAt: data.createdAt || new Date().toISOString()
+      });
+      await logAudit('create', 'global_visits', docRef.id, req, realId, 'Nova visita registrada');
       res.json({ ...data, id: docRef.id, institutionId: realId });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao salvar visita.' );
+    }
+  });
+
+  app.get('/api/registered-visitors', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+    const { institutionId } = req.query;
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório.' });
+    }
+
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      if (!(await isVisitorPortalInstitution(realId))) {
+        return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
+      }
+
+      const snapshot = await db.collection('registered_visitors')
+        .where('institutionId', '==', realId)
+        .get();
+      const visitors = snapshot.docs
+        .map(doc => ({ ...doc.data(), id: doc.id }))
+        .filter((item: any) => !item.archived);
+      res.json(visitors);
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar visitantes cadastrados.');
+    }
+  });
+
+  app.post('/api/registered-visitors', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+    const { institutionId, id, ...data } = req.body || {};
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório.' });
+    }
+
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      if (!(await isVisitorPortalInstitution(realId))) {
+        return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
+      }
+
+      const safeId = typeof id === 'string' && id.trim() && !id.includes('/') ? id.trim() : '';
+      const docRef = safeId
+        ? db.collection('registered_visitors').doc(safeId)
+        : db.collection('registered_visitors').doc();
+
+      const existing = await docRef.get();
+      if (existing.exists) {
+        const existingData: any = existing.data() || {};
+        if (getCanonicalInstitutionId(existingData.institutionId) !== getCanonicalInstitutionId(realId)) {
+          return res.status(403).json({ error: 'Visitante cadastrado pertence a outra instituição.' });
+        }
+      }
+
+      const payload = {
+        ...data,
+        institutionId: realId,
+        updatedAt: new Date().toISOString(),
+        ...(existing.exists ? {} : { createdAt: new Date().toISOString() })
+      };
+
+      await docRef.set(payload, { merge: true });
+      await logAudit(existing.exists ? 'update' : 'create', 'registered_visitors', docRef.id, req, realId, `${existing.exists ? 'Atualização' : 'Cadastro'} de visitante: ${data.name || ''}`);
+      res.json({ ...payload, id: docRef.id });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar visitante cadastrado.');
+    }
+  });
+
+  app.post('/api/clear-biometrics', requireRole(['gerencial']), async (req: any, res) => {
+    const { institutionId, clearFaces = true } = req.body || {};
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório.' });
+    }
+
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      if (!(await isVisitorPortalInstitution(realId))) {
+        return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
+      }
+
+      if (!clearFaces) {
+        return res.json({ success: true, updated: 0 });
+      }
+
+      const [registeredSnap, visitsSnap] = await Promise.all([
+        db.collection('registered_visitors').where('institutionId', '==', realId).get(),
+        db.collection('global_visits').where('institutionId', '==', realId).get()
+      ]);
+
+      const refs = [...registeredSnap.docs, ...visitsSnap.docs];
+      let updated = 0;
+      for (let index = 0; index < refs.length; index += 400) {
+        const batch = db.batch();
+        refs.slice(index, index + 400).forEach((doc: any) => {
+          batch.set(doc.ref, {
+            photoUrl: admin.firestore.FieldValue.delete(),
+            faceDescriptor: admin.firestore.FieldValue.delete()
+          }, { merge: true });
+          updated += 1;
+        });
+        await batch.commit();
+      }
+
+      await logAudit('update', 'visitor_biometrics', realId, req, realId, 'Limpeza administrativa de biometrias da portaria', { updated });
+      res.json({ success: true, updated });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao limpar biometrias.');
     }
   });
 
