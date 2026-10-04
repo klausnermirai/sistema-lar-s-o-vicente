@@ -290,7 +290,7 @@ import {
   normalizeUserAccessLevel,
   isUserAuthorizedForInstitution,
 } from './lib/canonical_units.ts';
-import { assertAuthConfigurationValid, createAuthToken, verifyAuthToken } from './lib/server_auth.ts';
+import { assertAuthConfigurationValid, createAuthToken, verifyAuthToken, createReauthToken, verifyReauthToken } from './lib/server_auth.ts';
 import { isAuthorizedForDocument, isUserAuthorizedToViewMuralMessage } from './lib/mural_visibility.ts';
 
 // Helper to get real institution doc.id from either id or cnpj
@@ -833,6 +833,15 @@ async function startServer() {
 
       if (!validUserDoc || !userData) {
         return res.status(401).json({ error: 'Senha incorreta. Tente novamente ou use "Esqueci minha senha".' });
+      }
+
+      // Reautenticação pontual: reaproveita exatamente a validação de login,
+      // mas emite uma credencial curta e específica, sem criar uma nova sessão.
+      if (req.body?.reauthOnly === true) {
+        return res.json({
+          success: true,
+          reauthToken: createReauthToken(validUserDoc.id, userData.username || userData.email || cleanUser)
+        });
       }
 
       // Garante que as instituições padrão existam no banco para seleção com IDs canônicos
