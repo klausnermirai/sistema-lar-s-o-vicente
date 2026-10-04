@@ -3932,19 +3932,25 @@ async function startServer() {
   });
 
   // Multidisciplinary History API
-  app.get('/api/multidisciplinary/history', requireAuth, async (req, res) => {
-    const { institutionId, competence } = req.query;
+  app.get('/api/multidisciplinary/history', requireAuth, async (req: any, res) => {
+    const { institutionId, competence, residentId, dateFrom, dateTo, type, visibility, limit } = req.query;
     try {
       const realId = await getRealInstitutionId(institutionId as string);
+      if (!realId || !isUserAuthorizedForInstitution(req.user, realId)) {
+        return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
+      }
+
       const snapshot = await db.collection('residents').where('institutionId', '==', realId).get();
-      const events: any[] = [];
+      let events: any[] = [];
 
       snapshot.docs.forEach((doc: any) => {
+        if (residentId && String(residentId) !== doc.id) return;
+
         const r = doc.data();
         const residentName = r.name || 'Sem Nome';
 
         if (competence === 'psicologia' && r.psychology) {
-          if (r.psychology.attendances && Array.isArray(r.psychology.attendances)) {
+          if (Array.isArray(r.psychology.attendances)) {
             r.psychology.attendances.forEach((att: any) => {
               events.push({
                 residentName,
@@ -3958,7 +3964,7 @@ async function startServer() {
               });
             });
           }
-          if (r.psychology.evolutions && Array.isArray(r.psychology.evolutions)) {
+          if (Array.isArray(r.psychology.evolutions)) {
             r.psychology.evolutions.forEach((evo: any) => {
               events.push({
                 residentName,
@@ -3971,7 +3977,7 @@ async function startServer() {
             });
           }
         } else if (competence === 'nutricionista' && r.nutrition) {
-          if (r.nutrition.attendances && Array.isArray(r.nutrition.attendances)) {
+          if (Array.isArray(r.nutrition.attendances)) {
             r.nutrition.attendances.forEach((att: any) => {
               events.push({
                 residentName,
@@ -3984,22 +3990,34 @@ async function startServer() {
             });
           }
         } else if (competence === 'assistente_social' && r.socialWork) {
-          if (r.socialWork.evolutions && Array.isArray(r.socialWork.evolutions)) {
+          if (Array.isArray(r.socialWork.evolutions)) {
             r.socialWork.evolutions.forEach((evo: any) => {
+              const recordVisibility = evo.visibility === 'confidential' ? 'confidential' : 'institutional';
+              const isConfidential = recordVisibility === 'confidential';
+
               events.push({
                 residentName,
                 residentId: doc.id,
+                recordId: evo.id,
                 type: evo.title || 'Ação Social',
-                timestamp: evo.date ? (evo.time ? `${evo.date}T${evo.time}:00` : `${evo.date}T12:00:00`) : new Date().toISOString(),
-                attendanceEvolution: evo.description || '',
-                notes: evo.referrals || '',
+                timestamp: evo.date
+                  ? (evo.time ? `${evo.date}T${evo.time}:00` : `${evo.date}T12:00:00`)
+                  : new Date().toISOString(),
+                attendanceEvolution: isConfidential
+                  ? '[REGISTRO SIGILOSO - SERVIÇO SOCIAL]'
+                  : (evo.description || ''),
+                notes: isConfidential ? '' : (evo.referrals || ''),
                 signature: evo.professionalName || 'Assistente Social',
-                interventionType: evo.type || 'atendimento_individual'
+                interventionType: evo.type || 'atendimento_individual',
+                subtype: evo.subtype || '',
+                visibility: recordVisibility,
+                isConfidential,
+                targetPersonOrEntity: evo.targetPersonOrEntity || ''
               });
             });
           }
         } else if (competence === 'terapeuta_ocupacional' && r.occupationalTherapy) {
-          if (r.occupationalTherapy.attendances && Array.isArray(r.occupationalTherapy.attendances)) {
+          if (Array.isArray(r.occupationalTherapy.attendances)) {
             r.occupationalTherapy.attendances.forEach((att: any) => {
               events.push({
                 residentName,
@@ -4012,7 +4030,7 @@ async function startServer() {
             });
           }
         } else if (competence === 'fisioterapeuta' && r.physiotherapy) {
-          if (r.physiotherapy.attendances && Array.isArray(r.physiotherapy.attendances)) {
+          if (Array.isArray(r.physiotherapy.attendances)) {
             r.physiotherapy.attendances.forEach((att: any) => {
               events.push({
                 residentName,
@@ -4027,11 +4045,38 @@ async function startServer() {
         }
       });
 
+      if (competence === 'assistente_social') {
+        if (type && type !== 'todos') {
+          events = events.filter(item => item.interventionType === type);
+        }
+        if (visibility && visibility !== 'todos') {
+          events = events.filter(item => item.visibility === visibility);
+        }
+        if (dateFrom) {
+          const from = new Date(`${String(dateFrom)}T00:00:00`).getTime();
+          if (Number.isFinite(from)) events = events.filter(item => new Date(item.timestamp).getTime() >= from);
+        }
+        if (dateTo) {
+          const to = new Date(`${String(dateTo)}T23:59:59.999`).getTime();
+          if (Number.isFinite(to)) events = events.filter(item => new Date(item.timestamp).getTime() <= to);
+        }
+      }
+
       events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      res.json(events.slice(0, 30));
+
+      const requestedLimit = Number(limit);
+      if (Number.isFinite(requestedLimit) && requestedLimit > 0) {
+        return res.json(events.slice(0, Math.min(requestedLimit, 200)));
+      }
+
+      if (competence === 'assistente_social') {
+        return res.json(residentId ? events : events.slice(0, 10));
+      }
+
+      return res.json(events.slice(0, 30));
     } catch (error: any) {
       console.error('Error fetching multidisciplinary history:', error);
-      res.json([]);
+      return res.json([]);
     }
   });
 
