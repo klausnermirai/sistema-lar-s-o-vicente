@@ -614,7 +614,7 @@ const InternalApp: React.FC = () => {
         userId={session?.id}
         onLogout={handleLogout}
         accessLevel={session?.accessLevel}
-        entityType={settings?.entityType || settings?.type}
+        entityType={settings?.entityType || settings?.type || session?.hierarchy?.type || session?.institutionType}
         isDbUnavailable={isDbUnavailable}
         onRetry={loadData}
         availableUnits={session?.availableUnits}
