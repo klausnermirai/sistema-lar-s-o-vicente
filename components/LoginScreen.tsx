@@ -363,6 +363,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
               </div>
               <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter leading-tight">Acesso ao Sistema</h1>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Sociedade de São Vicente de Paulo • SSVP</p>
+              <p className="text-[10px] font-semibold text-gray-400 mt-2">Sistema de Gestão da SSVP - Caridade Organizada</p>
             </div>
 
             <form onSubmit={e => handleLogin(e)} className="px-10 pb-12 space-y-5">
