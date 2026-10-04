@@ -53,6 +53,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
 }) => {
   const normalizedAccessLevel = String(accessLevel || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   const isAdministrative = ['administrador', 'gerencial', 'auxiliar_administrativo'].includes(normalizedAccessLevel);
+  const canManageBiometrics = ['administrador', 'gerencial'].includes(normalizedAccessLevel);
   const [activeTab, setActiveTab] = useState<MainTab>('portaria');
   const [entryMode, setEntryMode] = useState<EntryMode>('choice');
   const [globalVisits, setGlobalVisits] = useState<GlobalVisitRecord[]>([]);
@@ -843,7 +844,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                     onConfirmEntry={handleConfirmEntry}
                     onUpdateVisitorFace={handleUpdateVisitorFace}
                     onRegisterQuickVisitor={handleRegisterQuickVisitor}
-                    onResetBiometrics={isAdministrative ? handleClearAllBiometrics : undefined}
+                    onResetBiometrics={canManageBiometrics ? handleClearAllBiometrics : undefined}
                     onEntryCompleted={handleCloseFacialMode}
                   />
                 </div>
