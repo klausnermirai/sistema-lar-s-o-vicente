@@ -2130,7 +2130,12 @@ async function startServer() {
   function normalizeMuralTimestamp(value: any): number {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
     if (typeof value === 'string') {
-      const parsed = Date.parse(value);
+      const trimmed = value.trim();
+      if (/^\d+$/.test(trimmed)) {
+        const numeric = Number(trimmed);
+        return Number.isFinite(numeric) ? numeric : 0;
+      }
+      const parsed = Date.parse(trimmed);
       return Number.isFinite(parsed) ? parsed : 0;
     }
     if (value && typeof value.toMillis === 'function') {
@@ -2222,7 +2227,6 @@ async function startServer() {
     if (!cached) return;
 
     cached.messages = sortMuralDesc(updater([...cached.messages]));
-    cached.loadedAt = Date.now();
     muralRawCache.set(cacheKey, cached);
   }
 
@@ -2529,7 +2533,7 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/mural/:id', requireRole(['administrador', 'gerencial', 'assistente_social', 'enfermeira']), async (req: any, res) => {
+  app.delete('/api/mural/:id', requireAuth, async (req: any, res) => {
     try {
       const docRef = db.collection('muralMessages').doc(req.params.id);
       const doc = await docRef.get();
