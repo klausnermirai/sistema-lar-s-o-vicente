@@ -399,37 +399,12 @@ export const saveSettings = async (institutionId: string, settings: any) => {
   return response.json();
 };
 
-export interface MuralPage {
-  messages: any[];
-  hasMore: boolean;
-  nextCursor: {
-    before: number;
-    seenAtBefore: string[];
-  } | null;
-}
-
-export const fetchMural = async (
-  institutionId: string,
-  options: { limit?: number; before?: number | null; seenAtBefore?: string[] } = {}
-): Promise<MuralPage> => {
-  const params = new URLSearchParams();
-  params.set('institutionId', institutionId);
-  params.set('limit', String(options.limit || 50));
-  if (options.before) params.set('before', String(options.before));
-  if (options.seenAtBefore && options.seenAtBefore.length > 0) {
-    params.set('seenAtBefore', options.seenAtBefore.join(','));
-  }
-
-  const response = await apiFetch(`/api/mural?${params.toString()}`, {
+export const fetchMural = async (institutionId: string) => {
+  const response = await apiFetch(`/api/mural?institutionId=${institutionId}`, {
     headers: getAuthHeaders()
   });
   if (!response.ok) throw new Error('Erro ao buscar mural');
-
-  const payload = await response.json();
-  if (Array.isArray(payload)) {
-    return { messages: payload, hasMore: false, nextCursor: null };
-  }
-  return payload;
+  return response.json();
 };
 
 export const saveMuralMessage = async (message: any) => {
