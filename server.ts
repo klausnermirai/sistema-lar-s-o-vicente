@@ -1665,10 +1665,56 @@ async function startServer() {
         }
 
         if (requesterLevel === 'visitante') {
+          const existingRelatives = Array.isArray(existingData.relatives) ? existingData.relatives : [];
+          const incomingRelatives = Array.isArray(data.relatives) ? data.relatives : [];
+
+          const incomingById = new Map<string, any>();
+          incomingRelatives.forEach((relative: any) => {
+            if (relative?.id) incomingById.set(String(relative.id), relative);
+          });
+
+          const mergedRelatives = existingRelatives.map((existingRelative: any) => {
+            const incoming = existingRelative?.id ? incomingById.get(String(existingRelative.id)) : undefined;
+            if (!incoming) return existingRelative;
+
+            return {
+              ...existingRelative,
+              name: incoming.name ?? existingRelative.name,
+              kinship: incoming.kinship ?? existingRelative.kinship,
+              phone: incoming.phone ?? existingRelative.phone,
+              document: incoming.document ?? existingRelative.document,
+              photoUrl: incoming.photoUrl ?? existingRelative.photoUrl,
+              faceDescriptor: incoming.faceDescriptor ?? existingRelative.faceDescriptor
+            };
+          });
+
+          const existingRelativeIds = new Set(existingRelatives.map((relative: any) => String(relative?.id || '')).filter(Boolean));
+          incomingRelatives.forEach((incoming: any) => {
+            if (!incoming?.id || existingRelativeIds.has(String(incoming.id))) return;
+            mergedRelatives.push({
+              id: String(incoming.id),
+              name: incoming.name || '',
+              kinship: incoming.kinship || 'Familiar',
+              phone: incoming.phone || '',
+              document: incoming.document || '',
+              photoUrl: incoming.photoUrl,
+              faceDescriptor: incoming.faceDescriptor,
+              observation: 'Cadastrado pela Portaria',
+              isResponsible: false,
+              deceased: false
+            });
+          });
+
+          const existingVisitRecords = Array.isArray(existingData.visitRecords) ? existingData.visitRecords : [];
+          const existingVisitIds = new Set(existingVisitRecords.map((visit: any) => String(visit?.id || '')).filter(Boolean));
+          const incomingVisitRecords = Array.isArray(data.visitRecords) ? data.visitRecords : [];
+          const newVisitRecords = incomingVisitRecords.filter((visit: any) => visit?.id && !existingVisitIds.has(String(visit.id)));
+          const mergedVisitRecords = [...existingVisitRecords, ...newVisitRecords];
+
           const safePortariaUpdate = {
             institutionId: existingData.institutionId || targetInstId,
-            relatives: Array.isArray(data.relatives) ? data.relatives : (existingData.relatives || []),
-            visitRecords: Array.isArray(data.visitRecords) ? data.visitRecords : (existingData.visitRecords || []),
+            relatives: mergedRelatives,
+            visitRecords: mergedVisitRecords,
             auditLog: admin.firestore.FieldValue.arrayUnion(auditEntry)
           };
 
@@ -1679,8 +1725,8 @@ async function startServer() {
             id: payload.id,
             name: existingData.name || '',
             status: existingData.status || 'ativo',
-            relatives: safePortariaUpdate.relatives,
-            visitRecords: safePortariaUpdate.visitRecords
+            relatives: mergedRelatives.filter((relative: any) => !relative?.deceased),
+            visitRecords: mergedVisitRecords
           });
         }
 
