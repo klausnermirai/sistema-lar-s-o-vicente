@@ -3694,6 +3694,9 @@ async function startServer() {
       const batch = db.batch();
       batch.set(residentRef, { socialWork: updatedSocialWork }, { merge: true });
 
+      let muralRef: any = null;
+      let muralPayload: any = null;
+
       if (visibility === 'confidential') {
         batch.set(db.collection('social_confidential_records').doc(recordId), {
           institutionId,
@@ -3707,15 +3710,25 @@ async function startServer() {
           updatedAt: new Date().toISOString()
         });
       } else {
-        batch.set(
-          db.collection('muralMessages').doc(),
-          buildSocialMuralPayload(resident.name || 'Residente', { ...metadata, description }, institutionId, req.user)
+        muralRef = db.collection('muralMessages').doc();
+        muralPayload = buildSocialMuralPayload(
+          resident.name || 'Residente',
+          { ...metadata, description },
+          institutionId,
+          req.user
         );
+        batch.set(muralRef, muralPayload);
       }
 
       await batch.commit();
       invalidateCache('residents');
-      invalidateCache('mural');
+
+      if (muralRef && muralPayload) {
+        updateMuralCacheIfLoaded(institutionId, (messages) => [
+          normalizeMuralMessage(muralPayload, muralRef.id),
+          ...messages.filter((msg: any) => msg.id !== muralRef.id)
+        ]);
+      }
 
       await logAudit('create', 'social_work', recordId, req, institutionId,
         `Novo atendimento do Serviço Social para ${resident.name || 'residente'}`,
@@ -3771,7 +3784,9 @@ async function startServer() {
       const description = sanitizeSocialText(data.description);
       if (!description) return res.status(400).json({ error: 'Descrição do atendimento é obrigatória.' });
 
-      const type = data.type === 'contato_familia' ? 'contato_familia' : 'atendimento_individual';
+      const type = ['atendimento_individual', 'contato_familia'].includes(data.type)
+        ? data.type
+        : (current.type || 'atendimento_individual');
       const updatedMetadata: any = {
         ...current,
         date: sanitizeSocialText(data.date) || current.date,
