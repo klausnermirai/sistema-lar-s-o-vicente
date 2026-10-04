@@ -1028,9 +1028,12 @@ async function startServer() {
         }
       }
 
-      // Se o usuário ainda não tiver nenhuma unidade mapeada, assume o Lar de Monte Alto como padrão seguro
+      // Sem vínculo institucional explícito, não concede acesso por fallback.
+      // O usuário deve permanecer bloqueado até que o controlador global defina sua unidade.
       if (authorizedUnits.length === 0) {
-        authorizedUnits.push(standardUnits[0]);
+        return res.status(403).json({
+          error: 'Usuário sem unidade institucional autorizada. Solicite ao controlador do sistema a configuração do acesso.'
+        });
       }
 
       // Se foi fornecido um CNPJ ou explicitInstId, tenta selecionar diretamente
@@ -1044,6 +1047,10 @@ async function startServer() {
           u.cnpj === explicitSearch || 
           u.cnpj.replace(/\D/g, '') === cleanExplicit
         );
+
+        if (!targetUnit) {
+          return res.status(403).json({ error: 'Acesso negado para a unidade selecionada.' });
+        }
       }
 
       // SE É MULTIACESSO (mais de 1 unidade) e não foi fornecida a unidade escolhida:
