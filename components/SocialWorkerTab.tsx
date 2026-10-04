@@ -168,7 +168,8 @@ export default function SocialWorkerTab({
     setEditingId(null);
   }, [resident.id, resident.socialWork?.evolutions]);
 
-  const responsible = resident.relatives?.find(r => r.isResponsible) || resident.relatives?.[0];
+  const activeRelatives = (resident.relatives || []).filter(r => !r.deceased);
+  const responsible = activeRelatives.find(r => r.isResponsible) || activeRelatives[0];
 
   const resetForm = () => {
     setFormData(makeInitialForm());

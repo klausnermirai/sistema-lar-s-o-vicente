@@ -730,6 +730,15 @@ const InternalApp: React.FC = () => {
                integrationDate: candidate.integrationDate,
                integrationReport: candidate.integrationReport,
                interview: candidate.interview,
+               relatives: candidate.repName ? [{
+                 id: `triagem_rep_${candidate.id || Date.now()}`,
+                 name: candidate.repName,
+                 kinship: candidate.repKinship || 'Responsável',
+                 phone: candidate.repPhone || '',
+                 observation: 'Representante informado na triagem.',
+                 isResponsible: true,
+                 deceased: false
+               }] : [],
                per: candidate.nursingScreening ? {
                  lastUpdated: new Date().toISOString(),
                  nursingAdmissionSummary: `Triagem realizada por ${candidate.nursingScreening.professionalName || 'não informado'} em ${new Date(candidate.nursingScreening.date).toLocaleDateString('pt-BR')}.`,
