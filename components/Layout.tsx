@@ -64,7 +64,7 @@ interface LayoutProps {
   userId?: string;
   onLogout?: () => void;
   accessLevel?: string;
-  entityType?: 'nacional' | 'metropolitano' | 'central' | 'particular' | 'conferencia' | 'obra_unida';
+  entityType?: 'nacional' | 'metropolitano' | 'central' | 'particular' | 'conferencia' | 'obra_unida' | 'lar' | 'ilpi' | string;
   isDbUnavailable?: boolean;
   onRetry?: () => void;
   availableUnits?: AuthorizedUnit[];
@@ -124,6 +124,15 @@ const Layout: React.FC<LayoutProps> = ({
   const isMedico = normalizedLevel.includes('medic') || normalizedLevel.includes('doutor');
   const isCuidados = normalizedLevel.includes('cuidado') || normalizedLevel.includes('cuidad');
   const isAuxiliarAdministrativo = normalizedLevel.includes('auxiliar') || normalizedLevel.includes('secretar');
+  const isGerencial = normalizedLevel.includes('geren') || normalizedLevel.includes('coord');
+  const isOperationalVisitorUnit = ['obra_unida', 'obraunida', 'lar', 'ilpi'].includes(normalizedEntityType.replace(/[\s-]+/g, '_'));
+  const canAccessVisitorPortal = isOperationalVisitorUnit && (
+    isVisitante ||
+    isGlobalController ||
+    normalizedLevel.includes('admin') ||
+    isGerencial ||
+    isAuxiliarAdministrativo
+  );
 
   useEffect(() => {
     // Mural real-time unread count
@@ -195,6 +204,7 @@ const Layout: React.FC<LayoutProps> = ({
       AppRoute.MEDICAMENTOS,
       AppRoute.AGENDA,
       AppRoute.GUIAS,
+      AppRoute.VISITANTES,
       AppRoute.SETTINGS
     ];
 
@@ -239,8 +249,7 @@ const Layout: React.FC<LayoutProps> = ({
     ];
   } else if (isVisitante) {
     atendimentoItems = [
-      { id: AppRoute.VISITANTES, label: 'Portal do Visitante', icon: Users },
-      { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
+      { id: AppRoute.VISITANTES, label: 'Portal de Visitantes', icon: Users },
     ];
   } else if (isMedico) {
     atendimentoItems = [
@@ -290,6 +299,13 @@ const Layout: React.FC<LayoutProps> = ({
       { id: AppRoute.RESIDENTS, label: 'Residentes', icon: Users },
       { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     ];
+  }
+
+  if (canAccessVisitorPortal && !isVisitante && !atendimentoItems.some(item => item.id === AppRoute.VISITANTES)) {
+    const settingsIndex = atendimentoItems.findIndex(item => item.id === AppRoute.SETTINGS);
+    const visitorItem = { id: AppRoute.VISITANTES, label: 'Portal de Visitantes', icon: Users };
+    if (settingsIndex >= 0) atendimentoItems.splice(settingsIndex, 0, visitorItem);
+    else atendimentoItems.push(visitorItem);
   }
 
   const allowedFinanceiro = ['administrador', 'gerencial', 'assistente_social', 'auxiliar_administrativo'];
@@ -690,7 +706,7 @@ const Layout: React.FC<LayoutProps> = ({
           
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
             {/* Seletor Rápido de Unidade para Multiacesso */}
-            {availableUnits && availableUnits.length > 1 && onSwitchUnit && (
+            {!isVisitante && availableUnits && availableUnits.length > 1 && onSwitchUnit && (
               <div className="relative">
                 <button
                   type="button"
