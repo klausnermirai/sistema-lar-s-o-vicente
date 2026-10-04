@@ -992,7 +992,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                               <label className="block text-[10px] font-black uppercase text-[#004c99] mb-4">Você já está cadastrado?</label>
                               <select className="w-full border p-4 rounded-2xl bg-white mb-4 font-bold" value={visitorType} onChange={e => setVisitorType(e.target.value)}>
                                 <option value="new">Ainda não fui cadastrado</option>
-                                {(selectedResident.relatives || []).map((rel, idx) => (
+                                {(selectedResident.relatives || []).filter(rel => !rel.deceased).map((rel, idx) => (
                                   <option key={idx} value={`${rel.name}||${rel.kinship}`}>{rel.name} ({rel.kinship})</option>
                                 ))}
                               </select>
