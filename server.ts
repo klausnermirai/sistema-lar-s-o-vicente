@@ -336,6 +336,40 @@ async function getRealInstitutionId(idOrCnpj: string): Promise<string> {
 }
 
 // Resolução estrita: retorna estritamente "" caso o documento institucional não exista no banco
+async function isVisitorPortalInstitution(idOrCnpj: string): Promise<boolean> {
+  if (!idOrCnpj) return false;
+  const realId = await getRealInstitutionId(idOrCnpj);
+  if (!realId) return false;
+  if (isMonteAltoUnit(realId)) return true;
+
+  return await safeQuery(async () => {
+    const doc = await db.collection('institutions').doc(realId).get();
+    if (doc.exists) {
+      const data: any = doc.data() || {};
+      const rawType = String(data.entityType || data.type || data.institutionType || 'obra_unida').trim().toLowerCase();
+      const normalizedType = rawType.replace(/[\s-]+/g, '_');
+      if (['obra_unida', 'obraunida', 'lar', 'ilpi'].includes(normalizedType)) {
+        return true;
+      }
+    }
+
+    const centralDoc = await db.collection('institutions').doc(CENTRAL_JABOTICABAL_CNPJ).get();
+    const obras = centralDoc.exists && Array.isArray(centralDoc.data()?.obrasUnidas)
+      ? centralDoc.data()!.obrasUnidas
+      : [];
+
+    const targetCanonical = getCanonicalInstitutionId(realId);
+    return obras.some((obra: any) => {
+      const obraId = String(obra?.id || '').trim();
+      const obraCnpj = String(obra?.cnpj || '').trim();
+      return (obraId && getCanonicalInstitutionId(obraId) === targetCanonical) ||
+        (obraCnpj && getCanonicalInstitutionId(obraCnpj) === targetCanonical) ||
+        obraId === idOrCnpj ||
+        obraCnpj === idOrCnpj;
+    });
+  }, false);
+}
+
 async function resolveExistingInstitutionDocId(idOrCnpj: string): Promise<string> {
   if (!idOrCnpj) return "";
   const trimmed = idOrCnpj.trim();
@@ -731,7 +765,20 @@ async function startServer() {
       .filter((value: any) => typeof value === 'string' && value.trim() !== '')
       .map((value: string) => value.trim());
 
+    const userLevel = normalizeAccessLevel(req.user?.accessLevel || req.user?.role);
+
     for (const candidateId of candidateIds) {
+      if (userLevel === 'visitante') {
+        const primaryInstitutionId = req.user?.institutionId;
+        if (!primaryInstitutionId) {
+          return res.status(403).json({ error: 'Conta de portaria sem unidade institucional válida.' });
+        }
+        if (getCanonicalInstitutionId(primaryInstitutionId) !== getCanonicalInstitutionId(candidateId)) {
+          return res.status(403).json({ error: 'A conta de portaria está restrita à sua Obra Unida vinculada.' });
+        }
+        continue;
+      }
+
       if (!isUserAuthorizedForInstitution(req.user, candidateId)) {
         return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
       }
@@ -943,6 +990,30 @@ async function startServer() {
         });
       }
 
+      const centralSettingsDoc = await safeQuery(async () => await db.collection('institutions').doc(CENTRAL_JABOTICABAL_CNPJ).get());
+      if (centralSettingsDoc && centralSettingsDoc.exists) {
+        const centralSettings: any = centralSettingsDoc.data() || {};
+        if (Array.isArray(centralSettings.obrasUnidas)) {
+          centralSettings.obrasUnidas.forEach((obra: any) => {
+            const obraId = obra.id || obra.cnpj;
+            if (!obraId) return;
+            const obraObj = {
+              id: obraId,
+              name: obra.name || 'Obra Unida',
+              cnpj: obra.cnpj || '',
+              type: 'obra_unida',
+              entityType: 'obra_unida',
+              city: obra.city || '',
+              state: obra.state || 'SP',
+              centralId: CENTRAL_JABOTICABAL_CNPJ,
+              parentName: 'Conselho Central de Jaboticabal'
+            };
+            institutionsMap.set(obraId, obraObj);
+            if (obra.cnpj) institutionsMap.set(obra.cnpj, obraObj);
+          });
+        }
+      }
+
       // Identifica a quais instituições este usuário tem permissão
       const isSuperAdmin = cleanUser === 'kwarizaya@gmail.com';
 
@@ -1037,6 +1108,25 @@ async function startServer() {
         }
       }
 
+      const loginAccessLevel = normalizeAccessLevel(userData.accessLevel || userData.role);
+      if (loginAccessLevel === 'visitante') {
+        const primaryVisitorUnit = userData.institutionId
+          ? getCanonicalInstitutionId(userData.institutionId)
+          : '';
+
+        authorizedUnits = authorizedUnits.filter((unit: any) => {
+          const unitCanonical = getCanonicalInstitutionId(unit.id || unit.cnpj);
+          const unitType = String(unit.entityType || unit.type || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+          return !!primaryVisitorUnit &&
+            unitCanonical === primaryVisitorUnit &&
+            ['obra_unida', 'obraunida', 'lar', 'ilpi'].includes(unitType);
+        });
+
+        if (authorizedUnits.length > 1) {
+          authorizedUnits = [authorizedUnits[0]];
+        }
+      }
+
       // Sem vínculo institucional explícito, não concede acesso por fallback.
       // O usuário deve permanecer bloqueado até que o controlador global defina sua unidade.
       if (authorizedUnits.length === 0) {
@@ -1054,7 +1144,7 @@ async function startServer() {
         targetUnit = authorizedUnits.find(u => 
           u.id === explicitSearch || 
           u.cnpj === explicitSearch || 
-          u.cnpj.replace(/\D/g, '') === cleanExplicit
+          (typeof u.cnpj === 'string' && u.cnpj.replace(/\D/g, '') === cleanExplicit)
         );
 
         if (!targetUnit) {
@@ -1390,7 +1480,9 @@ async function startServer() {
       return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
     }
 
-    const cacheKey = `residents:${institutionId}:${type || 'default'}`;
+    const requesterLevel = normalizeAccessLevel((req as any).user?.accessLevel || (req as any).user?.role);
+    const isVisitorPortalUser = requesterLevel === 'visitante';
+    const cacheKey = `residents:${institutionId}:${type || 'default'}:${isVisitorPortalUser ? 'visitor' : 'standard'}`;
     const cached = getFromCache(cacheKey);
     if (cached) return res.json(cached);
 
@@ -1428,6 +1520,19 @@ async function startServer() {
         delete data.piaData;
         delete data.medicalRecord;
         delete data.auditLog;
+
+        if (isVisitorPortalUser) {
+          return {
+            id: doc.id,
+            name: data.name || '',
+            status: data.status || 'ativo',
+            relatives: Array.isArray(data.relatives)
+              ? data.relatives.filter((relative: any) => !relative?.deceased)
+              : [],
+            visitRecords: Array.isArray(data.visitRecords) ? data.visitRecords : []
+          };
+        }
+
         return { ...data, id: doc.id };
       }).filter((item: any) => !item.archived);
 
@@ -1462,7 +1567,29 @@ async function startServer() {
       if (!doc.exists) {
         return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
       }
-      const resident = { ...doc.data(), id: doc.id };
+      const resident: any = { ...doc.data(), id: doc.id };
+      const requesterLevel = normalizeAccessLevel(req.user?.accessLevel || req.user?.role);
+
+      if (requesterLevel === 'visitante') {
+        const primaryInstitutionId = req.user?.institutionId;
+        if (
+          !primaryInstitutionId ||
+          getCanonicalInstitutionId(primaryInstitutionId) !== getCanonicalInstitutionId(resident.institutionId)
+        ) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
+
+        return res.json({
+          id: resident.id,
+          name: resident.name || '',
+          status: resident.status || 'ativo',
+          relatives: Array.isArray(resident.relatives)
+            ? resident.relatives.filter((relative: any) => !relative?.deceased)
+            : [],
+          visitRecords: Array.isArray(resident.visitRecords) ? resident.visitRecords : []
+        });
+      }
+
       if (!isAuthorizedForDocument(req.user, resident)) {
         return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
       }
@@ -1502,6 +1629,11 @@ async function startServer() {
       }
 
       data.institutionId = targetInstId;
+      const requesterLevel = normalizeAccessLevel(user?.accessLevel || user?.role);
+      if (requesterLevel === 'visitante' && !data.id) {
+        return res.status(403).json({ error: 'A conta de Portaria não pode criar residentes.' });
+      }
+
       const auditEntry = {
         action: data.id ? 'update' : 'create',
         timestamp: new Date().toISOString(),
@@ -1530,6 +1662,72 @@ async function startServer() {
           if (existingCanonical !== targetCanonical) {
             return res.status(400).json({ error: 'Transferência de instituição não permitida nesta operação.' });
           }
+        }
+
+        if (requesterLevel === 'visitante') {
+          const existingRelatives = Array.isArray(existingData.relatives) ? existingData.relatives : [];
+          const incomingRelatives = Array.isArray(data.relatives) ? data.relatives : [];
+
+          const incomingById = new Map<string, any>();
+          incomingRelatives.forEach((relative: any) => {
+            if (relative?.id) incomingById.set(String(relative.id), relative);
+          });
+
+          const mergedRelatives = existingRelatives.map((existingRelative: any) => {
+            const incoming = existingRelative?.id ? incomingById.get(String(existingRelative.id)) : undefined;
+            if (!incoming) return existingRelative;
+
+            return {
+              ...existingRelative,
+              name: incoming.name ?? existingRelative.name,
+              kinship: incoming.kinship ?? existingRelative.kinship,
+              phone: incoming.phone ?? existingRelative.phone,
+              document: incoming.document ?? existingRelative.document,
+              photoUrl: incoming.photoUrl ?? existingRelative.photoUrl,
+              faceDescriptor: incoming.faceDescriptor ?? existingRelative.faceDescriptor
+            };
+          });
+
+          const existingRelativeIds = new Set(existingRelatives.map((relative: any) => String(relative?.id || '')).filter(Boolean));
+          incomingRelatives.forEach((incoming: any) => {
+            if (!incoming?.id || existingRelativeIds.has(String(incoming.id))) return;
+            mergedRelatives.push({
+              id: String(incoming.id),
+              name: incoming.name || '',
+              kinship: incoming.kinship || 'Familiar',
+              phone: incoming.phone || '',
+              document: incoming.document || '',
+              photoUrl: incoming.photoUrl,
+              faceDescriptor: incoming.faceDescriptor,
+              observation: 'Cadastrado pela Portaria',
+              isResponsible: false,
+              deceased: false
+            });
+          });
+
+          const existingVisitRecords = Array.isArray(existingData.visitRecords) ? existingData.visitRecords : [];
+          const existingVisitIds = new Set(existingVisitRecords.map((visit: any) => String(visit?.id || '')).filter(Boolean));
+          const incomingVisitRecords = Array.isArray(data.visitRecords) ? data.visitRecords : [];
+          const newVisitRecords = incomingVisitRecords.filter((visit: any) => visit?.id && !existingVisitIds.has(String(visit.id)));
+          const mergedVisitRecords = [...existingVisitRecords, ...newVisitRecords];
+
+          const safePortariaUpdate = {
+            institutionId: existingData.institutionId || targetInstId,
+            relatives: mergedRelatives,
+            visitRecords: mergedVisitRecords,
+            auditLog: admin.firestore.FieldValue.arrayUnion(auditEntry)
+          };
+
+          await db.collection('residents').doc(payload.id).set(safePortariaUpdate, { merge: true });
+          await logAudit('update', 'residents', payload.id, req, safePortariaUpdate.institutionId, `Atualização operacional de portaria do residente ${existingData.name || ''}`);
+          invalidateCache('residents');
+          return res.json({
+            id: payload.id,
+            name: existingData.name || '',
+            status: existingData.status || 'ativo',
+            relatives: mergedRelatives.filter((relative: any) => !relative?.deceased),
+            visitRecords: mergedVisitRecords
+          });
         }
 
         const { id, ...updateData } = payload;
@@ -3188,6 +3386,24 @@ async function startServer() {
         return res.status(400).json({ error: 'institutionId é obrigatório.' });
       }
 
+      const targetAccessLevel = normalizeAccessLevel(data.accessLevel || existingData?.accessLevel || data.role || existingData?.role);
+      if (targetAccessLevel === 'visitante') {
+        const primaryInstitutionId = await getRealInstitutionId(data.institutionId);
+        if (!primaryInstitutionId || !(await isVisitorPortalInstitution(primaryInstitutionId))) {
+          return res.status(400).json({ error: 'Contas de Portaria só podem ser vinculadas a uma Obra Unida / Lar / ILPI.' });
+        }
+
+        data.institutionId = primaryInstitutionId;
+        data.isGlobalAdmin = false;
+        data.hasAllUnitsAccess = false;
+        data.institutionIds = [];
+        data.authorizedUnits = [];
+        data.allowedUnits = [];
+        delete data.conferenciaId;
+        delete data.particularId;
+        delete data.centralId;
+      }
+
       const payload = { ...data };
       payload.auditLog = admin.firestore.FieldValue.arrayUnion(auditEntry);
 
@@ -3470,31 +3686,161 @@ async function startServer() {
     }
   });
 
-  // --- Global Visits API ---
-  app.get('/api/global-visits', async (req, res) => {
+  // --- Portal de Visitantes API ---
+  app.get('/api/global-visits', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
     const { institutionId } = req.query;
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório.' });
+    }
+
     try {
-      const realId = await getRealInstitutionId(institutionId as string);
+      const realId = await getRealInstitutionId(institutionId);
+      if (!(await isVisitorPortalInstitution(realId))) {
+        return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
+      }
+
       const snapshot = await db.collection('global_visits')
         .where('institutionId', '==', realId)
-        .orderBy('date', 'desc')
         .get();
-      const visits = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived);
+
+      const visits = snapshot.docs
+        .map(doc => ({ ...doc.data(), id: doc.id }))
+        .filter((item: any) => !item.archived)
+        .sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')));
+
       res.json(visits);
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao buscar visitas.' );
     }
   });
 
-  app.post('/api/global-visits', requireRole(['visitante', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'administrador', 'medico']), async (req, res) => {
-    const { institutionId, ...data } = req.body;
+  app.post('/api/global-visits', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+    const { institutionId, ...data } = req.body || {};
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório.' });
+    }
+
     try {
       const realId = await getRealInstitutionId(institutionId);
-      const docRef = await db.collection('global_visits').add({ ...data, institutionId: realId });
-      await logAudit('create', 'global_visits', docRef.id, req, realId, `Nova visita registrada`);
+      if (!(await isVisitorPortalInstitution(realId))) {
+        return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
+      }
+
+      const docRef = await db.collection('global_visits').add({
+        ...data,
+        institutionId: realId,
+        createdAt: data.createdAt || new Date().toISOString()
+      });
+      await logAudit('create', 'global_visits', docRef.id, req, realId, 'Nova visita registrada');
       res.json({ ...data, id: docRef.id, institutionId: realId });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao salvar visita.' );
+    }
+  });
+
+  app.get('/api/registered-visitors', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+    const { institutionId } = req.query;
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório.' });
+    }
+
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      if (!(await isVisitorPortalInstitution(realId))) {
+        return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
+      }
+
+      const snapshot = await db.collection('registered_visitors')
+        .where('institutionId', '==', realId)
+        .get();
+      const visitors = snapshot.docs
+        .map(doc => ({ ...doc.data(), id: doc.id }))
+        .filter((item: any) => !item.archived);
+      res.json(visitors);
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar visitantes cadastrados.');
+    }
+  });
+
+  app.post('/api/registered-visitors', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+    const { institutionId, id, ...data } = req.body || {};
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório.' });
+    }
+
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      if (!(await isVisitorPortalInstitution(realId))) {
+        return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
+      }
+
+      const safeId = typeof id === 'string' && id.trim() && !id.includes('/') ? id.trim() : '';
+      const docRef = safeId
+        ? db.collection('registered_visitors').doc(safeId)
+        : db.collection('registered_visitors').doc();
+
+      const existing = await docRef.get();
+      if (existing.exists) {
+        const existingData: any = existing.data() || {};
+        if (getCanonicalInstitutionId(existingData.institutionId) !== getCanonicalInstitutionId(realId)) {
+          return res.status(403).json({ error: 'Visitante cadastrado pertence a outra instituição.' });
+        }
+      }
+
+      const payload = {
+        ...data,
+        institutionId: realId,
+        updatedAt: new Date().toISOString(),
+        ...(existing.exists ? {} : { createdAt: new Date().toISOString() })
+      };
+
+      await docRef.set(payload, { merge: true });
+      await logAudit(existing.exists ? 'update' : 'create', 'registered_visitors', docRef.id, req, realId, `${existing.exists ? 'Atualização' : 'Cadastro'} de visitante: ${data.name || ''}`);
+      res.json({ ...payload, id: docRef.id });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar visitante cadastrado.');
+    }
+  });
+
+  app.post('/api/clear-biometrics', requireRole(['gerencial']), async (req: any, res) => {
+    const { institutionId, clearFaces = true } = req.body || {};
+    if (!institutionId || typeof institutionId !== 'string') {
+      return res.status(400).json({ error: 'institutionId é obrigatório.' });
+    }
+
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      if (!(await isVisitorPortalInstitution(realId))) {
+        return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
+      }
+
+      if (!clearFaces) {
+        return res.json({ success: true, updated: 0 });
+      }
+
+      const [registeredSnap, visitsSnap] = await Promise.all([
+        db.collection('registered_visitors').where('institutionId', '==', realId).get(),
+        db.collection('global_visits').where('institutionId', '==', realId).get()
+      ]);
+
+      const refs = [...registeredSnap.docs, ...visitsSnap.docs];
+      let updated = 0;
+      for (let index = 0; index < refs.length; index += 400) {
+        const batch = db.batch();
+        refs.slice(index, index + 400).forEach((doc: any) => {
+          batch.set(doc.ref, {
+            photoUrl: admin.firestore.FieldValue.delete(),
+            faceDescriptor: admin.firestore.FieldValue.delete()
+          }, { merge: true });
+          updated += 1;
+        });
+        await batch.commit();
+      }
+
+      await logAudit('update', 'visitor_biometrics', realId, req, realId, 'Limpeza administrativa de biometrias da portaria', { updated });
+      res.json({ success: true, updated });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao limpar biometrias.');
     }
   });
 

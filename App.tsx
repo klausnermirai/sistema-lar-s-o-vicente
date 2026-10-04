@@ -187,25 +187,31 @@ const InternalApp: React.FC = () => {
     try {
       const FETCH_FAILED = Symbol('FETCH_FAILED');
 
+      const isVisitorSession = session.accessLevel === 'visitante';
+
       const residentsPromise = fetchResidents(idToFetch, session.hierarchy?.type).catch((err) => {
         if (!err?.isDbUnavailable) console.error("Residents fetch error:", err);
         return FETCH_FAILED;
       });
 
-      const candidatesPromise = fetchCandidates(idToFetch, session.hierarchy?.type).catch((err) => {
-        if (!err?.isDbUnavailable) console.error("Candidates fetch error:", err);
-        return FETCH_FAILED;
-      });
+      const candidatesPromise = isVisitorSession
+        ? Promise.resolve([])
+        : fetchCandidates(idToFetch, session.hierarchy?.type).catch((err) => {
+            if (!err?.isDbUnavailable) console.error("Candidates fetch error:", err);
+            return FETCH_FAILED;
+          });
 
       const settingsPromise = fetchSettings(idToFetch).catch((err) => {
         if (!err?.isDbUnavailable) console.error("Settings fetch error:", err);
         return FETCH_FAILED;
       });
 
-      const employeesPromise = fetchEmployees().catch((err) => {
-        if (!err?.isDbUnavailable) console.error("Employees fetch error:", err);
-        return FETCH_FAILED;
-      });
+      const employeesPromise = isVisitorSession
+        ? Promise.resolve([])
+        : fetchEmployees().catch((err) => {
+            if (!err?.isDbUnavailable) console.error("Employees fetch error:", err);
+            return FETCH_FAILED;
+          });
 
       const [resRes, candRes, settRes, empRes] = await Promise.all([
         residentsPromise,
@@ -614,7 +620,7 @@ const InternalApp: React.FC = () => {
         userId={session?.id}
         onLogout={handleLogout}
         accessLevel={session?.accessLevel}
-        entityType={settings?.entityType || settings?.type}
+        entityType={settings?.entityType || settings?.type || session?.hierarchy?.type || session?.institutionType}
         isDbUnavailable={isDbUnavailable}
         onRetry={loadData}
         availableUnits={session?.availableUnits}
@@ -856,6 +862,7 @@ const InternalApp: React.FC = () => {
           residents={residents} 
           onVisitSaved={() => {}} 
           onSaveResident={handleSaveResident}
+          accessLevel={session?.accessLevel}
         />
       )}
 

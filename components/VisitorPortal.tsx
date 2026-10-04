@@ -37,6 +37,7 @@ interface VisitorPortalProps {
   residents: Resident[];
   onVisitSaved: () => void;
   onSaveResident?: (resident: Resident) => void;
+  accessLevel?: string;
 }
 
 type MainTab = 'portaria' | 'cadastrados' | 'historico';
@@ -47,8 +48,12 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
   institutionId, 
   residents, 
   onVisitSaved, 
-  onSaveResident 
+  onSaveResident,
+  accessLevel
 }) => {
+  const normalizedAccessLevel = String(accessLevel || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const isAdministrative = ['administrador', 'gerencial', 'auxiliar_administrativo'].includes(normalizedAccessLevel);
+  const canManageBiometrics = ['administrador', 'gerencial'].includes(normalizedAccessLevel);
   const [activeTab, setActiveTab] = useState<MainTab>('portaria');
   const [entryMode, setEntryMode] = useState<EntryMode>('choice');
   const [globalVisits, setGlobalVisits] = useState<GlobalVisitRecord[]>([]);
@@ -187,7 +192,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
 
     // 2. Parentes / Familiares de todos os residentes
     residents.forEach(res => {
-      (res.relatives || []).forEach(rel => {
+      (res.relatives || []).filter(rel => !rel.deceased).forEach(rel => {
         const key = `rel_${res.id}_${rel.name.toLowerCase().trim()}`;
         const existing = map.get(key);
         map.set(key, {
@@ -626,11 +631,16 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <span className="text-[10px] font-black uppercase text-[#004c99] tracking-widest block">
-              Controle de Portaria & Acesso
+              {isAdministrative ? 'Gestão da Portaria & Acesso' : 'Portal de Portaria & Acesso'}
             </span>
             <h1 className={`${isFacialMode ? 'text-lg sm:text-xl' : 'text-2xl'} font-black text-gray-800 uppercase tracking-tight`}>
               Módulo de Visitantes & Portaria
             </h1>
+            {!isAdministrative && (
+              <p className="text-[10px] font-bold uppercase text-gray-400 mt-1">
+                Conta operacional vinculada exclusivamente a esta unidade
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
@@ -834,7 +844,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                     onConfirmEntry={handleConfirmEntry}
                     onUpdateVisitorFace={handleUpdateVisitorFace}
                     onRegisterQuickVisitor={handleRegisterQuickVisitor}
-                    onResetBiometrics={handleClearAllBiometrics}
+                    onResetBiometrics={canManageBiometrics ? handleClearAllBiometrics : undefined}
                     onEntryCompleted={handleCloseFacialMode}
                   />
                 </div>
