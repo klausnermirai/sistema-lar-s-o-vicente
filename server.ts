@@ -344,11 +344,29 @@ async function isVisitorPortalInstitution(idOrCnpj: string): Promise<boolean> {
 
   return await safeQuery(async () => {
     const doc = await db.collection('institutions').doc(realId).get();
-    if (!doc.exists) return false;
-    const data: any = doc.data() || {};
-    const rawType = String(data.entityType || data.type || data.institutionType || '').trim().toLowerCase();
-    const normalizedType = rawType.replace(/[\s-]+/g, '_');
-    return ['obra_unida', 'obraunida', 'lar', 'ilpi'].includes(normalizedType);
+    if (doc.exists) {
+      const data: any = doc.data() || {};
+      const rawType = String(data.entityType || data.type || data.institutionType || '').trim().toLowerCase();
+      const normalizedType = rawType.replace(/[\s-]+/g, '_');
+      if (['obra_unida', 'obraunida', 'lar', 'ilpi'].includes(normalizedType)) {
+        return true;
+      }
+    }
+
+    const centralDoc = await db.collection('institutions').doc(CENTRAL_JABOTICABAL_CNPJ).get();
+    const obras = centralDoc.exists && Array.isArray(centralDoc.data()?.obrasUnidas)
+      ? centralDoc.data()!.obrasUnidas
+      : [];
+
+    const targetCanonical = getCanonicalInstitutionId(realId);
+    return obras.some((obra: any) => {
+      const obraId = String(obra?.id || '').trim();
+      const obraCnpj = String(obra?.cnpj || '').trim();
+      return (obraId && getCanonicalInstitutionId(obraId) === targetCanonical) ||
+        (obraCnpj && getCanonicalInstitutionId(obraCnpj) === targetCanonical) ||
+        obraId === idOrCnpj ||
+        obraCnpj === idOrCnpj;
+    });
   }, false);
 }
 
@@ -972,6 +990,30 @@ async function startServer() {
         });
       }
 
+      const centralSettingsDoc = await safeQuery(async () => await db.collection('institutions').doc(CENTRAL_JABOTICABAL_CNPJ).get());
+      if (centralSettingsDoc && centralSettingsDoc.exists) {
+        const centralSettings: any = centralSettingsDoc.data() || {};
+        if (Array.isArray(centralSettings.obrasUnidas)) {
+          centralSettings.obrasUnidas.forEach((obra: any) => {
+            const obraId = obra.id || obra.cnpj;
+            if (!obraId) return;
+            const obraObj = {
+              id: obraId,
+              name: obra.name || 'Obra Unida',
+              cnpj: obra.cnpj || '',
+              type: 'obra_unida',
+              entityType: 'obra_unida',
+              city: obra.city || '',
+              state: obra.state || 'SP',
+              centralId: CENTRAL_JABOTICABAL_CNPJ,
+              parentName: 'Conselho Central de Jaboticabal'
+            };
+            institutionsMap.set(obraId, obraObj);
+            if (obra.cnpj) institutionsMap.set(obra.cnpj, obraObj);
+          });
+        }
+      }
+
       // Identifica a quais instituições este usuário tem permissão
       const isSuperAdmin = cleanUser === 'kwarizaya@gmail.com';
 
@@ -1066,6 +1108,25 @@ async function startServer() {
         }
       }
 
+      const loginAccessLevel = normalizeAccessLevel(userData.accessLevel || userData.role);
+      if (loginAccessLevel === 'visitante') {
+        const primaryVisitorUnit = userData.institutionId
+          ? getCanonicalInstitutionId(userData.institutionId)
+          : '';
+
+        authorizedUnits = authorizedUnits.filter((unit: any) => {
+          const unitCanonical = getCanonicalInstitutionId(unit.id || unit.cnpj);
+          const unitType = String(unit.entityType || unit.type || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+          return !!primaryVisitorUnit &&
+            unitCanonical === primaryVisitorUnit &&
+            ['obra_unida', 'obraunida', 'lar', 'ilpi'].includes(unitType);
+        });
+
+        if (authorizedUnits.length > 1) {
+          authorizedUnits = [authorizedUnits[0]];
+        }
+      }
+
       // Sem vínculo institucional explícito, não concede acesso por fallback.
       // O usuário deve permanecer bloqueado até que o controlador global defina sua unidade.
       if (authorizedUnits.length === 0) {
@@ -1083,7 +1144,7 @@ async function startServer() {
         targetUnit = authorizedUnits.find(u => 
           u.id === explicitSearch || 
           u.cnpj === explicitSearch || 
-          u.cnpj.replace(/\D/g, '') === cleanExplicit
+          (typeof u.cnpj === 'string' && u.cnpj.replace(/\D/g, '') === cleanExplicit)
         );
 
         if (!targetUnit) {
