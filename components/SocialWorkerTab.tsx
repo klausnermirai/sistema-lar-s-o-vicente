@@ -678,7 +678,7 @@ export default function SocialWorkerTab({
             }`}
           >
             <Plus size={16} />
-            <span>{editingId ? 'Editar Ação Social' : 'Nova Ação Social'}</span>
+            <span>{editingId ? 'Editar Ação Social' : 'Novo Atendimento'}</span>
           </button>
 
           <button
@@ -818,7 +818,7 @@ export default function SocialWorkerTab({
                 className="px-5 py-2.5 bg-[#004c99] text-white rounded-xl text-xs font-black uppercase tracking-wider inline-flex items-center gap-2 hover:bg-[#003d7a] transition-all shadow-md cursor-pointer"
               >
                 <Plus size={16} />
-                <span>Registrar Nova Ação Social</span>
+                <span>Registrar Novo Atendimento</span>
               </button>
             </div>
           ) : (
@@ -1166,30 +1166,23 @@ export default function SocialWorkerTab({
             />
           </div>
 
-          {/* Professional Signature & Mural Toggle */}
+          {/* Assinatura e destino */}
           <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1">
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider block">
-                Assinatura do Profissional Responsável
-              </span>
+              <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider block">Profissional Responsável</span>
               <p className="text-xs font-black text-gray-800">
                 {formData.professionalName || 'Assistente Social'} • {formData.professionalRole || 'Serviço Social'}
                 {formData.cress ? ` • CRESS: ${formData.cress}` : ''}
               </p>
             </div>
 
-            <label className="flex items-center gap-2.5 cursor-pointer bg-white px-3.5 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
-              <input
-                type="checkbox"
-                checked={!!formData.postToMural}
-                onChange={e => setFormData({ ...formData, postToMural: e.target.checked })}
-                className="w-4 h-4 rounded text-[#004c99] focus:ring-[#004c99] border-gray-300"
-              />
-              <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                <Volume2 size={14} className="text-amber-500" />
-                Publicar resumo no Mural da Equipe
-              </span>
-            </label>
+            <div className={formData.visibility === 'confidential'
+              ? "px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 bg-slate-100 text-slate-700 border-slate-200"
+              : "px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 bg-amber-50 text-amber-700 border-amber-200"
+            }>
+              {formData.visibility === 'confidential' ? <Lock size={14} /> : <Volume2 size={14} />}
+              {formData.visibility === 'confidential' ? 'Somente prontuário social sigiloso' : 'Prontuário + resumo no mural'}
+            </div>
           </div>
 
           {/* Action buttons */}
