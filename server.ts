@@ -1419,7 +1419,9 @@ async function startServer() {
       return res.status(403).json({ error: 'Acesso negado para esta unidade institucional.' });
     }
 
-    const cacheKey = `residents:${institutionId}:${type || 'default'}`;
+    const requesterLevel = normalizeAccessLevel((req as any).user?.accessLevel || (req as any).user?.role);
+    const isVisitorPortalUser = requesterLevel === 'visitante';
+    const cacheKey = `residents:${institutionId}:${type || 'default'}:${isVisitorPortalUser ? 'visitor' : 'standard'}`;
     const cached = getFromCache(cacheKey);
     if (cached) return res.json(cached);
 
@@ -1457,6 +1459,19 @@ async function startServer() {
         delete data.piaData;
         delete data.medicalRecord;
         delete data.auditLog;
+
+        if (isVisitorPortalUser) {
+          return {
+            id: doc.id,
+            name: data.name || '',
+            status: data.status || 'ativo',
+            relatives: Array.isArray(data.relatives)
+              ? data.relatives.filter((relative: any) => !relative?.deceased)
+              : [],
+            visitRecords: Array.isArray(data.visitRecords) ? data.visitRecords : []
+          };
+        }
+
         return { ...data, id: doc.id };
       }).filter((item: any) => !item.archived);
 
@@ -1531,6 +1546,11 @@ async function startServer() {
       }
 
       data.institutionId = targetInstId;
+      const requesterLevel = normalizeAccessLevel(user?.accessLevel || user?.role);
+      if (requesterLevel === 'visitante' && !data.id) {
+        return res.status(403).json({ error: 'A conta de Portaria não pode criar residentes.' });
+      }
+
       const auditEntry = {
         action: data.id ? 'update' : 'create',
         timestamp: new Date().toISOString(),
@@ -1559,6 +1579,25 @@ async function startServer() {
           if (existingCanonical !== targetCanonical) {
             return res.status(400).json({ error: 'Transferência de instituição não permitida nesta operação.' });
           }
+        }
+
+        if (requesterLevel === 'visitante') {
+          const safePortariaUpdate = {
+            institutionId: existingData.institutionId || targetInstId,
+            relatives: Array.isArray(data.relatives) ? data.relatives : (existingData.relatives || []),
+            visitRecords: Array.isArray(data.visitRecords) ? data.visitRecords : (existingData.visitRecords || []),
+            auditLog: admin.firestore.FieldValue.arrayUnion(auditEntry)
+          };
+
+          await db.collection('residents').doc(payload.id).set(safePortariaUpdate, { merge: true });
+          await logAudit('update', 'residents', payload.id, req, safePortariaUpdate.institutionId, `Atualização operacional de portaria do residente ${existingData.name || ''}`);
+          invalidateCache('residents');
+          return res.json({
+            ...existingData,
+            id: payload.id,
+            relatives: safePortariaUpdate.relatives,
+            visitRecords: safePortariaUpdate.visitRecords
+          });
         }
 
         const { id, ...updateData } = payload;
