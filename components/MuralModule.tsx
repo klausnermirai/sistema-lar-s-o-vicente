@@ -646,7 +646,7 @@ const MuralModule: React.FC<MuralModuleProps> = ({ institutionId, username, full
                             ))}
                           </div>
                         ) : (
-                          <div className="text-xs text-gray-400 italic">Nenhum familiar cadastrado.</div>
+                          <div className="text-xs text-gray-400 italic">Nenhum familiar ativo cadastrado.</div>
                         )}
                       </div>
                     ))
