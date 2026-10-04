@@ -167,6 +167,7 @@ export interface Relative {
   photoUrl?: string;
   faceDescriptor?: number[];
   lastVisitDate?: string;
+  deceased?: boolean;
 }
 
 export interface FamilyMemberRecord {
@@ -176,6 +177,7 @@ export interface FamilyMemberRecord {
   age: string;
   job: string;
   income: string;
+  deceased?: boolean;
 }
 
 export interface RegisteredVisitor {
