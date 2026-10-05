@@ -555,7 +555,6 @@ async function startServer() {
   try {
     assertAuthConfigurationValid();
     await refreshDbInstance();
-    await checkAndSyncConselhoUser();
     const app = express();
     const PORT = 3000;
 
@@ -706,8 +705,7 @@ async function startServer() {
       '/proxy-image', 
       '/forgot-password', 
       '/verify-reset-token', 
-      '/reset-password', 
-      '/check-user-conselho'
+      '/reset-password'
     ];
     if (staticPublicRoutes.includes(req.path)) {
       return next();
@@ -1280,65 +1278,31 @@ async function startServer() {
     }
   });
 
-  // Rota para verificar e sincronizar vínculo do Conselho Central (CNPJ 54.927.132/0001-92)
-  app.get('/api/check-user-conselho', async (req, res) => {
+  // Rota legada de manutenção: exige autenticação e somente o controlador global pode executá-la.
+  app.get('/api/check-user-conselho', async (req: any, res) => {
+    if (!hasGlobalControllerIdentity(req.user)) {
+      return res.status(403).json({ error: 'Acesso restrito ao controlador global.' });
+    }
     try {
       const result = await checkAndSyncConselhoUser();
-      res.json(result);
+      return res.json(result);
     } catch (error: any) {
-      res.status(500).json({ error: error?.message || 'Erro ao verificar usuário do Conselho Central' });
+      return res.status(500).json({ error: error?.message || 'Erro ao verificar usuário do Conselho Central' });
     }
   });
 
-  // Solicitação de redefinição de senha ("Esqueci minha senha")
+  // Solicitação de redefinição de senha.
+  // Enquanto não houver canal seguro de entrega do token, a rota não gera nem expõe credenciais temporárias.
   app.post('/api/forgot-password', async (req, res) => {
-    const { email, cnpj } = req.body;
+    const { email } = req.body;
     if (!email) {
       return res.status(400).json({ error: 'Informe o e-mail cadastrado.' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-
-    try {
-      let userSnapshot = await safeQuery(async () => {
-        let snap = await db.collection('users').where('email', '==', cleanEmail).get();
-        if (snap.empty) {
-          snap = await db.collection('users').where('username', '==', cleanEmail).get();
-        }
-        return snap;
-      });
-
-      if (!userSnapshot || userSnapshot.empty) {
-        return res.json({
-          success: true,
-          message: 'Se o e-mail informado estiver cadastrado em nosso sistema, um link temporário de redefinição será enviado.'
-        });
-      }
-
-      const userDoc = userSnapshot.docs[0];
-      const userId = userDoc.id;
-      const resetToken = crypto.randomBytes(32).toString('hex');
-      const resetTokenExpiresAt = Date.now() + 60 * 60 * 1000; // 1h
-
-      await safeQuery(async () => {
-        await db.collection('users').doc(userId).set({
-          resetToken,
-          resetTokenExpiresAt,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      });
-
-      const resetLink = `/?resetToken=${resetToken}`;
-
-      return res.json({
-        success: true,
-        message: 'Link temporário de redefinição gerado e enviado com sucesso! A senha antiga não é exibida por motivos de segurança.',
-        resetToken,
-        resetLink
-      });
-    } catch (error: any) {
-      return handleApiError(res, error, 'Erro ao processar solicitação de redefinição de senha.');
-    }
+    return res.json({
+      success: true,
+      message: 'Se o e-mail informado estiver cadastrado, solicite ao administrador a redefinição da senha.'
+    });
   });
 
   // Verificar validade do token de redefinição de senha
