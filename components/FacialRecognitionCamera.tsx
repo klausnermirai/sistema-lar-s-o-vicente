@@ -700,6 +700,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   );
 
   const totalBiometricCount = registeredVisitors.filter(v => v.faceDescriptor && v.faceDescriptor.length === 128).length;
+  const matchedLinkedResidents = getVisitorLinkedResidents(matchedVisitor);
 
   return (
     <div className="space-y-3">
@@ -731,20 +732,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Seletor de Limiar de Sensibilidade */}
           <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 shadow-sm">
             <Shield size={13} className="text-[#004c99]" />
-            <span className="text-[9px] font-black uppercase text-gray-400">Limiar:</span>
-            <select
-              value={selectedThreshold}
-              onChange={(e) => setSelectedThreshold(Number(e.target.value))}
-              className="text-[11px] bg-transparent font-black text-gray-700 outline-none cursor-pointer"
-            >
-              <option value={70}>70% (Rápido)</option>
-              <option value={75}>75% (Padrão)</option>
-              <option value={80}>80% (Alto)</option>
-              <option value={85}>85% (Rigoroso)</option>
-            </select>
+            <span className="text-[9px] font-black uppercase text-gray-400">Validação facial</span>
+            <span className="text-[11px] font-black text-gray-700">75% + 2 leituras</span>
           </div>
 
           {availableDevices.length > 1 && (
@@ -896,27 +887,18 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 </div>
               </div>
 
-              {/* Botões Rápidos de Ação sobre a Câmera */}
-              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-auto gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowQuickLinkModal(true)}
-                  disabled={!lastDetection?.detected && !unrecognizedFace}
-                  className="px-3.5 py-2 bg-white/90 hover:bg-white text-gray-800 text-[10px] font-black uppercase tracking-wider rounded-xl backdrop-blur-md shadow-lg transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <UserCheck size={13} className="text-[#004c99]" />
-                  Vincular a Visitante
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowQuickNewModal(true)}
-                  disabled={!lastDetection?.detected && !unrecognizedFace}
-                  className="px-3.5 py-2 bg-[#004c99] hover:bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <UserPlus size={13} />
-                  Cadastro Rápido
-                </button>
+              {/* Fallback operacional: nenhuma falha da câmera bloqueia a Portaria */}
+              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-end pointer-events-auto">
+                {onUseManual && (
+                  <button
+                    type="button"
+                    onClick={onUseManual}
+                    className="px-4 py-2 bg-white/95 hover:bg-white text-gray-800 text-[10px] font-black uppercase tracking-wider rounded-xl backdrop-blur-md shadow-lg transition-all flex items-center gap-1.5"
+                  >
+                    <User size={13} className="text-[#004c99]" />
+                    Usar Entrada Manual
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -969,62 +951,78 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-base sm:text-lg font-black text-gray-900 uppercase tracking-tight truncate">{matchedVisitor.name}</h3>
-                    <p className="text-xs font-bold text-[#004c99] uppercase tracking-wide truncate">
-                      {matchedVisitor.type === 'residente' && `Visita: ${matchedVisitor.residentName || 'Residente'} (${matchedVisitor.kinship || 'Familiar'})`}
-                      {matchedVisitor.type === 'ssvp' && `Membro SSVP (${matchedVisitor.conferenceName || 'Conferência'})`}
-                      {matchedVisitor.type === 'orgao_fiscalizador' && `Órgão: ${matchedVisitor.agencyName || 'Fiscalização'}`}
-                      {matchedVisitor.type === 'instituicao' && 'Visita Institucional'}
+                    <p className="text-xs font-bold text-[#004c99] uppercase tracking-wide">
+                      Visitante de residente identificado por biometria facial
                     </p>
-                    {matchedVisitor.document && (
-                      <p className="text-[10px] font-bold text-gray-400 mt-0.5">Doc: {matchedVisitor.document}</p>
-                    )}
                   </div>
                 </div>
 
-                {/* Campo Opcional de Observação / Motivo */}
-                <div className="mt-4 space-y-1.5">
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block">
-                    Observação da Portaria (Opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={entryObservation}
-                    onChange={(e) => setEntryObservation(e.target.value)}
-                    placeholder="Ex: Entrega de remédio, visita..."
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
-                  />
-                </div>
+                {matchedLinkedResidents.length === 1 ? (
+                  <div className="mt-5 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Visitando</p>
+                    <p className="text-base font-black text-emerald-950 mt-1">
+                      {matchedLinkedResidents[0].residentName}
+                    </p>
+                    <p className="text-[11px] font-bold text-emerald-700 mt-1">
+                      Entrada sendo registrada automaticamente...
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-5">
+                    <p className="text-xs font-black uppercase tracking-wider text-gray-700 mb-3">
+                      Quem você veio visitar hoje?
+                    </p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {matchedLinkedResidents.map(link => (
+                        <button
+                          key={link.residentId}
+                          type="button"
+                          onClick={() => {
+                            setSelectedMatchedResidentId(link.residentId);
+                            void handleConfirmRecognizedEntry(link.residentId);
+                          }}
+                          className="w-full p-4 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-[#004c99] rounded-2xl text-left font-black text-sm transition-all"
+                        >
+                          {link.residentName}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2 pt-3 border-t border-gray-100">
                 <button
                   type="button"
-                  onClick={handleConfirmRecognizedEntry}
-                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
-                >
-                  <CheckCircle2 size={16} />
-                  Confirmar Entrada
-                </button>
-
-                <button
-                  type="button"
                   onClick={() => {
+                    entryInProgressRef.current = false;
                     setMatchedVisitor(null);
+                    setSelectedMatchedResidentId('');
                     setMatchConfidence(0);
+                    handleRetryScan();
                   }}
                   className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all"
                 >
-                  Não é esta pessoa (Cancelar)
+                  Não é esta pessoa
                 </button>
+                {onUseManual && (
+                  <button
+                    type="button"
+                    onClick={onUseManual}
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all"
+                  >
+                    Usar Entrada Manual
+                  </button>
+                )}
               </div>
             </div>
           ) : unrecognizedFace ? (
-            /* Card de Rosto Não Identificado após 3.0 segundos de Varredura */
+            /* Card de Rosto Não Identificado após 4.0 segundos de Varredura */
             <div className="bg-white p-5 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-rose-300 shadow-lg space-y-4 animate-in slide-in-from-right duration-300 h-full flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between pb-2.5 border-b border-gray-100">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest rounded-full">
-                    <AlertCircle size={11} /> Rosto Não Identificado (3.0s)
+                    <AlertCircle size={11} /> Rosto Não Identificado (4.0s)
                   </span>
                   <button
                     type="button"
@@ -1062,7 +1060,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 </div>
 
                 <div className="mt-3 p-3 bg-rose-50 rounded-xl border border-rose-200 text-[11px] text-rose-950 font-bold leading-tight">
-                  ❓ <strong>Deseja cadastrar este visitante ou tentar novamente?</strong>
+                  <strong>Cadastro rápido aberto automaticamente.</strong> Informe nome, telefone e o residente visitado.
                 </div>
               </div>
 
@@ -1131,7 +1129,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   </div>
                 ) : (
                   <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-                    Ao olhar para a câmera, a identificação ocorrerá automaticamente em até 3,0 segundos.
+                    Ao olhar para a câmera, a identificação ocorrerá automaticamente em até 4,0 segundos.
                   </p>
                 )}
 
