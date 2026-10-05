@@ -38,7 +38,10 @@ check(server.includes('user.archived === true || user.active === false'), 'archi
 check(server.includes("'inativo', 'inactive', 'desativado', 'disabled', 'arquivado'"), 'status de inatividade conhecidos são tratados');
 
 check(server.includes('const sanitizeUserForResponse = (user: any) =>'), 'sanitizador de usuário existe');
-check(server.includes('resetTokenExpiresAt,'), 'sanitizador remove credenciais temporárias');
+check(server.includes('delete safeUser.password;') &&
+      server.includes('delete safeUser.resetToken;') &&
+      server.includes('delete safeUser.resetTokenExpiresAt;'),
+  'sanitizador remove credenciais e tokens temporários');
 check(server.includes('.map((item: any) => sanitizeUserForResponse(item))'), 'GET /api/users sanitiza listagens');
 check(server.includes('return res.json(sanitizeUserForResponse({ ...existingData, ...data, id }));'), 'edição de usuário sanitiza resposta');
 check(server.includes('return res.json(sanitizeUserForResponse({ ...data, id: docRef.id }));'), 'criação de usuário sanitiza resposta');
