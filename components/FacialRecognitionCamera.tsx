@@ -37,6 +37,7 @@ export interface UnifiedVisitor {
   type: 'residente' | 'instituicao' | 'ssvp' | 'orgao_fiscalizador';
   residentId?: string;
   residentName?: string;
+  linkedResidents?: { residentId: string; residentName: string }[];
   kinship?: string;
   agencyName?: string;
   conferenceName?: string;
@@ -67,6 +68,7 @@ interface FacialRecognitionCameraProps {
   onUpdateVisitorFace: (visitor: UnifiedVisitor, photoUrl: string, faceDescriptor: number[]) => Promise<void>;
   onRegisterQuickVisitor: (newVisitor: UnifiedVisitor) => Promise<void>;
   onResetBiometrics?: () => Promise<void>;
+  onUseManual?: () => void;
   onEntryCompleted?: () => void;
 }
 
@@ -78,6 +80,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   onUpdateVisitorFace,
   onRegisterQuickVisitor,
   onResetBiometrics,
+  onUseManual,
   onEntryCompleted
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -103,10 +106,14 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   const [bestCandidatePreview, setBestCandidatePreview] = useState<{ name: string; similarity: number } | null>(null);
   const [isResettingBiometrics, setIsResettingBiometrics] = useState<boolean>(false);
 
-  // Controle de Ciclo de Varredura (3.0 segundos) e Estado de Não Reconhecido
+  // Controle de Ciclo de Varredura (4.0 segundos) e Estado de Não Reconhecido
   const scanStartTimeRef = useRef<number | null>(null);
   const [scanProgress, setScanProgress] = useState<number>(0);
-  const [scanSecondsLeft, setScanSecondsLeft] = useState<number>(3.0);
+  const [scanSecondsLeft, setScanSecondsLeft] = useState<number>(4.0);
+  const stableMatchVisitorIdRef = useRef<string | null>(null);
+  const stableMatchCountRef = useRef<number>(0);
+  const entryInProgressRef = useRef<boolean>(false);
+  const [selectedMatchedResidentId, setSelectedMatchedResidentId] = useState<string>('');
   const [unrecognizedFace, setUnrecognizedFace] = useState<{
     photoUrl?: string;
     descriptor?: number[];
@@ -213,23 +220,58 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   const handleRetryScan = useCallback(() => {
     setUnrecognizedFace(null);
     setMatchedVisitor(null);
+    setSelectedMatchedResidentId('');
     setMatchConfidence(0);
     setBestCandidatePreview(null);
     setScanProgress(0);
-    setScanSecondsLeft(3.0);
+    setScanSecondsLeft(4.0);
     lastSeenFaceTimestampRef.current = null;
-    scanStartTimeRef.current = Date.now();
+    scanStartTimeRef.current = null;
+    stableMatchVisitorIdRef.current = null;
+    stableMatchCountRef.current = 0;
+    entryInProgressRef.current = false;
   }, []);
+
+  const openAutomaticQuickRegistration = useCallback((
+    photoUrl?: string,
+    descriptor?: number[],
+    bestCandidateName?: string,
+    bestSimilarity?: number
+  ) => {
+    const capturedPhoto = photoUrl || lastValidThumbRef.current || undefined;
+    const capturedDescriptor = descriptor || lastValidDescRef.current || undefined;
+
+    setUnrecognizedFace({
+      photoUrl: capturedPhoto,
+      descriptor: capturedDescriptor,
+      bestCandidateName,
+      bestSimilarity
+    });
+    setManualCapturedThumb(capturedPhoto || null);
+    setManualCapturedDescriptor(
+      capturedDescriptor && capturedDescriptor.length === 128 ? capturedDescriptor : null
+    );
+    setShowQuickNewModal(true);
+    speak('Visitante não identificado. Informe nome, telefone e quem veio visitar.');
+  }, [speak]);
 
   // Loop de Detecção e Reconhecimento Facial em Tempo Real (a cada 400ms)
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    if (!streamActive || confirmedSuccess || unrecognizedFace || showQuickLinkModal || showQuickNewModal) {
+    if (
+      !streamActive ||
+      confirmedSuccess ||
+      matchedVisitor ||
+      unrecognizedFace ||
+      showQuickLinkModal ||
+      showQuickNewModal ||
+      entryInProgressRef.current
+    ) {
       return;
     }
 
     const runRecognitionLoop = async () => {
-      if (!videoRef.current || videoRef.current.readyState < 2) return;
+      if (!videoRef.current || videoRef.current.readyState < 2 || entryInProgressRef.current) return;
 
       setIsProcessing(true);
       try {
@@ -243,23 +285,31 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
           }
           lastValidDescRef.current = detection.descriptor;
 
-          // Inicia contagem contínua de 3.0 segundos
           if (scanStartTimeRef.current === null) {
             scanStartTimeRef.current = Date.now();
           }
 
           const elapsedMs = Date.now() - scanStartTimeRef.current;
-          const remainingSec = Math.max(0, (3000 - elapsedMs) / 1000);
+          const remainingSec = Math.max(0, (4000 - elapsedMs) / 1000);
           setScanSecondsLeft(Number(remainingSec.toFixed(1)));
-          setScanProgress(Math.min(100, Math.round((elapsedMs / 3000) * 100)));
+          setScanProgress(Math.min(100, Math.round((elapsedMs / 4000) * 100)));
 
-          // Busca correspondência com biometrias cadastradas
-          const visitorsWithFace = registeredVisitors.filter(v => v.faceDescriptor && v.faceDescriptor.length === 128);
-          
+          const visitorsWithFace = registeredVisitors.filter(
+            v =>
+              v.type === 'residente' &&
+              ((Array.isArray(v.linkedResidents) && v.linkedResidents.length > 0) || !!v.residentId) &&
+              v.faceDescriptor &&
+              v.faceDescriptor.length === 128
+          );
+
           let matchResult: any = null;
           if (visitorsWithFace.length > 0) {
-            matchResult = findBestFaceMatch<UnifiedVisitor>(detection.descriptor, visitorsWithFace, selectedThreshold);
-            
+            matchResult = findBestFaceMatch<UnifiedVisitor>(
+              detection.descriptor,
+              visitorsWithFace,
+              selectedThreshold
+            );
+
             if (matchResult.bestCandidate && matchResult.similarity > 35) {
               setBestCandidatePreview({
                 name: matchResult.bestCandidate.name,
@@ -270,79 +320,86 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             }
           }
 
-          // Se identificou com sucesso com similaridade >= threshold:
-          if (matchResult && matchResult.matched && matchResult.visitor) {
-            scanStartTimeRef.current = null;
-            lastSeenFaceTimestampRef.current = null;
-            setScanProgress(0);
-            setScanSecondsLeft(3.0);
-            setUnrecognizedFace(null);
-            
-            if (!matchedVisitor || matchedVisitor.id !== matchResult.visitor.id) {
+          if (matchResult?.matched && matchResult.visitor) {
+            const candidateId = String(matchResult.visitor.id);
+            if (stableMatchVisitorIdRef.current === candidateId) {
+              stableMatchCountRef.current += 1;
+            } else {
+              stableMatchVisitorIdRef.current = candidateId;
+              stableMatchCountRef.current = 1;
+            }
+
+            // Só aceita depois de duas leituras consecutivas do mesmo visitante.
+            if (stableMatchCountRef.current >= 2) {
+              scanStartTimeRef.current = null;
+              lastSeenFaceTimestampRef.current = null;
+              stableMatchVisitorIdRef.current = null;
+              stableMatchCountRef.current = 0;
+              setScanProgress(0);
+              setScanSecondsLeft(4.0);
+              setUnrecognizedFace(null);
               setMatchedVisitor(matchResult.visitor);
+              setSelectedMatchedResidentId('');
               setMatchConfidence(matchResult.similarity);
               speak(`Visitante identificado: ${matchResult.visitor.name}`);
-            } else {
-              setMatchConfidence(Math.max(matchConfidence, matchResult.similarity));
+              return;
             }
-            return;
+          } else {
+            stableMatchVisitorIdRef.current = null;
+            stableMatchCountRef.current = 0;
           }
 
-          // Se esgotou a janela de 3,0 segundos sem encontrar correspondência válida:
-          if (elapsedMs >= 3000) {
+          if (elapsedMs >= 4000) {
             scanStartTimeRef.current = null;
             lastSeenFaceTimestampRef.current = null;
+            stableMatchVisitorIdRef.current = null;
+            stableMatchCountRef.current = 0;
             setScanProgress(0);
             setScanSecondsLeft(0);
             setMatchedVisitor(null);
             setMatchConfidence(0);
-            
-            setUnrecognizedFace({
-              photoUrl: detection.thumbnailDataUrl || lastValidThumbRef.current || undefined,
-              descriptor: detection.descriptor || lastValidDescRef.current || undefined,
-              bestCandidateName: matchResult?.bestCandidate?.name,
-              bestSimilarity: matchResult?.similarity
-            });
 
-            speak('Rosto não identificado. Deseja cadastrar um novo visitante ou tentar novamente?');
+            openAutomaticQuickRegistration(
+              detection.thumbnailDataUrl || lastValidThumbRef.current || undefined,
+              detection.descriptor || lastValidDescRef.current || undefined,
+              matchResult?.bestCandidate?.name,
+              matchResult?.similarity
+            );
           }
-        } else {
-          // Se não detectou face neste frame específico, tolera até 1200ms de oscilação antes de resetar o contador
-          if (scanStartTimeRef.current !== null && lastSeenFaceTimestampRef.current) {
-            const timeSinceLastSeen = Date.now() - lastSeenFaceTimestampRef.current;
-            if (timeSinceLastSeen > 1200) {
-              // Pessoa realmente saiu da frente da câmera
+        } else if (scanStartTimeRef.current !== null && lastSeenFaceTimestampRef.current) {
+          const timeSinceLastSeen = Date.now() - lastSeenFaceTimestampRef.current;
+
+          if (timeSinceLastSeen > 1200) {
+            scanStartTimeRef.current = null;
+            lastSeenFaceTimestampRef.current = null;
+            stableMatchVisitorIdRef.current = null;
+            stableMatchCountRef.current = 0;
+            setScanProgress(0);
+            setScanSecondsLeft(4.0);
+            setBestCandidatePreview(null);
+            setMatchedVisitor(null);
+            setSelectedMatchedResidentId('');
+            setMatchConfidence(0);
+          } else {
+            const elapsedMs = Date.now() - scanStartTimeRef.current;
+            const remainingSec = Math.max(0, (4000 - elapsedMs) / 1000);
+            setScanSecondsLeft(Number(remainingSec.toFixed(1)));
+            setScanProgress(Math.min(100, Math.round((elapsedMs / 4000) * 100)));
+
+            if (elapsedMs >= 4000) {
               scanStartTimeRef.current = null;
               lastSeenFaceTimestampRef.current = null;
+              stableMatchVisitorIdRef.current = null;
+              stableMatchCountRef.current = 0;
               setScanProgress(0);
-              setScanSecondsLeft(3.0);
-              setBestCandidatePreview(null);
-              if (matchedVisitor) {
-                setMatchedVisitor(null);
-                setMatchConfidence(0);
-              }
-            } else {
-              // Mantém o progresso durante leve oscilação
-              const elapsedMs = Date.now() - scanStartTimeRef.current;
-              const remainingSec = Math.max(0, (3000 - elapsedMs) / 1000);
-              setScanSecondsLeft(Number(remainingSec.toFixed(1)));
-              setScanProgress(Math.min(100, Math.round((elapsedMs / 3000) * 100)));
+              setScanSecondsLeft(0);
+              setMatchedVisitor(null);
+              setMatchConfidence(0);
 
-              if (elapsedMs >= 3000) {
-                scanStartTimeRef.current = null;
-                lastSeenFaceTimestampRef.current = null;
-                setScanProgress(0);
-                setScanSecondsLeft(0);
-                setMatchedVisitor(null);
-                setMatchConfidence(0);
-
-                setUnrecognizedFace({
-                  photoUrl: lastValidThumbRef.current || undefined,
-                  descriptor: lastValidDescRef.current || undefined
-                });
-
-                speak('Rosto não identificado. Deseja cadastrar um novo visitante ou tentar novamente?');
-              }
+              openAutomaticQuickRegistration(
+                lastValidThumbRef.current || undefined,
+                lastValidDescRef.current || undefined
+              );
             }
           }
         }
@@ -355,23 +412,69 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
 
     timer = setInterval(runRecognitionLoop, 400);
     return () => clearInterval(timer);
-  }, [streamActive, registeredVisitors, matchedVisitor, matchConfidence, confirmedSuccess, speak, selectedThreshold, unrecognizedFace, showQuickLinkModal, showQuickNewModal]);
+  }, [
+    streamActive,
+    registeredVisitors,
+    matchedVisitor,
+    confirmedSuccess,
+    speak,
+    selectedThreshold,
+    unrecognizedFace,
+    showQuickLinkModal,
+    showQuickNewModal,
+    openAutomaticQuickRegistration
+  ]);
+
+  const getVisitorLinkedResidents = useCallback((visitor: UnifiedVisitor | null) => {
+    if (!visitor) return [] as { residentId: string; residentName: string }[];
+
+    const rawLinks = Array.isArray(visitor.linkedResidents) && visitor.linkedResidents.length > 0
+      ? visitor.linkedResidents
+      : (visitor.residentId
+          ? [{ residentId: visitor.residentId, residentName: visitor.residentName || '' }]
+          : []);
+
+    const unique = new Map<string, { residentId: string; residentName: string }>();
+    rawLinks.forEach(link => {
+      if (!link?.residentId) return;
+      const resident = residents.find(r => r.id === link.residentId);
+      if (!resident) return;
+      unique.set(link.residentId, {
+        residentId: link.residentId,
+        residentName: resident.name || link.residentName || ''
+      });
+    });
+
+    return Array.from(unique.values());
+  }, [residents]);
 
   // Confirmar Entrada do Visitante Reconhecido
-  const handleConfirmRecognizedEntry = async () => {
-    if (!matchedVisitor) return;
+  const handleConfirmRecognizedEntry = async (residentIdOverride?: string) => {
+    if (!matchedVisitor || entryInProgressRef.current) return;
 
+    const linkedResidents = getVisitorLinkedResidents(matchedVisitor);
+    const chosenResidentId = residentIdOverride ||
+      selectedMatchedResidentId ||
+      (linkedResidents.length === 1 ? linkedResidents[0].residentId : '');
+
+    const chosenResident = linkedResidents.find(link => link.residentId === chosenResidentId);
+    if (!chosenResident) {
+      if (linkedResidents.length > 1) {
+        setSelectedMatchedResidentId('');
+      }
+      return;
+    }
+
+    entryInProgressRef.current = true;
     try {
       await onConfirmEntry({
         visitorName: matchedVisitor.name,
         visitorDoc: matchedVisitor.document,
-        type: matchedVisitor.type,
-        residentId: matchedVisitor.residentId,
-        residentName: matchedVisitor.residentName,
+        type: 'residente',
+        residentId: chosenResident.residentId,
+        residentName: chosenResident.residentName,
         kinship: matchedVisitor.kinship,
-        agencyName: matchedVisitor.agencyName,
-        conferenceName: matchedVisitor.conferenceName,
-        photoUrl: undefined, // Privacidade: Não salva foto de passagem
+        photoUrl: undefined,
         faceDescriptor: undefined,
         matchedVia: 'facial',
         facialConfidence: matchConfidence,
@@ -379,26 +482,44 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       });
 
       const visitorName = matchedVisitor.name;
-      setConfirmedSuccess(`Entrada liberada com sucesso para ${visitorName}!`);
-      speak(`Entrada liberada para ${visitorName}! Seja bem-vindo.`);
-      
-      // Imediatamente reseta os dados de biometria temporária da tela
+      setConfirmedSuccess(`Entrada liberada para ${visitorName} visitar ${chosenResident.residentName}!`);
+      speak(`Entrada liberada para ${visitorName}. Seja bem-vindo.`);
+
       setMatchedVisitor(null);
+      setSelectedMatchedResidentId('');
       setMatchConfidence(0);
       setBestCandidatePreview(null);
       setLastDetection(null);
       setUnrecognizedFace(null);
 
       setTimeout(() => {
+        entryInProgressRef.current = false;
         setConfirmedSuccess(null);
         setEntryObservation('');
+        setScanSecondsLeft(4.0);
+        setScanProgress(0);
         onEntryCompleted?.();
-      }, 2500);
+      }, 2000);
     } catch (err) {
+      entryInProgressRef.current = false;
       console.error('Erro ao confirmar entrada:', err);
       alert('Erro ao registrar a entrada. Tente novamente.');
     }
   };
+
+  // Quando há um único residente vinculado, a entrada é automática após a identificação estável.
+  useEffect(() => {
+    if (!matchedVisitor || confirmedSuccess || entryInProgressRef.current) return;
+
+    const links = getVisitorLinkedResidents(matchedVisitor);
+    if (links.length !== 1) return;
+
+    const timer = window.setTimeout(() => {
+      void handleConfirmRecognizedEntry(links[0].residentId);
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [matchedVisitor, confirmedSuccess, matchConfidence, getVisitorLinkedResidents]);
 
   // Salvar Vínculo Rápido de Rosto
   const handleSaveQuickLink = async () => {
@@ -475,52 +596,70 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     }
   };
 
-  // Salvar Novo Visitante Rápido + Foto + Entrada
+  // Salvar Novo Visitante Facial + Entrada vinculada obrigatoriamente a residente
   const handleSaveQuickNewVisitor = async () => {
     if (!quickName.trim()) {
       alert('Por favor, informe o nome do visitante.');
       return;
     }
-    if (quickType === 'residente' && !quickResidentId) {
+    if (!quickPhone.trim()) {
+      alert('Por favor, informe o telefone do visitante.');
+      return;
+    }
+    if (!quickResidentId) {
       alert('Por favor, selecione qual residente o visitante veio visitar.');
       return;
     }
+    if (entryInProgressRef.current) return;
 
-    const photoToUse = manualCapturedThumb || unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl || lastValidThumbRef.current;
-    const descriptorToUse = manualCapturedDescriptor || unrecognizedFace?.descriptor || lastDetection?.descriptor || lastValidDescRef.current;
+    const photoToUse =
+      manualCapturedThumb ||
+      unrecognizedFace?.photoUrl ||
+      lastDetection?.thumbnailDataUrl ||
+      lastValidThumbRef.current;
+
+    const descriptorToUse =
+      manualCapturedDescriptor ||
+      unrecognizedFace?.descriptor ||
+      lastDetection?.descriptor ||
+      lastValidDescRef.current;
+
+    if (!descriptorToUse || descriptorToUse.length !== 128) {
+      alert('Não foi possível obter uma biometria facial válida. Recapture a foto ou utilize a entrada manual.');
+      return;
+    }
+
+    const selectedRes = residents.find(r => r.id === quickResidentId);
+    if (!selectedRes) {
+      alert('Selecione um residente válido.');
+      return;
+    }
+
+    entryInProgressRef.current = true;
+    const newVisitor: UnifiedVisitor = {
+      id: 'vis_' + Date.now().toString(),
+      name: quickName.trim(),
+      phone: quickPhone.trim(),
+      type: 'residente',
+      residentId: selectedRes.id,
+      residentName: selectedRes.name,
+      linkedResidents: [{ residentId: selectedRes.id, residentName: selectedRes.name }],
+      photoUrl: photoToUse || undefined,
+      faceDescriptor: descriptorToUse,
+      sourceType: 'custom'
+    };
 
     try {
-      const selectedRes = residents.find(r => r.id === quickResidentId);
-      const newVisitor: UnifiedVisitor = {
-        id: 'vis_' + Date.now().toString(),
-        name: quickName.trim(),
-        phone: quickPhone.trim(),
-        document: quickDoc.trim(),
-        type: quickType,
-        residentId: quickType === 'residente' ? quickResidentId : undefined,
-        residentName: selectedRes ? selectedRes.name : undefined,
-        kinship: quickType === 'residente' ? quickKinship : undefined,
-        agencyName: quickType === 'orgao_fiscalizador' ? quickAgency : undefined,
-        conferenceName: quickType === 'ssvp' ? quickConference : undefined,
-        photoUrl: photoToUse || undefined,
-        faceDescriptor: descriptorToUse || undefined,
-        sourceType: 'custom'
-      };
-
+      // Persistências sequenciais: primeiro cadastro/vínculo, depois Livro de Portaria.
       await onRegisterQuickVisitor(newVisitor);
 
-      // Registra entrada imediata
       await onConfirmEntry({
         visitorName: newVisitor.name,
-        visitorDoc: newVisitor.document,
-        type: newVisitor.type,
-        residentId: newVisitor.residentId,
-        residentName: newVisitor.residentName,
-        kinship: newVisitor.kinship,
-        agencyName: newVisitor.agencyName,
-        conferenceName: newVisitor.conferenceName,
-        photoUrl: newVisitor.photoUrl,
-        faceDescriptor: newVisitor.faceDescriptor,
+        type: 'residente',
+        residentId: selectedRes.id,
+        residentName: selectedRes.name,
+        photoUrl: undefined,
+        faceDescriptor: undefined,
         matchedVia: 'facial',
         facialConfidence: 99,
         comments: 'Primeiro cadastro facial e entrada direta na portaria'
@@ -529,31 +668,30 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       setShowQuickNewModal(false);
       setUnrecognizedFace(null);
       setMatchedVisitor(null);
+      setSelectedMatchedResidentId('');
       setMatchConfidence(0);
       setBestCandidatePreview(null);
       setLastDetection(null);
       setConfirmedSuccess(`Visitante ${newVisitor.name} cadastrado e entrada liberada!`);
-      speak(`Cadastro concluído e entrada liberada para ${newVisitor.name}!`);
+      speak(`Cadastro concluído e entrada liberada para ${newVisitor.name}.`);
 
-      // Limpa formulário
       setQuickName('');
       setQuickPhone('');
-      setQuickDoc('');
       setQuickResidentId('');
-      setQuickKinship('');
-      setQuickAgency('');
-      setQuickConference('');
       setManualCapturedThumb(null);
       setManualCapturedDescriptor(null);
 
       setTimeout(() => {
+        entryInProgressRef.current = false;
         setConfirmedSuccess(null);
-        setMatchedVisitor(null);
+        setScanSecondsLeft(4.0);
+        setScanProgress(0);
         onEntryCompleted?.();
-      }, 2500);
+      }, 2000);
     } catch (err) {
+      entryInProgressRef.current = false;
       console.error(err);
-      alert('Erro ao salvar novo visitante.');
+      alert('O cadastro ou o registro da entrada não foi concluído. Verifique a conexão e tente novamente.');
     }
   };
 
@@ -564,6 +702,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   );
 
   const totalBiometricCount = registeredVisitors.filter(v => v.faceDescriptor && v.faceDescriptor.length === 128).length;
+  const matchedLinkedResidents = getVisitorLinkedResidents(matchedVisitor);
 
   return (
     <div className="space-y-3">
@@ -595,20 +734,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Seletor de Limiar de Sensibilidade */}
           <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 shadow-sm">
             <Shield size={13} className="text-[#004c99]" />
-            <span className="text-[9px] font-black uppercase text-gray-400">Limiar:</span>
-            <select
-              value={selectedThreshold}
-              onChange={(e) => setSelectedThreshold(Number(e.target.value))}
-              className="text-[11px] bg-transparent font-black text-gray-700 outline-none cursor-pointer"
-            >
-              <option value={70}>70% (Rápido)</option>
-              <option value={75}>75% (Padrão)</option>
-              <option value={80}>80% (Alto)</option>
-              <option value={85}>85% (Rigoroso)</option>
-            </select>
+            <span className="text-[9px] font-black uppercase text-gray-400">Validação facial</span>
+            <span className="text-[11px] font-black text-gray-700">75% + 2 leituras</span>
           </div>
 
           {availableDevices.length > 1 && (
@@ -760,27 +889,18 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 </div>
               </div>
 
-              {/* Botões Rápidos de Ação sobre a Câmera */}
-              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-auto gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowQuickLinkModal(true)}
-                  disabled={!lastDetection?.detected && !unrecognizedFace}
-                  className="px-3.5 py-2 bg-white/90 hover:bg-white text-gray-800 text-[10px] font-black uppercase tracking-wider rounded-xl backdrop-blur-md shadow-lg transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <UserCheck size={13} className="text-[#004c99]" />
-                  Vincular a Visitante
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowQuickNewModal(true)}
-                  disabled={!lastDetection?.detected && !unrecognizedFace}
-                  className="px-3.5 py-2 bg-[#004c99] hover:bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <UserPlus size={13} />
-                  Cadastro Rápido
-                </button>
+              {/* Fallback operacional: nenhuma falha da câmera bloqueia a Portaria */}
+              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-end pointer-events-auto">
+                {onUseManual && (
+                  <button
+                    type="button"
+                    onClick={onUseManual}
+                    className="px-4 py-2 bg-white/95 hover:bg-white text-gray-800 text-[10px] font-black uppercase tracking-wider rounded-xl backdrop-blur-md shadow-lg transition-all flex items-center gap-1.5"
+                  >
+                    <User size={13} className="text-[#004c99]" />
+                    Usar Entrada Manual
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -833,62 +953,78 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-base sm:text-lg font-black text-gray-900 uppercase tracking-tight truncate">{matchedVisitor.name}</h3>
-                    <p className="text-xs font-bold text-[#004c99] uppercase tracking-wide truncate">
-                      {matchedVisitor.type === 'residente' && `Visita: ${matchedVisitor.residentName || 'Residente'} (${matchedVisitor.kinship || 'Familiar'})`}
-                      {matchedVisitor.type === 'ssvp' && `Membro SSVP (${matchedVisitor.conferenceName || 'Conferência'})`}
-                      {matchedVisitor.type === 'orgao_fiscalizador' && `Órgão: ${matchedVisitor.agencyName || 'Fiscalização'}`}
-                      {matchedVisitor.type === 'instituicao' && 'Visita Institucional'}
+                    <p className="text-xs font-bold text-[#004c99] uppercase tracking-wide">
+                      Visitante de residente identificado por biometria facial
                     </p>
-                    {matchedVisitor.document && (
-                      <p className="text-[10px] font-bold text-gray-400 mt-0.5">Doc: {matchedVisitor.document}</p>
-                    )}
                   </div>
                 </div>
 
-                {/* Campo Opcional de Observação / Motivo */}
-                <div className="mt-4 space-y-1.5">
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block">
-                    Observação da Portaria (Opcional)
-                  </label>
-                  <input
-                    type="text"
-                    value={entryObservation}
-                    onChange={(e) => setEntryObservation(e.target.value)}
-                    placeholder="Ex: Entrega de remédio, visita..."
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
-                  />
-                </div>
+                {matchedLinkedResidents.length === 1 ? (
+                  <div className="mt-5 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Visitando</p>
+                    <p className="text-base font-black text-emerald-950 mt-1">
+                      {matchedLinkedResidents[0].residentName}
+                    </p>
+                    <p className="text-[11px] font-bold text-emerald-700 mt-1">
+                      Entrada sendo registrada automaticamente...
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-5">
+                    <p className="text-xs font-black uppercase tracking-wider text-gray-700 mb-3">
+                      Quem você veio visitar hoje?
+                    </p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {matchedLinkedResidents.map(link => (
+                        <button
+                          key={link.residentId}
+                          type="button"
+                          onClick={() => {
+                            setSelectedMatchedResidentId(link.residentId);
+                            void handleConfirmRecognizedEntry(link.residentId);
+                          }}
+                          className="w-full p-4 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-[#004c99] rounded-2xl text-left font-black text-sm transition-all"
+                        >
+                          {link.residentName}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2 pt-3 border-t border-gray-100">
                 <button
                   type="button"
-                  onClick={handleConfirmRecognizedEntry}
-                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
-                >
-                  <CheckCircle2 size={16} />
-                  Confirmar Entrada
-                </button>
-
-                <button
-                  type="button"
                   onClick={() => {
+                    entryInProgressRef.current = false;
                     setMatchedVisitor(null);
+                    setSelectedMatchedResidentId('');
                     setMatchConfidence(0);
+                    handleRetryScan();
                   }}
                   className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all"
                 >
-                  Não é esta pessoa (Cancelar)
+                  Não é esta pessoa
                 </button>
+                {onUseManual && (
+                  <button
+                    type="button"
+                    onClick={onUseManual}
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all"
+                  >
+                    Usar Entrada Manual
+                  </button>
+                )}
               </div>
             </div>
           ) : unrecognizedFace ? (
-            /* Card de Rosto Não Identificado após 3.0 segundos de Varredura */
+            /* Card de Rosto Não Identificado após 4.0 segundos de Varredura */
             <div className="bg-white p-5 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-rose-300 shadow-lg space-y-4 animate-in slide-in-from-right duration-300 h-full flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between pb-2.5 border-b border-gray-100">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest rounded-full">
-                    <AlertCircle size={11} /> Rosto Não Identificado (3.0s)
+                    <AlertCircle size={11} /> Rosto Não Identificado (4.0s)
                   </span>
                   <button
                     type="button"
@@ -926,7 +1062,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 </div>
 
                 <div className="mt-3 p-3 bg-rose-50 rounded-xl border border-rose-200 text-[11px] text-rose-950 font-bold leading-tight">
-                  ❓ <strong>Deseja cadastrar este visitante ou tentar novamente?</strong>
+                  <strong>Cadastro rápido aberto automaticamente.</strong> Informe nome, telefone e o residente visitado.
                 </div>
               </div>
 
@@ -995,7 +1131,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   </div>
                 ) : (
                   <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-                    Ao olhar para a câmera, a identificação ocorrerá automaticamente em até 3,0 segundos.
+                    Ao olhar para a câmera, a identificação ocorrerá automaticamente em até 4,0 segundos.
                   </p>
                 )}
 
@@ -1137,14 +1273,17 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
           <div className="bg-white rounded-[32px] max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-4">
               <div>
-                <h3 className="text-base font-black text-gray-900 uppercase tracking-tight">Cadastro Rápido na Portaria</h3>
+                <h3 className="text-base font-black text-gray-900 uppercase tracking-tight">Cadastro Facial de Visitante</h3>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
-                  Cadastre o visitante e libere a entrada em 1 etapa
+                  Informe os dados mínimos e o residente visitado
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowQuickNewModal(false)}
+                onClick={() => {
+                  setShowQuickNewModal(false);
+                  handleRetryScan();
+                }}
                 className="p-2 hover:bg-gray-100 rounded-full text-gray-400"
               >
                 <X size={20} />
@@ -1204,46 +1343,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             )}
 
             <div className="space-y-4">
-              <div>
-                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1.5">Perfil da Visita</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setQuickType('residente')}
-                    className={`p-3 rounded-xl border text-xs font-black uppercase tracking-tight flex items-center gap-2 ${
-                      quickType === 'residente' ? 'bg-blue-50 border-[#004c99] text-[#004c99]' : 'bg-gray-50 border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    <User size={14} /> Residente
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuickType('instituicao')}
-                    className={`p-3 rounded-xl border text-xs font-black uppercase tracking-tight flex items-center gap-2 ${
-                      quickType === 'instituicao' ? 'bg-blue-50 border-[#004c99] text-[#004c99]' : 'bg-gray-50 border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    <Building2 size={14} /> Institucional
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuickType('ssvp')}
-                    className={`p-3 rounded-xl border text-xs font-black uppercase tracking-tight flex items-center gap-2 ${
-                      quickType === 'ssvp' ? 'bg-blue-50 border-[#004c99] text-[#004c99]' : 'bg-gray-50 border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    <HeartHandshake size={14} /> SSVP
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuickType('orgao_fiscalizador')}
-                    className={`p-3 rounded-xl border text-xs font-black uppercase tracking-tight flex items-center gap-2 ${
-                      quickType === 'orgao_fiscalizador' ? 'bg-blue-50 border-[#004c99] text-[#004c99]' : 'bg-gray-50 border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    <Shield size={14} /> Fiscalização
-                  </button>
-                </div>
+              <div className="p-3 bg-blue-50 border border-blue-100 rounded-2xl">
+                <p className="text-[11px] font-bold text-blue-900">
+                  Reconhecimento facial é exclusivo para familiares e visitantes de residentes. O vínculo com um residente é obrigatório.
+                </p>
               </div>
 
               <div>
@@ -1254,93 +1357,45 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   value={quickName}
                   onChange={(e) => setQuickName(e.target.value)}
                   placeholder="Ex: Maria das Graças Silva"
-                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
                 />
               </div>
 
-              {quickType === 'residente' && (
-                <>
-                  <div>
-                    <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Residente a ser visitado *</label>
-                    <select
-                      value={quickResidentId}
-                      onChange={(e) => setQuickResidentId(e.target.value)}
-                      className="w-full p-3.5 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                    >
-                      <option value="">Selecione o residente...</option>
-                      {residents.map((r) => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))}
-                    </select>
-                  </div>
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Telefone / WhatsApp *</label>
+                <input
+                  type="tel"
+                  required
+                  value={quickPhone}
+                  onChange={(e) => setQuickPhone(e.target.value)}
+                  placeholder="(00) 00000-0000"
+                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                />
+              </div>
 
-                  <div>
-                    <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Grau de Parentesco / Vínculo</label>
-                    <input
-                      type="text"
-                      value={quickKinship}
-                      onChange={(e) => setQuickKinship(e.target.value)}
-                      placeholder="Ex: Filha, Sobrinho, Amiga..."
-                      className="w-full p-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                    />
-                  </div>
-                </>
-              )}
-
-              {quickType === 'ssvp' && (
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Conferência / Conselho</label>
-                  <input
-                    type="text"
-                    value={quickConference}
-                    onChange={(e) => setQuickConference(e.target.value)}
-                    placeholder="Ex: Conferência São Vicente de Paulo"
-                    className="w-full p-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                  />
-                </div>
-              )}
-
-              {quickType === 'orgao_fiscalizador' && (
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Órgão / Entidade</label>
-                  <input
-                    type="text"
-                    value={quickAgency}
-                    onChange={(e) => setQuickAgency(e.target.value)}
-                    placeholder="Ex: Vigilância Sanitária Municipal"
-                    className="w-full p-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">CPF / RG (Opcional)</label>
-                  <input
-                    type="text"
-                    value={quickDoc}
-                    onChange={(e) => setQuickDoc(e.target.value)}
-                    placeholder="000.000.000-00"
-                    className="w-full p-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Telefone / WhatsApp</label>
-                  <input
-                    type="text"
-                    value={quickPhone}
-                    onChange={(e) => setQuickPhone(e.target.value)}
-                    placeholder="(00) 00000-0000"
-                    className="w-full p-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                  />
-                </div>
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Quem veio visitar? *</label>
+                <select
+                  required
+                  value={quickResidentId}
+                  onChange={(e) => setQuickResidentId(e.target.value)}
+                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                >
+                  <option value="">Selecione o residente...</option>
+                  {residents.map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
             <div className="flex gap-3 pt-4 border-t">
               <button
                 type="button"
-                onClick={() => setShowQuickNewModal(false)}
+                onClick={() => {
+                  setShowQuickNewModal(false);
+                  handleRetryScan();
+                }}
                 className="flex-1 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl text-xs font-black uppercase tracking-wider"
               >
                 Cancelar
@@ -1350,7 +1405,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 onClick={handleSaveQuickNewVisitor}
                 className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5"
               >
-                <CheckCircle2 size={16} /> Salvar & Liberar Entrada
+                <CheckCircle2 size={16} /> Cadastrar e Registrar Entrada
               </button>
             </div>
           </div>

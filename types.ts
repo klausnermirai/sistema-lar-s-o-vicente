@@ -189,6 +189,7 @@ export interface RegisteredVisitor {
   type: 'residente' | 'instituicao' | 'ssvp' | 'orgao_fiscalizador';
   residentId?: string;
   residentName?: string;
+  linkedResidents?: { residentId: string; residentName: string }[];
   kinship?: string;
   agencyName?: string;
   conferenceName?: string;
