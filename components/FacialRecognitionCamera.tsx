@@ -68,6 +68,7 @@ interface FacialRecognitionCameraProps {
   onUpdateVisitorFace: (visitor: UnifiedVisitor, photoUrl: string, faceDescriptor: number[]) => Promise<void>;
   onRegisterQuickVisitor: (newVisitor: UnifiedVisitor) => Promise<void>;
   onResetBiometrics?: () => Promise<void>;
+  onUseManual?: () => void;
   onEntryCompleted?: () => void;
 }
 
@@ -79,6 +80,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   onUpdateVisitorFace,
   onRegisterQuickVisitor,
   onResetBiometrics,
+  onUseManual,
   onEntryCompleted
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
