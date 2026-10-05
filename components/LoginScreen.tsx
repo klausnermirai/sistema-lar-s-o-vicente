@@ -421,8 +421,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
                       setForgotEmail(username);
                       setForgotError(null);
                       setForgotMessage(null);
-                      setGeneratedResetLink(null);
-                      setIsForgotModalOpen(true);
+                                  setIsForgotModalOpen(true);
                     }}
                     className="text-[10px] font-black text-[#004c99] hover:underline uppercase tracking-wider transition-colors cursor-pointer"
                   >
