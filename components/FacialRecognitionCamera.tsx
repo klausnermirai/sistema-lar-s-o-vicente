@@ -226,7 +226,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     setScanProgress(0);
     setScanSecondsLeft(4.0);
     lastSeenFaceTimestampRef.current = null;
-    scanStartTimeRef.current = Date.now();
+    scanStartTimeRef.current = null;
     stableMatchVisitorIdRef.current = null;
     stableMatchCountRef.current = 0;
     entryInProgressRef.current = false;
