@@ -3370,8 +3370,7 @@ async function startServer() {
   app.post('/api/users', requireRole(['administrador', 'gerencial']), async (req: any, res) => {
     const data = { ...req.body };
     try {
-      const requesterEmail = String(req.user?.email || req.user?.username || '').trim().toLowerCase();
-      const isGlobalController = requesterEmail === 'kwarizaya@gmail.com';
+      const isGlobalController = hasGlobalControllerIdentity(req.user);
 
       const auditEntry = {
         action: data.id ? 'update' : 'create',
