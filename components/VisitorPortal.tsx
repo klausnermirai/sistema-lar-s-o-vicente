@@ -27,7 +27,7 @@ import {
   Maximize2,
   Minimize2
 } from 'lucide-react';
-import { Resident, GlobalVisitRecord, Relative } from '../types';
+import { Resident, GlobalVisitRecord } from '../types';
 import { saveGlobalVisit, fetchGlobalVisits, clearAllBiometrics, saveRegisteredVisitor, fetchRegisteredVisitors } from '../lib/api';
 import { FacialRecognitionCamera, UnifiedVisitor } from './FacialRecognitionCamera';
 import { extractFaceFromCanvasOrVideo } from '../lib/faceRecognition';
@@ -135,7 +135,6 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
 
   const handleCloseFacialMode = () => {
     setEntryMode('choice');
-    exitFullscreen();
   };
 
   // Carregar visitas globais e visitantes cadastrados permanentemente
@@ -180,6 +179,9 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
           type: v.type || 'residente',
           residentId: v.residentId,
           residentName: v.residentName,
+          linkedResidents: Array.isArray(v.linkedResidents) && v.linkedResidents.length > 0
+            ? v.linkedResidents
+            : (v.residentId ? [{ residentId: v.residentId, residentName: v.residentName || '' }] : []),
           kinship: v.kinship,
           agencyName: v.agencyName,
           conferenceName: v.conferenceName,
@@ -203,6 +205,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
           type: 'residente',
           residentId: res.id,
           residentName: res.name,
+          linkedResidents: [{ residentId: res.id, residentName: res.name }],
           kinship: rel.kinship || existing?.kinship,
           photoUrl: rel.photoUrl || existing?.photoUrl,
           faceDescriptor: rel.faceDescriptor || existing?.faceDescriptor,
@@ -226,6 +229,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
             type: v.type,
             residentId: v.residentId,
             residentName: res ? res.name : v.residentName,
+            linkedResidents: v.residentId ? [{ residentId: v.residentId, residentName: res ? res.name : (v.residentName || '') }] : [],
             kinship: v.kinship,
             agencyName: v.agencyName,
             conferenceName: v.conferenceName,
@@ -244,6 +248,15 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
     return Array.from(map.values());
   }, [residents, globalVisits, registeredVisitorsList]);
 
+  const facialVisitorsList = useMemo(
+    () => unifiedVisitorsList.filter(v => {
+      const hasResidentLink = (Array.isArray(v.linkedResidents) && v.linkedResidents.length > 0) || !!v.residentId;
+      const hasValidBiometry = Array.isArray(v.faceDescriptor) && v.faceDescriptor.length === 128;
+      return v.type === 'residente' && v.sourceType !== 'global' && hasResidentLink && hasValidBiometry;
+    }),
+    [unifiedVisitorsList]
+  );
+
   // Handler de confirmação de entrada (Reconhecimento Facial ou Manual)
   const handleConfirmEntry = async (visitData: {
     visitorName: string;
@@ -260,6 +273,10 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
     facialConfidence?: number;
     comments?: string;
   }) => {
+    if (visitData.matchedVia === 'facial' && !visitData.residentId) {
+      throw new Error('Entrada por reconhecimento facial exige residente vinculado.');
+    }
+
     const now = new Date();
     const timeIn = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const dateStr = now.toISOString().split('T')[0];
@@ -328,6 +345,9 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
         type: visitor.type,
         residentId: visitor.residentId || null,
         residentName: visitor.residentName || null,
+        linkedResidents: Array.isArray(visitor.linkedResidents) && visitor.linkedResidents.length > 0
+          ? visitor.linkedResidents
+          : (visitor.residentId ? [{ residentId: visitor.residentId, residentName: visitor.residentName || '' }] : []),
         kinship: visitor.kinship || null,
         agencyName: visitor.agencyName || null,
         conferenceName: visitor.conferenceName || null,
@@ -339,7 +359,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
     }
 
     // 2. Se for parente vinculado a residente, atualiza na ficha do residente
-    if (visitor.residentId && onSaveResident) {
+    if (visitor.sourceType === 'relative' && visitor.residentId && onSaveResident) {
       const resident = residents.find(r => r.id === visitor.residentId);
       if (resident) {
         let updatedRelatives = [...(resident.relatives || [])];
@@ -388,6 +408,9 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
         type: newVisitor.type,
         residentId: newVisitor.residentId || null,
         residentName: newVisitor.residentName || null,
+        linkedResidents: Array.isArray(newVisitor.linkedResidents) && newVisitor.linkedResidents.length > 0
+          ? newVisitor.linkedResidents
+          : (newVisitor.residentId ? [{ residentId: newVisitor.residentId, residentName: newVisitor.residentName || '' }] : []),
         kinship: newVisitor.kinship || null,
         agencyName: newVisitor.agencyName || null,
         conferenceName: newVisitor.conferenceName || null,
@@ -398,28 +421,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
       console.warn('Erro ao salvar em registered_visitors:', err);
     }
 
-    // 2. Se for parente de residente, salva também na ficha do residente
-    if (newVisitor.type === 'residente' && newVisitor.residentId && onSaveResident) {
-      const resident = residents.find(r => r.id === newVisitor.residentId);
-      if (resident) {
-        const newRelative: Relative = {
-          id: 'rel_' + Date.now().toString(),
-          name: newVisitor.name,
-          kinship: newVisitor.kinship || 'Familiar',
-          phone: newVisitor.phone || '',
-          observation: 'Cadastrado diretamente na Portaria',
-          isResponsible: false,
-          document: newVisitor.document,
-          photoUrl: newVisitor.photoUrl,
-          faceDescriptor: newVisitor.faceDescriptor
-        };
-
-        await onSaveResident({
-          ...resident,
-          relatives: [...(resident.relatives || []), newRelative]
-        });
-      }
-    }
+    // O cadastro facial é operacional da Portaria e não altera automaticamente o prontuário social (resident.relatives).
 
     await loadVisits();
   };
@@ -709,9 +711,20 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                 <h2 className="text-3xl font-black text-gray-800 uppercase tracking-tight mb-2">
                   Como deseja registrar a entrada?
                 </h2>
-                <p className="text-gray-500 mb-8 max-w-md mx-auto text-sm font-medium">
-                  Selecione abaixo o método de identificação do visitante. A câmera só é acionada ao tocar no modo facial.
+                <p className="text-gray-500 mb-5 max-w-xl mx-auto text-sm font-medium">
+                  Use o reconhecimento facial para familiares e visitantes vinculados a residentes. SSVP, fiscalização e demais acessos continuam pelo registro manual.
                 </p>
+
+                {!isFullscreen && (
+                  <button
+                    type="button"
+                    onClick={enterFullscreen}
+                    className="mb-6 inline-flex items-center gap-2 px-6 py-3 bg-slate-900 hover:bg-black text-white rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg transition-all"
+                  >
+                    <Maximize2 size={17} />
+                    Iniciar Portaria em Tela Cheia
+                  </button>
+                )}
 
                 {/* Banner com Orientação de Uso */}
                 <div className="mb-8 p-3.5 bg-blue-50/80 rounded-2xl border border-blue-100 max-w-2xl mx-auto flex items-center justify-center gap-3 text-xs font-bold text-blue-950">
@@ -743,7 +756,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                         Registro Manual
                       </h3>
                       <p className="text-xs font-bold text-gray-500 leading-relaxed">
-                        Busca por digitação, nome, parentesco ou seleção direta do residente.
+                        Para familiares, SSVP, fiscalização, visitas institucionais e demais acessos.
                       </p>
                     </div>
 
@@ -770,13 +783,13 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                         Reconhecimento Facial
                       </h3>
                       <p className="text-xs font-bold text-gray-500 leading-relaxed">
-                        Abre a câmera em Tela Cheia no tablet para identificar o visitante instantaneamente por biometria facial.
+                        Exclusivo para familiares e visitantes previamente vinculados a residentes.
                       </p>
                     </div>
 
                     <div className="mt-8 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-black uppercase tracking-wider text-emerald-700">
                       <span className="flex items-center gap-1.5">
-                        <Maximize2 size={14} /> Abrir em Tela Cheia
+                        <ScanFace size={14} /> Iniciar Reconhecimento
                       </span>
                       <ArrowRight size={18} className="group-hover:translate-x-2 transition-transform" />
                     </div>
@@ -840,12 +853,12 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                   <FacialRecognitionCamera
                     institutionId={institutionId}
                     residents={residents}
-                    registeredVisitors={unifiedVisitorsList}
+                    registeredVisitors={facialVisitorsList}
                     onConfirmEntry={handleConfirmEntry}
                     onUpdateVisitorFace={handleUpdateVisitorFace}
                     onRegisterQuickVisitor={handleRegisterQuickVisitor}
                     onResetBiometrics={canManageBiometrics ? handleClearAllBiometrics : undefined}
-                    onEntryCompleted={handleCloseFacialMode}
+                    onEntryCompleted={() => setEntryMode('choice')}
                   />
                 </div>
               </div>
