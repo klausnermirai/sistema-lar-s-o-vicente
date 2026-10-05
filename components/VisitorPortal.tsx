@@ -419,6 +419,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
       });
     } catch (err) {
       console.warn('Erro ao salvar em registered_visitors:', err);
+      throw err;
     }
 
     // O cadastro facial é operacional da Portaria e não altera automaticamente o prontuário social (resident.relatives).
@@ -812,7 +813,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                       title="Sair do Modo Portaria e voltar ao sistema"
                     >
                       <LogOut size={15} />
-                      Sair da Portaria
+                      Voltar ao Início
                     </button>
 
                     <div className="hidden sm:flex items-center gap-2">
