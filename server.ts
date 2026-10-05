@@ -3832,8 +3832,8 @@ async function startServer() {
         : db.collection('registered_visitors').doc();
 
       const existing = await docRef.get();
+      const existingData: any = existing.exists ? (existing.data() || {}) : {};
       if (existing.exists) {
-        const existingData: any = existing.data() || {};
         if (getCanonicalInstitutionId(existingData.institutionId) !== getCanonicalInstitutionId(realId)) {
           return res.status(403).json({ error: 'Visitante cadastrado pertence a outra instituição.' });
         }
@@ -3843,7 +3843,11 @@ async function startServer() {
         ? data.linkedResidents
         : (data.residentId
             ? [{ residentId: data.residentId, residentName: data.residentName || '' }]
-            : []);
+            : (Array.isArray(existingData.linkedResidents) && existingData.linkedResidents.length > 0
+                ? existingData.linkedResidents
+                : (existingData.residentId
+                    ? [{ residentId: existingData.residentId, residentName: existingData.residentName || '' }]
+                    : [])));
 
       const normalizedLinks: { residentId: string; residentName: string }[] = [];
       const seenResidentIds = new Set<string>();
@@ -3860,12 +3864,14 @@ async function startServer() {
         normalizedLinks.push({ residentId: resident.id, residentName: resident.name });
       }
 
-      const hasBiometry = Array.isArray(data.faceDescriptor) && data.faceDescriptor.length > 0;
+      const effectiveFaceDescriptor = data.faceDescriptor ?? existingData.faceDescriptor;
+      const hasBiometry = Array.isArray(effectiveFaceDescriptor) && effectiveFaceDescriptor.length > 0;
       if (hasBiometry) {
-        if (data.faceDescriptor.length !== 128) {
+        if (effectiveFaceDescriptor.length !== 128) {
           return res.status(400).json({ error: 'Descritor facial inválido.' });
         }
-        if (data.type !== 'residente' || normalizedLinks.length === 0) {
+        const effectiveType = data.type || existingData.type;
+        if (effectiveType !== 'residente' || normalizedLinks.length === 0) {
           return res.status(400).json({ error: 'Cadastro com reconhecimento facial exige vínculo com pelo menos um residente.' });
         }
       }
