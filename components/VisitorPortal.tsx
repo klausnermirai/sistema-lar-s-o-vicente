@@ -858,6 +858,10 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                     onUpdateVisitorFace={handleUpdateVisitorFace}
                     onRegisterQuickVisitor={handleRegisterQuickVisitor}
                     onResetBiometrics={canManageBiometrics ? handleClearAllBiometrics : undefined}
+                    onUseManual={() => {
+                      handleResetManual();
+                      setEntryMode('manual');
+                    }}
                     onEntryCompleted={() => setEntryMode('choice')}
                   />
                 </div>
