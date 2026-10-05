@@ -61,7 +61,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
   const [forgotLoading, setForgotLoading] = React.useState(false);
   const [forgotMessage, setForgotMessage] = React.useState<string | null>(null);
   const [forgotError, setForgotError] = React.useState<string | null>(null);
-  const [generatedResetLink, setGeneratedResetLink] = React.useState<string | null>(null);
 
   // Modal State: Redefinir Senha
   const [resetToken, setResetToken] = React.useState<string | null>(null);
@@ -190,7 +189,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
     e.preventDefault();
     setForgotError(null);
     setForgotMessage(null);
-    setGeneratedResetLink(null);
 
     if (!forgotEmail) {
       setForgotError('Informe o seu e-mail cadastrado.');
@@ -201,9 +199,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
       setForgotLoading(true);
       const res = await forgotPassword({ email: forgotEmail });
       setForgotMessage(res.message);
-      if (res.resetLink) {
-        setGeneratedResetLink(res.resetLink);
-      }
     } catch (err: any) {
       setForgotError(err.message || 'Erro ao solicitar redefinição.');
     } finally {
@@ -510,29 +505,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
                 </div>
               )}
 
-              {generatedResetLink && (
-                <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl space-y-3 text-blue-900">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-blue-700">Acesso Direto ao Link de Redefinição:</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const params = new URLSearchParams(generatedResetLink.split('?')[1]);
-                      const tok = params.get('resetToken');
-                      if (tok) {
-                        setResetToken(tok);
-                        verifyResetToken(tok).then(res => {
-                          if (res.valid) setResetUserEmail(res.email);
-                        });
-                        setIsForgotModalOpen(false);
-                      }
-                    }}
-                    className="w-full py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
-                  >
-                    <KeyRound size={16} /> Redefinir Senha Agora
-                  </button>
-                </div>
-              )}
-
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">E-mail Cadastrado</label>
                 <div className="relative">
@@ -558,7 +530,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
                     <RefreshCw size={18} className="animate-spin" />
                   ) : (
                     <>
-                      <Mail size={18} /> Gerar Link de Redefinição
+                      <Mail size={18} /> Solicitar Redefinição
                     </>
                   )}
                 </button>
