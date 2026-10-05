@@ -250,11 +250,14 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
 
   const facialVisitorsList = useMemo(
     () => unifiedVisitorsList.filter(v => {
-      const hasResidentLink = (Array.isArray(v.linkedResidents) && v.linkedResidents.length > 0) || !!v.residentId;
+      const linkedIds = Array.isArray(v.linkedResidents) && v.linkedResidents.length > 0
+        ? v.linkedResidents.map(link => link.residentId)
+        : (v.residentId ? [v.residentId] : []);
+      const hasActiveResidentLink = linkedIds.some(id => residents.some(resident => resident.id === id));
       const hasValidBiometry = Array.isArray(v.faceDescriptor) && v.faceDescriptor.length === 128;
-      return v.type === 'residente' && v.sourceType !== 'global' && hasResidentLink && hasValidBiometry;
+      return v.type === 'residente' && v.sourceType !== 'global' && hasActiveResidentLink && hasValidBiometry;
     }),
-    [unifiedVisitorsList]
+    [unifiedVisitorsList, residents]
   );
 
   // Handler de confirmação de entrada (Reconhecimento Facial ou Manual)
