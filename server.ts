@@ -606,6 +606,34 @@ async function startServer() {
 
   // --- API Routes ---
 
+  const GLOBAL_CONTROLLER_IDENTITY = 'kwarizaya@gmail.com';
+
+  const isInactiveUserRecord = (user: any): boolean => {
+    if (!user) return true;
+    if (user.archived === true || user.active === false) return true;
+    const status = String(user.status || '').trim().toLowerCase();
+    return ['inativo', 'inactive', 'desativado', 'disabled', 'arquivado'].includes(status);
+  };
+
+  const hasGlobalControllerIdentity = (user: any): boolean => {
+    if (!user) return false;
+    const email = String(user.email || '').trim().toLowerCase();
+    const username = String(user.username || '').trim().toLowerCase();
+    return email === GLOBAL_CONTROLLER_IDENTITY || username === GLOBAL_CONTROLLER_IDENTITY;
+  };
+
+  const sanitizeUserForResponse = (user: any) => {
+    if (!user || typeof user !== 'object') return user;
+    const {
+      password,
+      resetToken,
+      resetTokenExpiresAt,
+      auditLog,
+      ...safeUser
+    } = user;
+    return safeUser;
+  };
+
   // Auth Middleware com validação criptográfica de credencial
   const requireAuth = async (req: any, res: express.Response, next: express.NextFunction) => {
     const authHeader = req.headers.authorization;
@@ -627,8 +655,11 @@ async function startServer() {
       }
       
       const rawUser: any = { id: userDoc.id, ...userDoc.data() };
-      const controllerEmail = String(rawUser.email || rawUser.username || '').trim().toLowerCase();
-      const isGlobalController = controllerEmail === 'kwarizaya@gmail.com';
+      if (isInactiveUserRecord(rawUser)) {
+        return res.status(401).json({ error: 'Usuário desativado ou inativo. Acesso revogado.' });
+      }
+
+      const isGlobalController = hasGlobalControllerIdentity(rawUser);
 
       // Regra multi-tenant: somente o controlador global pode possuir alcance irrestrito.
       // Perfis funcionais (administrador/gerencial/etc.) não ampliam o escopo institucional.
@@ -650,46 +681,8 @@ async function startServer() {
     }
   };
 
-  // Normalizador unificado de perfis e cargos para evitar divergências de gênero ou digitação
-  const normalizeAccessLevel = (roleOrLevel?: string): string => {
-    if (!roleOrLevel) return 'visitante';
-    const clean = roleOrLevel.trim().toLowerCase().replace(/[\s\-_]+/g, '');
-    
-    if (clean.includes('admin') || clean.includes('gestao') || clean.includes('diretor') || clean.includes('presidente')) {
-      return 'administrador';
-    }
-    if (clean.includes('enferm') || clean.includes('enf') || clean.includes('nurse')) {
-      return 'enfermeira';
-    }
-    if (clean.includes('medic') || clean.includes('doutor') || clean.includes('doc')) {
-      return 'medico';
-    }
-    if (clean.includes('social') || clean.includes('servicosocial')) {
-      return 'assistente_social';
-    }
-    if (clean.includes('psico')) {
-      return 'psicologia';
-    }
-    if (clean.includes('fisioter') || clean.includes('fisio')) {
-      return 'fisioterapeuta';
-    }
-    if (clean.includes('terapeut') || clean.includes('to')) {
-      return 'terapeuta_ocupacional';
-    }
-    if (clean.includes('nutri')) {
-      return 'nutricionista';
-    }
-    if (clean.includes('cuidado') || clean.includes('cuidad') || clean.includes('atendente')) {
-      return 'cuidados';
-    }
-    if (clean.includes('auxiliar') || clean.includes('secretar') || clean.includes('recepc')) {
-      return 'auxiliar_administrativo';
-    }
-    if (clean.includes('geren') || clean.includes('coord')) {
-      return 'gerencial';
-    }
-    return clean;
-  };
+  // Usa o normalizador canônico compartilhado para evitar divergência entre backend e helpers.
+  const normalizeAccessLevel = normalizeUserAccessLevel;
 
   // Helper inside routes to enforce permissions
   const requireRole = (allowedRoles: string[]) => {
@@ -865,13 +858,18 @@ async function startServer() {
         return res.status(401).json({ error: 'Usuário não encontrado. Verifique seu e-mail de acesso.' });
       }
 
-      // Procura usuário cuja senha coincida
+      // Procura usuário ativo cuja senha coincida. Contas arquivadas/inativas não podem autenticar.
       let validUserDoc: any = null;
       let userData: any = null;
+      let matchedInactiveAccount = false;
 
       for (const doc of userSnapshot.docs) {
         const u = doc.data();
         if (u.password === password || u.password === cleanPass) {
+          if (isInactiveUserRecord(u)) {
+            matchedInactiveAccount = true;
+            continue;
+          }
           validUserDoc = doc;
           userData = u;
           break;
@@ -879,6 +877,9 @@ async function startServer() {
       }
 
       if (!validUserDoc || !userData) {
+        if (matchedInactiveAccount) {
+          return res.status(401).json({ error: 'Usuário desativado ou inativo. Acesso revogado.' });
+        }
         return res.status(401).json({ error: 'Senha incorreta. Tente novamente ou use "Esqueci minha senha".' });
       }
 
@@ -1029,7 +1030,7 @@ async function startServer() {
       }
 
       // Identifica a quais instituições este usuário tem permissão
-      const isSuperAdmin = cleanUser === 'kwarizaya@gmail.com';
+      const isSuperAdmin = hasGlobalControllerIdentity(userData);
 
       let authorizedUnits: any[] = [];
 
@@ -1421,14 +1422,58 @@ async function startServer() {
     }
   });
 
-  // Setup
+  // Setup inicial: desabilitado por padrão e permitido somente em banco realmente vazio.
   app.post('/api/setup', async (req, res) => {
-    const { institution, admin } = req.body;
     try {
-      // Normalização de campos de tipo
-      const entityType = institution.entityType || institution.type || 'obra_unida';
-      institution.entityType = entityType;
-      institution.type = entityType; // fallback para consultas antigas
+      if (process.env.ALLOW_INITIAL_SETUP !== 'true') {
+        return res.status(403).json({ error: 'Setup inicial desabilitado neste ambiente.' });
+      }
+
+      const [instSnapshot, userSnapshot] = await Promise.all([
+        safeQuery(async () => await db.collection('institutions').limit(1).get()),
+        safeQuery(async () => await db.collection('users').limit(1).get())
+      ]);
+
+      if ((instSnapshot && !instSnapshot.empty) || (userSnapshot && !userSnapshot.empty)) {
+        return res.status(403).json({ error: 'Setup desabilitado. O sistema já se encontra provisionado.' });
+      }
+
+      const institutionInput = req.body?.institution;
+      const adminInput = req.body?.admin;
+      if (!institutionInput || !adminInput) {
+        return res.status(400).json({ error: 'Dados iniciais de instituição e administrador são obrigatórios.' });
+      }
+
+      const entityType = String(institutionInput.entityType || institutionInput.type || 'obra_unida').trim();
+      const safeInstitution = {
+        name: String(institutionInput.name || '').trim(),
+        cnpj: String(institutionInput.cnpj || '').trim(),
+        city: String(institutionInput.city || '').trim(),
+        state: String(institutionInput.state || '').trim(),
+        entityType,
+        type: entityType
+      };
+
+      const safeAdmin = {
+        username: String(adminInput.username || '').trim().toLowerCase(),
+        email: String(adminInput.email || adminInput.username || '').trim().toLowerCase(),
+        password: String(adminInput.password || ''),
+        fullName: String(adminInput.fullName || '').trim(),
+        accessLevel: 'administrador',
+        role: 'Administrador',
+        isGlobalAdmin: false,
+        hasAllUnitsAccess: false,
+        archived: false,
+        status: 'ativo'
+      };
+
+      if (!safeInstitution.name || !safeAdmin.username || !safeAdmin.password || !safeAdmin.fullName) {
+        return res.status(400).json({ error: 'Nome da instituição, usuário, senha e nome do administrador são obrigatórios.' });
+      }
+
+      if (hasGlobalControllerIdentity(safeAdmin)) {
+        return res.status(403).json({ error: 'A identidade do controlador global não pode ser criada pelo setup inicial.' });
+      }
 
       // Check if Nacional already exists if trying to create one
       if (entityType === 'nacional') {
@@ -1438,11 +1483,9 @@ async function startServer() {
         }
       }
 
-      // Create institution
-      const instRef = await db.collection('institutions').add(institution);
+      const instRef = await db.collection('institutions').add(safeInstitution);
       const institutionId = instRef.id;
 
-      // Ensure hierarchy integrity
       const updates: any = {};
       if (entityType === 'nacional') updates.nacionalId = institutionId;
       if (entityType === 'metropolitano') updates.metropolitanoId = institutionId;
@@ -1455,21 +1498,25 @@ async function startServer() {
       }
 
       const finalInstData = (await instRef.get()).data();
-
-      // Create admin user
       const userRef = await db.collection('users').add({
-        ...admin,
-        institutionId: institutionId,
+        ...safeAdmin,
+        institutionId,
         institutionType: entityType
       });
 
-      const token = createAuthToken(userRef.id, admin.username);
+      const token = createAuthToken(userRef.id, safeAdmin.username);
+      const responseUser = sanitizeUserForResponse({
+        ...safeAdmin,
+        id: userRef.id,
+        institutionId,
+        institutionType: entityType
+      });
 
-      res.json({
+      return res.json({
         success: true,
         token,
         institutionId,
-        user: { ...admin, id: userRef.id, institutionId, institutionType: entityType },
+        user: responseUser,
         hierarchy: {
           type: entityType,
           nacionalId: finalInstData?.nacionalId,
@@ -1481,7 +1528,7 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error('Setup error:', error);
-      return sendDatabaseError(res, error, 'Erro ao configurar instituição.' );
+      return sendDatabaseError(res, error, 'Erro ao configurar instituição.');
     }
   });
 
@@ -3260,8 +3307,7 @@ async function startServer() {
   app.get('/api/users', requireRole(['administrador', 'gerencial']), async (req: any, res) => {
     const { institutionId, all } = req.query;
     try {
-      const requesterEmail = String(req.user?.email || req.user?.username || '').trim().toLowerCase();
-      const isGlobalController = requesterEmail === 'kwarizaya@gmail.com';
+      const isGlobalController = hasGlobalControllerIdentity(req.user);
 
       if (all === 'true' && !isGlobalController) {
         return res.status(403).json({ error: 'A listagem global de usuários é restrita ao controlador do sistema.' });
@@ -3270,7 +3316,10 @@ async function startServer() {
       if (isGlobalController && all === 'true') {
         const snapshot = await safeQuery(async () => await db.collection('users').get());
         const dbUsers = snapshot
-          ? snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id })).filter((item: any) => !item.archived)
+          ? snapshot.docs
+              .map((doc: any) => ({ ...doc.data(), id: doc.id }))
+              .filter((item: any) => !item.archived)
+              .map((item: any) => sanitizeUserForResponse(item))
           : [];
         return res.json(dbUsers);
       }
@@ -3312,7 +3361,7 @@ async function startServer() {
         finalUsers = [...demoUsers, ...finalUsers];
       }
 
-      return res.json(finalUsers);
+      return res.json(finalUsers.map((item: any) => sanitizeUserForResponse(item)));
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao buscar usuários.');
     }
@@ -3339,8 +3388,7 @@ async function startServer() {
         }
         existingData = existingDoc.data();
 
-        const targetEmail = String(existingData?.email || existingData?.username || '').trim().toLowerCase();
-        if (!isGlobalController && targetEmail === 'kwarizaya@gmail.com') {
+        if (!isGlobalController && hasGlobalControllerIdentity(existingData)) {
           return res.status(403).json({ error: 'O controlador global só pode ser administrado pela própria conta controladora.' });
         }
 
@@ -3350,14 +3398,24 @@ async function startServer() {
         }
       }
 
+      const requestedIdentity = {
+        email: data.email ?? existingData?.email,
+        username: data.username ?? existingData?.username
+      };
+      if (!isGlobalController && hasGlobalControllerIdentity(requestedIdentity)) {
+        return res.status(403).json({ error: 'Não é permitido criar ou alterar usuários com a identidade do controlador global.' });
+      }
+
       if (isGlobalController) {
         const requestedPrimary = data.institutionId || existingData?.institutionId;
         if (requestedPrimary) {
           data.institutionId = await getRealInstitutionId(requestedPrimary);
         }
 
-        const targetEmail = String(data.email || data.username || existingData?.email || existingData?.username || '').trim().toLowerCase();
-        const targetIsController = targetEmail === 'kwarizaya@gmail.com';
+        const targetIsController = hasGlobalControllerIdentity({
+          email: data.email ?? existingData?.email,
+          username: data.username ?? existingData?.username
+        });
 
         // Apenas Klausner pode ser global. Demais usuários podem receber multiacesso explícito.
         data.isGlobalAdmin = targetIsController;
@@ -3425,12 +3483,12 @@ async function startServer() {
         const { id, ...updateData } = payload;
         await db.collection('users').doc(id).set(updateData, { merge: true });
         await logAudit('update', 'users', id, req, data.institutionId, `Atualização do usuário ${payload.username}`);
-        return res.json({ ...existingData, ...data, id });
+        return res.json(sanitizeUserForResponse({ ...existingData, ...data, id }));
       }
 
       const docRef = await db.collection('users').add(payload);
       await logAudit('create', 'users', docRef.id, req, data.institutionId, `Novo usuário cadastrado: ${payload.username}`);
-      return res.json({ ...data, id: docRef.id });
+      return res.json(sanitizeUserForResponse({ ...data, id: docRef.id }));
     } catch (error: any) {
       console.error('Error saving user to Firestore:', error);
       return sendDatabaseError(res, error, 'Erro ao salvar usuário no banco de dados.');
