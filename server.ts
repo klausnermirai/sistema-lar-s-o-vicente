@@ -3687,6 +3687,25 @@ async function startServer() {
   });
 
   // --- Portal de Visitantes API ---
+  const resolvePortalResident = async (residentId: string, institutionId: string) => {
+    if (!residentId || !institutionId) return null;
+    const residentDoc = await db.collection('residents').doc(residentId).get();
+    if (!residentDoc.exists) return null;
+
+    const residentData: any = residentDoc.data() || {};
+    if (residentData.archived === true) return null;
+
+    const residentInstitutionId = getCanonicalInstitutionId(residentData.institutionId);
+    const targetInstitutionId = getCanonicalInstitutionId(institutionId);
+    if (!residentInstitutionId || residentInstitutionId !== targetInstitutionId) return null;
+
+    return {
+      id: residentDoc.id,
+      name: residentData.name || '',
+      institutionId: residentData.institutionId
+    };
+  };
+
   app.get('/api/global-visits', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
     const { institutionId } = req.query;
     if (!institutionId || typeof institutionId !== 'string') {
@@ -3726,13 +3745,46 @@ async function startServer() {
         return res.status(400).json({ error: 'Portal de Visitantes disponível somente para Obra Unida / Lar / ILPI.' });
       }
 
-      const docRef = await db.collection('global_visits').add({
-        ...data,
+      let validatedResident: { id: string; name: string; institutionId: string } | null = null;
+      if (data.matchedVia === 'facial') {
+        if (!data.residentId || typeof data.residentId !== 'string') {
+          return res.status(400).json({ error: 'Entrada por reconhecimento facial exige residente vinculado obrigatoriamente.' });
+        }
+
+        validatedResident = await resolvePortalResident(data.residentId, realId);
+        if (!validatedResident) {
+          return res.status(400).json({ error: 'Residente inválido ou não pertencente à unidade da Portaria.' });
+        }
+      } else if (data.residentId && typeof data.residentId === 'string') {
+        validatedResident = await resolvePortalResident(data.residentId, realId);
+        if (!validatedResident) {
+          return res.status(400).json({ error: 'Residente inválido ou não pertencente à unidade da Portaria.' });
+        }
+      }
+
+      // Minimização LGPD: a passagem não duplica foto nem vetor biométrico permanente.
+      const {
+        faceDescriptor: _discardedFaceDescriptor,
+        photoUrl: _discardedPhotoUrl,
+        ...visitData
+      } = data;
+
+      const safeVisitData = {
+        ...visitData,
+        ...(validatedResident
+          ? {
+              type: 'residente',
+              residentId: validatedResident.id,
+              residentName: validatedResident.name
+            }
+          : {}),
         institutionId: realId,
         createdAt: data.createdAt || new Date().toISOString()
-      });
+      };
+
+      const docRef = await db.collection('global_visits').add(safeVisitData);
       await logAudit('create', 'global_visits', docRef.id, req, realId, 'Nova visita registrada');
-      res.json({ ...data, id: docRef.id, institutionId: realId });
+      res.json({ ...safeVisitData, id: docRef.id });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao salvar visita.' );
     }
@@ -3787,15 +3839,62 @@ async function startServer() {
         }
       }
 
+      const rawLinks = Array.isArray(data.linkedResidents)
+        ? data.linkedResidents
+        : (data.residentId
+            ? [{ residentId: data.residentId, residentName: data.residentName || '' }]
+            : []);
+
+      const normalizedLinks: { residentId: string; residentName: string }[] = [];
+      const seenResidentIds = new Set<string>();
+      for (const link of rawLinks) {
+        const residentId = typeof link?.residentId === 'string' ? link.residentId.trim() : '';
+        if (!residentId || seenResidentIds.has(residentId)) continue;
+
+        const resident = await resolvePortalResident(residentId, realId);
+        if (!resident) {
+          return res.status(400).json({ error: 'Um dos residentes vinculados é inválido ou pertence a outra unidade.' });
+        }
+
+        seenResidentIds.add(residentId);
+        normalizedLinks.push({ residentId: resident.id, residentName: resident.name });
+      }
+
+      const hasBiometry = Array.isArray(data.faceDescriptor) && data.faceDescriptor.length > 0;
+      if (hasBiometry) {
+        if (data.faceDescriptor.length !== 128) {
+          return res.status(400).json({ error: 'Descritor facial inválido.' });
+        }
+        if (data.type !== 'residente' || normalizedLinks.length === 0) {
+          return res.status(400).json({ error: 'Cadastro com reconhecimento facial exige vínculo com pelo menos um residente.' });
+        }
+      }
+
+      const primaryLink = normalizedLinks[0];
       const payload = {
         ...data,
         institutionId: realId,
+        linkedResidents: normalizedLinks,
+        ...(primaryLink
+          ? {
+              residentId: primaryLink.residentId,
+              residentName: primaryLink.residentName,
+              type: 'residente'
+            }
+          : {}),
         updatedAt: new Date().toISOString(),
         ...(existing.exists ? {} : { createdAt: new Date().toISOString() })
       };
 
       await docRef.set(payload, { merge: true });
-      await logAudit(existing.exists ? 'update' : 'create', 'registered_visitors', docRef.id, req, realId, `${existing.exists ? 'Atualização' : 'Cadastro'} de visitante: ${data.name || ''}`);
+      await logAudit(
+        existing.exists ? 'update' : 'create',
+        'registered_visitors',
+        docRef.id,
+        req,
+        realId,
+        `${existing.exists ? 'Atualização' : 'Cadastro'} de visitante: ${data.name || ''}`
+      );
       res.json({ ...payload, id: docRef.id });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao salvar visitante cadastrado.');
