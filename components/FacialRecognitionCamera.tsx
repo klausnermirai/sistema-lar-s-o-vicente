@@ -37,6 +37,7 @@ export interface UnifiedVisitor {
   type: 'residente' | 'instituicao' | 'ssvp' | 'orgao_fiscalizador';
   residentId?: string;
   residentName?: string;
+  linkedResidents?: { residentId: string; residentName: string }[];
   kinship?: string;
   agencyName?: string;
   conferenceName?: string;
@@ -103,10 +104,14 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   const [bestCandidatePreview, setBestCandidatePreview] = useState<{ name: string; similarity: number } | null>(null);
   const [isResettingBiometrics, setIsResettingBiometrics] = useState<boolean>(false);
 
-  // Controle de Ciclo de Varredura (3.0 segundos) e Estado de Não Reconhecido
+  // Controle de Ciclo de Varredura (4.0 segundos) e Estado de Não Reconhecido
   const scanStartTimeRef = useRef<number | null>(null);
   const [scanProgress, setScanProgress] = useState<number>(0);
-  const [scanSecondsLeft, setScanSecondsLeft] = useState<number>(3.0);
+  const [scanSecondsLeft, setScanSecondsLeft] = useState<number>(4.0);
+  const stableMatchVisitorIdRef = useRef<string | null>(null);
+  const stableMatchCountRef = useRef<number>(0);
+  const entryInProgressRef = useRef<boolean>(false);
+  const [selectedMatchedResidentId, setSelectedMatchedResidentId] = useState<string>('');
   const [unrecognizedFace, setUnrecognizedFace] = useState<{
     photoUrl?: string;
     descriptor?: number[];
