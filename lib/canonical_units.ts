@@ -116,8 +116,25 @@ export function getMonteAltoQueryIds(): string[] {
 export function normalizeUserAccessLevel(roleOrLevel?: string): string {
   if (!roleOrLevel) return 'visitante';
   const clean = roleOrLevel.trim().toLowerCase().replace(/[\s\-_]+/g, '');
-  
-  if (clean.includes('admin') || clean.includes('gestao') || clean.includes('diretor') || clean.includes('presidente')) {
+
+  // Perfis específicos devem ser resolvidos antes de termos genéricos.
+  // "auxiliar_administrativo" contém "admin", mas não é administrador.
+  if (
+    clean === 'auxiliaradministrativo' ||
+    clean === 'auxiliar' ||
+    clean.includes('secretar') ||
+    clean.includes('recepc')
+  ) {
+    return 'auxiliar_administrativo';
+  }
+  if (
+    clean === 'administrador' ||
+    clean === 'admin' ||
+    clean === 'administrator' ||
+    clean.includes('gestao') ||
+    clean.includes('diretor') ||
+    clean.includes('presidente')
+  ) {
     return 'administrador';
   }
   if (clean.includes('enferm') || clean.includes('enf') || clean.includes('nurse')) {
@@ -143,9 +160,6 @@ export function normalizeUserAccessLevel(roleOrLevel?: string): string {
   }
   if (clean.includes('cuidado') || clean.includes('cuidad') || clean.includes('atendente')) {
     return 'cuidados';
-  }
-  if (clean.includes('auxiliar') || clean.includes('secretar') || clean.includes('recepc')) {
-    return 'auxiliar_administrativo';
   }
   if (clean.includes('geren') || clean.includes('coord')) {
     return 'gerencial';
