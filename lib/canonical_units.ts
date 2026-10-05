@@ -128,9 +128,7 @@ export function normalizeUserAccessLevel(roleOrLevel?: string): string {
     return 'auxiliar_administrativo';
   }
   if (
-    clean === 'administrador' ||
-    clean === 'admin' ||
-    clean === 'administrator' ||
+    clean.startsWith('admin') ||
     clean.includes('gestao') ||
     clean.includes('diretor') ||
     clean.includes('presidente')
