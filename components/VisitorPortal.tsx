@@ -282,9 +282,16 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
 
     const now = new Date();
     const timeIn = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    const dateStr = now.toISOString().split('T')[0];
+    const dateStr = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(now);
+    const visitId = `visit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     const payload: Partial<GlobalVisitRecord> = {
+      id: visitId,
       institutionId,
       type: visitData.type,
       date: now.toISOString(),
@@ -311,7 +318,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
       const resident = residents.find(r => r.id === visitData.residentId);
       if (resident) {
         const newVisitRecord = {
-          id: 'visit_' + Date.now().toString(),
+          id: visitId,
           date: dateStr,
           visitorName: visitData.visitorName,
           visitorDoc: visitData.visitorDoc || visitData.kinship || 'Familiar / Visitante',
@@ -324,9 +331,17 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
           facialConfidence: visitData.facialConfidence
         };
 
+        const currentVisitRecords = Array.isArray(resident.visitRecords) ? [...resident.visitRecords] : [];
+        const existingIndex = currentVisitRecords.findIndex((visit: any) => visit?.id === visitId);
+        if (existingIndex >= 0) {
+          currentVisitRecords[existingIndex] = newVisitRecord;
+        } else {
+          currentVisitRecords.push(newVisitRecord);
+        }
+
         const updatedResident = {
           ...resident,
-          visitRecords: [...(resident.visitRecords || []), newVisitRecord]
+          visitRecords: currentVisitRecords
         };
         await onSaveResident(updatedResident);
       }
