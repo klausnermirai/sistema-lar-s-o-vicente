@@ -218,23 +218,57 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   const handleRetryScan = useCallback(() => {
     setUnrecognizedFace(null);
     setMatchedVisitor(null);
+    setSelectedMatchedResidentId('');
     setMatchConfidence(0);
     setBestCandidatePreview(null);
     setScanProgress(0);
-    setScanSecondsLeft(3.0);
+    setScanSecondsLeft(4.0);
     lastSeenFaceTimestampRef.current = null;
     scanStartTimeRef.current = Date.now();
+    stableMatchVisitorIdRef.current = null;
+    stableMatchCountRef.current = 0;
+    entryInProgressRef.current = false;
   }, []);
+
+  const openAutomaticQuickRegistration = useCallback((
+    photoUrl?: string,
+    descriptor?: number[],
+    bestCandidateName?: string,
+    bestSimilarity?: number
+  ) => {
+    const capturedPhoto = photoUrl || lastValidThumbRef.current || undefined;
+    const capturedDescriptor = descriptor || lastValidDescRef.current || undefined;
+
+    setUnrecognizedFace({
+      photoUrl: capturedPhoto,
+      descriptor: capturedDescriptor,
+      bestCandidateName,
+      bestSimilarity
+    });
+    setManualCapturedThumb(capturedPhoto || null);
+    setManualCapturedDescriptor(
+      capturedDescriptor && capturedDescriptor.length === 128 ? capturedDescriptor : null
+    );
+    setShowQuickNewModal(true);
+    speak('Visitante não identificado. Informe nome, telefone e quem veio visitar.');
+  }, [speak]);
 
   // Loop de Detecção e Reconhecimento Facial em Tempo Real (a cada 400ms)
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    if (!streamActive || confirmedSuccess || unrecognizedFace || showQuickLinkModal || showQuickNewModal) {
+    if (
+      !streamActive ||
+      confirmedSuccess ||
+      unrecognizedFace ||
+      showQuickLinkModal ||
+      showQuickNewModal ||
+      entryInProgressRef.current
+    ) {
       return;
     }
 
     const runRecognitionLoop = async () => {
-      if (!videoRef.current || videoRef.current.readyState < 2) return;
+      if (!videoRef.current || videoRef.current.readyState < 2 || entryInProgressRef.current) return;
 
       setIsProcessing(true);
       try {
@@ -248,23 +282,31 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
           }
           lastValidDescRef.current = detection.descriptor;
 
-          // Inicia contagem contínua de 3.0 segundos
           if (scanStartTimeRef.current === null) {
             scanStartTimeRef.current = Date.now();
           }
 
           const elapsedMs = Date.now() - scanStartTimeRef.current;
-          const remainingSec = Math.max(0, (3000 - elapsedMs) / 1000);
+          const remainingSec = Math.max(0, (4000 - elapsedMs) / 1000);
           setScanSecondsLeft(Number(remainingSec.toFixed(1)));
-          setScanProgress(Math.min(100, Math.round((elapsedMs / 3000) * 100)));
+          setScanProgress(Math.min(100, Math.round((elapsedMs / 4000) * 100)));
 
-          // Busca correspondência com biometrias cadastradas
-          const visitorsWithFace = registeredVisitors.filter(v => v.faceDescriptor && v.faceDescriptor.length === 128);
-          
+          const visitorsWithFace = registeredVisitors.filter(
+            v =>
+              v.type === 'residente' &&
+              ((Array.isArray(v.linkedResidents) && v.linkedResidents.length > 0) || !!v.residentId) &&
+              v.faceDescriptor &&
+              v.faceDescriptor.length === 128
+          );
+
           let matchResult: any = null;
           if (visitorsWithFace.length > 0) {
-            matchResult = findBestFaceMatch<UnifiedVisitor>(detection.descriptor, visitorsWithFace, selectedThreshold);
-            
+            matchResult = findBestFaceMatch<UnifiedVisitor>(
+              detection.descriptor,
+              visitorsWithFace,
+              selectedThreshold
+            );
+
             if (matchResult.bestCandidate && matchResult.similarity > 35) {
               setBestCandidatePreview({
                 name: matchResult.bestCandidate.name,
@@ -275,79 +317,86 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             }
           }
 
-          // Se identificou com sucesso com similaridade >= threshold:
-          if (matchResult && matchResult.matched && matchResult.visitor) {
-            scanStartTimeRef.current = null;
-            lastSeenFaceTimestampRef.current = null;
-            setScanProgress(0);
-            setScanSecondsLeft(3.0);
-            setUnrecognizedFace(null);
-            
-            if (!matchedVisitor || matchedVisitor.id !== matchResult.visitor.id) {
+          if (matchResult?.matched && matchResult.visitor) {
+            const candidateId = String(matchResult.visitor.id);
+            if (stableMatchVisitorIdRef.current === candidateId) {
+              stableMatchCountRef.current += 1;
+            } else {
+              stableMatchVisitorIdRef.current = candidateId;
+              stableMatchCountRef.current = 1;
+            }
+
+            // Só aceita depois de duas leituras consecutivas do mesmo visitante.
+            if (stableMatchCountRef.current >= 2) {
+              scanStartTimeRef.current = null;
+              lastSeenFaceTimestampRef.current = null;
+              stableMatchVisitorIdRef.current = null;
+              stableMatchCountRef.current = 0;
+              setScanProgress(0);
+              setScanSecondsLeft(4.0);
+              setUnrecognizedFace(null);
               setMatchedVisitor(matchResult.visitor);
+              setSelectedMatchedResidentId('');
               setMatchConfidence(matchResult.similarity);
               speak(`Visitante identificado: ${matchResult.visitor.name}`);
-            } else {
-              setMatchConfidence(Math.max(matchConfidence, matchResult.similarity));
+              return;
             }
-            return;
+          } else {
+            stableMatchVisitorIdRef.current = null;
+            stableMatchCountRef.current = 0;
           }
 
-          // Se esgotou a janela de 3,0 segundos sem encontrar correspondência válida:
-          if (elapsedMs >= 3000) {
+          if (elapsedMs >= 4000) {
             scanStartTimeRef.current = null;
             lastSeenFaceTimestampRef.current = null;
+            stableMatchVisitorIdRef.current = null;
+            stableMatchCountRef.current = 0;
             setScanProgress(0);
             setScanSecondsLeft(0);
             setMatchedVisitor(null);
             setMatchConfidence(0);
-            
-            setUnrecognizedFace({
-              photoUrl: detection.thumbnailDataUrl || lastValidThumbRef.current || undefined,
-              descriptor: detection.descriptor || lastValidDescRef.current || undefined,
-              bestCandidateName: matchResult?.bestCandidate?.name,
-              bestSimilarity: matchResult?.similarity
-            });
 
-            speak('Rosto não identificado. Deseja cadastrar um novo visitante ou tentar novamente?');
+            openAutomaticQuickRegistration(
+              detection.thumbnailDataUrl || lastValidThumbRef.current || undefined,
+              detection.descriptor || lastValidDescRef.current || undefined,
+              matchResult?.bestCandidate?.name,
+              matchResult?.similarity
+            );
           }
-        } else {
-          // Se não detectou face neste frame específico, tolera até 1200ms de oscilação antes de resetar o contador
-          if (scanStartTimeRef.current !== null && lastSeenFaceTimestampRef.current) {
-            const timeSinceLastSeen = Date.now() - lastSeenFaceTimestampRef.current;
-            if (timeSinceLastSeen > 1200) {
-              // Pessoa realmente saiu da frente da câmera
+        } else if (scanStartTimeRef.current !== null && lastSeenFaceTimestampRef.current) {
+          const timeSinceLastSeen = Date.now() - lastSeenFaceTimestampRef.current;
+
+          if (timeSinceLastSeen > 1200) {
+            scanStartTimeRef.current = null;
+            lastSeenFaceTimestampRef.current = null;
+            stableMatchVisitorIdRef.current = null;
+            stableMatchCountRef.current = 0;
+            setScanProgress(0);
+            setScanSecondsLeft(4.0);
+            setBestCandidatePreview(null);
+            setMatchedVisitor(null);
+            setSelectedMatchedResidentId('');
+            setMatchConfidence(0);
+          } else {
+            const elapsedMs = Date.now() - scanStartTimeRef.current;
+            const remainingSec = Math.max(0, (4000 - elapsedMs) / 1000);
+            setScanSecondsLeft(Number(remainingSec.toFixed(1)));
+            setScanProgress(Math.min(100, Math.round((elapsedMs / 4000) * 100)));
+
+            if (elapsedMs >= 4000) {
               scanStartTimeRef.current = null;
               lastSeenFaceTimestampRef.current = null;
+              stableMatchVisitorIdRef.current = null;
+              stableMatchCountRef.current = 0;
               setScanProgress(0);
-              setScanSecondsLeft(3.0);
-              setBestCandidatePreview(null);
-              if (matchedVisitor) {
-                setMatchedVisitor(null);
-                setMatchConfidence(0);
-              }
-            } else {
-              // Mantém o progresso durante leve oscilação
-              const elapsedMs = Date.now() - scanStartTimeRef.current;
-              const remainingSec = Math.max(0, (3000 - elapsedMs) / 1000);
-              setScanSecondsLeft(Number(remainingSec.toFixed(1)));
-              setScanProgress(Math.min(100, Math.round((elapsedMs / 3000) * 100)));
+              setScanSecondsLeft(0);
+              setMatchedVisitor(null);
+              setMatchConfidence(0);
 
-              if (elapsedMs >= 3000) {
-                scanStartTimeRef.current = null;
-                lastSeenFaceTimestampRef.current = null;
-                setScanProgress(0);
-                setScanSecondsLeft(0);
-                setMatchedVisitor(null);
-                setMatchConfidence(0);
-
-                setUnrecognizedFace({
-                  photoUrl: lastValidThumbRef.current || undefined,
-                  descriptor: lastValidDescRef.current || undefined
-                });
-
-                speak('Rosto não identificado. Deseja cadastrar um novo visitante ou tentar novamente?');
-              }
+              openAutomaticQuickRegistration(
+                lastValidThumbRef.current || undefined,
+                lastValidDescRef.current || undefined
+              );
             }
           }
         }
@@ -360,7 +409,17 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
 
     timer = setInterval(runRecognitionLoop, 400);
     return () => clearInterval(timer);
-  }, [streamActive, registeredVisitors, matchedVisitor, matchConfidence, confirmedSuccess, speak, selectedThreshold, unrecognizedFace, showQuickLinkModal, showQuickNewModal]);
+  }, [
+    streamActive,
+    registeredVisitors,
+    confirmedSuccess,
+    speak,
+    selectedThreshold,
+    unrecognizedFace,
+    showQuickLinkModal,
+    showQuickNewModal,
+    openAutomaticQuickRegistration
+  ]);
 
   // Confirmar Entrada do Visitante Reconhecido
   const handleConfirmRecognizedEntry = async () => {
