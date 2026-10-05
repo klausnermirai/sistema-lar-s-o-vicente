@@ -421,21 +421,56 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     openAutomaticQuickRegistration
   ]);
 
-  // Confirmar Entrada do Visitante Reconhecido
-  const handleConfirmRecognizedEntry = async () => {
-    if (!matchedVisitor) return;
+  const getVisitorLinkedResidents = useCallback((visitor: UnifiedVisitor | null) => {
+    if (!visitor) return [] as { residentId: string; residentName: string }[];
 
+    const rawLinks = Array.isArray(visitor.linkedResidents) && visitor.linkedResidents.length > 0
+      ? visitor.linkedResidents
+      : (visitor.residentId
+          ? [{ residentId: visitor.residentId, residentName: visitor.residentName || '' }]
+          : []);
+
+    const unique = new Map<string, { residentId: string; residentName: string }>();
+    rawLinks.forEach(link => {
+      if (!link?.residentId) return;
+      const resident = residents.find(r => r.id === link.residentId);
+      if (!resident) return;
+      unique.set(link.residentId, {
+        residentId: link.residentId,
+        residentName: resident.name || link.residentName || ''
+      });
+    });
+
+    return Array.from(unique.values());
+  }, [residents]);
+
+  // Confirmar Entrada do Visitante Reconhecido
+  const handleConfirmRecognizedEntry = async (residentIdOverride?: string) => {
+    if (!matchedVisitor || entryInProgressRef.current) return;
+
+    const linkedResidents = getVisitorLinkedResidents(matchedVisitor);
+    const chosenResidentId = residentIdOverride ||
+      selectedMatchedResidentId ||
+      (linkedResidents.length === 1 ? linkedResidents[0].residentId : '');
+
+    const chosenResident = linkedResidents.find(link => link.residentId === chosenResidentId);
+    if (!chosenResident) {
+      if (linkedResidents.length > 1) {
+        setSelectedMatchedResidentId('');
+      }
+      return;
+    }
+
+    entryInProgressRef.current = true;
     try {
       await onConfirmEntry({
         visitorName: matchedVisitor.name,
         visitorDoc: matchedVisitor.document,
-        type: matchedVisitor.type,
-        residentId: matchedVisitor.residentId,
-        residentName: matchedVisitor.residentName,
+        type: 'residente',
+        residentId: chosenResident.residentId,
+        residentName: chosenResident.residentName,
         kinship: matchedVisitor.kinship,
-        agencyName: matchedVisitor.agencyName,
-        conferenceName: matchedVisitor.conferenceName,
-        photoUrl: undefined, // Privacidade: Não salva foto de passagem
+        photoUrl: undefined,
         faceDescriptor: undefined,
         matchedVia: 'facial',
         facialConfidence: matchConfidence,
@@ -443,26 +478,44 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       });
 
       const visitorName = matchedVisitor.name;
-      setConfirmedSuccess(`Entrada liberada com sucesso para ${visitorName}!`);
-      speak(`Entrada liberada para ${visitorName}! Seja bem-vindo.`);
-      
-      // Imediatamente reseta os dados de biometria temporária da tela
+      setConfirmedSuccess(`Entrada liberada para ${visitorName} visitar ${chosenResident.residentName}!`);
+      speak(`Entrada liberada para ${visitorName}. Seja bem-vindo.`);
+
       setMatchedVisitor(null);
+      setSelectedMatchedResidentId('');
       setMatchConfidence(0);
       setBestCandidatePreview(null);
       setLastDetection(null);
       setUnrecognizedFace(null);
 
       setTimeout(() => {
+        entryInProgressRef.current = false;
         setConfirmedSuccess(null);
         setEntryObservation('');
+        setScanSecondsLeft(4.0);
+        setScanProgress(0);
         onEntryCompleted?.();
-      }, 2500);
+      }, 2000);
     } catch (err) {
+      entryInProgressRef.current = false;
       console.error('Erro ao confirmar entrada:', err);
       alert('Erro ao registrar a entrada. Tente novamente.');
     }
   };
+
+  // Quando há um único residente vinculado, a entrada é automática após a identificação estável.
+  useEffect(() => {
+    if (!matchedVisitor || confirmedSuccess || entryInProgressRef.current) return;
+
+    const links = getVisitorLinkedResidents(matchedVisitor);
+    if (links.length !== 1) return;
+
+    const timer = window.setTimeout(() => {
+      void handleConfirmRecognizedEntry(links[0].residentId);
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [matchedVisitor, confirmedSuccess, matchConfidence, getVisitorLinkedResidents]);
 
   // Salvar Vínculo Rápido de Rosto
   const handleSaveQuickLink = async () => {
@@ -539,52 +592,70 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     }
   };
 
-  // Salvar Novo Visitante Rápido + Foto + Entrada
+  // Salvar Novo Visitante Facial + Entrada vinculada obrigatoriamente a residente
   const handleSaveQuickNewVisitor = async () => {
     if (!quickName.trim()) {
       alert('Por favor, informe o nome do visitante.');
       return;
     }
-    if (quickType === 'residente' && !quickResidentId) {
+    if (!quickPhone.trim()) {
+      alert('Por favor, informe o telefone do visitante.');
+      return;
+    }
+    if (!quickResidentId) {
       alert('Por favor, selecione qual residente o visitante veio visitar.');
       return;
     }
+    if (entryInProgressRef.current) return;
 
-    const photoToUse = manualCapturedThumb || unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl || lastValidThumbRef.current;
-    const descriptorToUse = manualCapturedDescriptor || unrecognizedFace?.descriptor || lastDetection?.descriptor || lastValidDescRef.current;
+    const photoToUse =
+      manualCapturedThumb ||
+      unrecognizedFace?.photoUrl ||
+      lastDetection?.thumbnailDataUrl ||
+      lastValidThumbRef.current;
+
+    const descriptorToUse =
+      manualCapturedDescriptor ||
+      unrecognizedFace?.descriptor ||
+      lastDetection?.descriptor ||
+      lastValidDescRef.current;
+
+    if (!descriptorToUse || descriptorToUse.length !== 128) {
+      alert('Não foi possível obter uma biometria facial válida. Recapture a foto ou utilize a entrada manual.');
+      return;
+    }
+
+    const selectedRes = residents.find(r => r.id === quickResidentId);
+    if (!selectedRes) {
+      alert('Selecione um residente válido.');
+      return;
+    }
+
+    entryInProgressRef.current = true;
+    const newVisitor: UnifiedVisitor = {
+      id: 'vis_' + Date.now().toString(),
+      name: quickName.trim(),
+      phone: quickPhone.trim(),
+      type: 'residente',
+      residentId: selectedRes.id,
+      residentName: selectedRes.name,
+      linkedResidents: [{ residentId: selectedRes.id, residentName: selectedRes.name }],
+      photoUrl: photoToUse || undefined,
+      faceDescriptor: descriptorToUse,
+      sourceType: 'custom'
+    };
 
     try {
-      const selectedRes = residents.find(r => r.id === quickResidentId);
-      const newVisitor: UnifiedVisitor = {
-        id: 'vis_' + Date.now().toString(),
-        name: quickName.trim(),
-        phone: quickPhone.trim(),
-        document: quickDoc.trim(),
-        type: quickType,
-        residentId: quickType === 'residente' ? quickResidentId : undefined,
-        residentName: selectedRes ? selectedRes.name : undefined,
-        kinship: quickType === 'residente' ? quickKinship : undefined,
-        agencyName: quickType === 'orgao_fiscalizador' ? quickAgency : undefined,
-        conferenceName: quickType === 'ssvp' ? quickConference : undefined,
-        photoUrl: photoToUse || undefined,
-        faceDescriptor: descriptorToUse || undefined,
-        sourceType: 'custom'
-      };
-
+      // Persistências sequenciais: primeiro cadastro/vínculo, depois Livro de Portaria.
       await onRegisterQuickVisitor(newVisitor);
 
-      // Registra entrada imediata
       await onConfirmEntry({
         visitorName: newVisitor.name,
-        visitorDoc: newVisitor.document,
-        type: newVisitor.type,
-        residentId: newVisitor.residentId,
-        residentName: newVisitor.residentName,
-        kinship: newVisitor.kinship,
-        agencyName: newVisitor.agencyName,
-        conferenceName: newVisitor.conferenceName,
-        photoUrl: newVisitor.photoUrl,
-        faceDescriptor: newVisitor.faceDescriptor,
+        type: 'residente',
+        residentId: selectedRes.id,
+        residentName: selectedRes.name,
+        photoUrl: undefined,
+        faceDescriptor: undefined,
         matchedVia: 'facial',
         facialConfidence: 99,
         comments: 'Primeiro cadastro facial e entrada direta na portaria'
@@ -593,31 +664,30 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       setShowQuickNewModal(false);
       setUnrecognizedFace(null);
       setMatchedVisitor(null);
+      setSelectedMatchedResidentId('');
       setMatchConfidence(0);
       setBestCandidatePreview(null);
       setLastDetection(null);
       setConfirmedSuccess(`Visitante ${newVisitor.name} cadastrado e entrada liberada!`);
-      speak(`Cadastro concluído e entrada liberada para ${newVisitor.name}!`);
+      speak(`Cadastro concluído e entrada liberada para ${newVisitor.name}.`);
 
-      // Limpa formulário
       setQuickName('');
       setQuickPhone('');
-      setQuickDoc('');
       setQuickResidentId('');
-      setQuickKinship('');
-      setQuickAgency('');
-      setQuickConference('');
       setManualCapturedThumb(null);
       setManualCapturedDescriptor(null);
 
       setTimeout(() => {
+        entryInProgressRef.current = false;
         setConfirmedSuccess(null);
-        setMatchedVisitor(null);
+        setScanSecondsLeft(4.0);
+        setScanProgress(0);
         onEntryCompleted?.();
-      }, 2500);
+      }, 2000);
     } catch (err) {
+      entryInProgressRef.current = false;
       console.error(err);
-      alert('Erro ao salvar novo visitante.');
+      alert('O cadastro ou o registro da entrada não foi concluído. Verifique a conexão e tente novamente.');
     }
   };
 
