@@ -1271,9 +1271,9 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
           <div className="bg-white rounded-[32px] max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-4">
               <div>
-                <h3 className="text-base font-black text-gray-900 uppercase tracking-tight">Cadastro Rápido na Portaria</h3>
+                <h3 className="text-base font-black text-gray-900 uppercase tracking-tight">Cadastro Facial de Visitante</h3>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
-                  Cadastre o visitante e libere a entrada em 1 etapa
+                  Informe os dados mínimos e o residente visitado
                 </p>
               </div>
               <button
@@ -1338,46 +1338,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             )}
 
             <div className="space-y-4">
-              <div>
-                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1.5">Perfil da Visita</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setQuickType('residente')}
-                    className={`p-3 rounded-xl border text-xs font-black uppercase tracking-tight flex items-center gap-2 ${
-                      quickType === 'residente' ? 'bg-blue-50 border-[#004c99] text-[#004c99]' : 'bg-gray-50 border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    <User size={14} /> Residente
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuickType('instituicao')}
-                    className={`p-3 rounded-xl border text-xs font-black uppercase tracking-tight flex items-center gap-2 ${
-                      quickType === 'instituicao' ? 'bg-blue-50 border-[#004c99] text-[#004c99]' : 'bg-gray-50 border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    <Building2 size={14} /> Institucional
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuickType('ssvp')}
-                    className={`p-3 rounded-xl border text-xs font-black uppercase tracking-tight flex items-center gap-2 ${
-                      quickType === 'ssvp' ? 'bg-blue-50 border-[#004c99] text-[#004c99]' : 'bg-gray-50 border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    <HeartHandshake size={14} /> SSVP
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuickType('orgao_fiscalizador')}
-                    className={`p-3 rounded-xl border text-xs font-black uppercase tracking-tight flex items-center gap-2 ${
-                      quickType === 'orgao_fiscalizador' ? 'bg-blue-50 border-[#004c99] text-[#004c99]' : 'bg-gray-50 border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    <Shield size={14} /> Fiscalização
-                  </button>
-                </div>
+              <div className="p-3 bg-blue-50 border border-blue-100 rounded-2xl">
+                <p className="text-[11px] font-bold text-blue-900">
+                  Reconhecimento facial é exclusivo para familiares e visitantes de residentes. O vínculo com um residente é obrigatório.
+                </p>
               </div>
 
               <div>
@@ -1388,86 +1352,35 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   value={quickName}
                   onChange={(e) => setQuickName(e.target.value)}
                   placeholder="Ex: Maria das Graças Silva"
-                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
                 />
               </div>
 
-              {quickType === 'residente' && (
-                <>
-                  <div>
-                    <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Residente a ser visitado *</label>
-                    <select
-                      value={quickResidentId}
-                      onChange={(e) => setQuickResidentId(e.target.value)}
-                      className="w-full p-3.5 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                    >
-                      <option value="">Selecione o residente...</option>
-                      {residents.map((r) => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))}
-                    </select>
-                  </div>
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Telefone / WhatsApp *</label>
+                <input
+                  type="tel"
+                  required
+                  value={quickPhone}
+                  onChange={(e) => setQuickPhone(e.target.value)}
+                  placeholder="(00) 00000-0000"
+                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                />
+              </div>
 
-                  <div>
-                    <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Grau de Parentesco / Vínculo</label>
-                    <input
-                      type="text"
-                      value={quickKinship}
-                      onChange={(e) => setQuickKinship(e.target.value)}
-                      placeholder="Ex: Filha, Sobrinho, Amiga..."
-                      className="w-full p-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                    />
-                  </div>
-                </>
-              )}
-
-              {quickType === 'ssvp' && (
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Conferência / Conselho</label>
-                  <input
-                    type="text"
-                    value={quickConference}
-                    onChange={(e) => setQuickConference(e.target.value)}
-                    placeholder="Ex: Conferência São Vicente de Paulo"
-                    className="w-full p-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                  />
-                </div>
-              )}
-
-              {quickType === 'orgao_fiscalizador' && (
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Órgão / Entidade</label>
-                  <input
-                    type="text"
-                    value={quickAgency}
-                    onChange={(e) => setQuickAgency(e.target.value)}
-                    placeholder="Ex: Vigilância Sanitária Municipal"
-                    className="w-full p-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">CPF / RG (Opcional)</label>
-                  <input
-                    type="text"
-                    value={quickDoc}
-                    onChange={(e) => setQuickDoc(e.target.value)}
-                    placeholder="000.000.000-00"
-                    className="w-full p-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Telefone / WhatsApp</label>
-                  <input
-                    type="text"
-                    value={quickPhone}
-                    onChange={(e) => setQuickPhone(e.target.value)}
-                    placeholder="(00) 00000-0000"
-                    className="w-full p-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none"
-                  />
-                </div>
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Quem veio visitar? *</label>
+                <select
+                  required
+                  value={quickResidentId}
+                  onChange={(e) => setQuickResidentId(e.target.value)}
+                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                >
+                  <option value="">Selecione o residente...</option>
+                  {residents.map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -1484,7 +1397,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 onClick={handleSaveQuickNewVisitor}
                 className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5"
               >
-                <CheckCircle2 size={16} /> Salvar & Liberar Entrada
+                <CheckCircle2 size={16} /> Cadastrar e Registrar Entrada
               </button>
             </div>
           </div>
