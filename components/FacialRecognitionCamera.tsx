@@ -261,6 +261,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     if (
       !streamActive ||
       confirmedSuccess ||
+      matchedVisitor ||
       unrecognizedFace ||
       showQuickLinkModal ||
       showQuickNewModal ||
@@ -414,6 +415,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   }, [
     streamActive,
     registeredVisitors,
+    matchedVisitor,
     confirmedSuccess,
     speak,
     selectedThreshold,
