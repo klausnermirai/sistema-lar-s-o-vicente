@@ -115,13 +115,17 @@ export function getMonteAltoQueryIds(): string[] {
  */
 export function normalizeUserAccessLevel(roleOrLevel?: string): string {
   if (!roleOrLevel) return 'visitante';
-  const clean = roleOrLevel.trim().toLowerCase().replace(/[\s\-_]+/g, '');
+  const clean = roleOrLevel
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '');
 
   // Perfis específicos devem ser resolvidos antes de termos genéricos.
   // "auxiliar_administrativo" contém "admin", mas não é administrador.
   if (
-    clean === 'auxiliaradministrativo' ||
-    clean === 'auxiliar' ||
+    clean.startsWith('auxiliar') ||
     clean.includes('secretar') ||
     clean.includes('recepc')
   ) {
