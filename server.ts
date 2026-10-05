@@ -3834,8 +3834,13 @@ async function startServer() {
         ...visitData
       } = data;
 
+      const visitId = typeof data.id === 'string' && data.id.trim() && !data.id.includes('/')
+        ? data.id.trim()
+        : db.collection('global_visits').doc().id;
+
       const safeVisitData = {
         ...visitData,
+        id: visitId,
         ...(validatedResident
           ? {
               type: 'residente',
@@ -3847,8 +3852,11 @@ async function startServer() {
         createdAt: data.createdAt || new Date().toISOString()
       };
 
-      const docRef = await db.collection('global_visits').add(safeVisitData);
-      await logAudit('create', 'global_visits', docRef.id, req, realId, 'Nova visita registrada');
+      const docRef = db.collection('global_visits').doc(visitId);
+      const existingVisit = await docRef.get();
+      await docRef.set(safeVisitData, { merge: true });
+      await logAudit(existingVisit.exists ? 'update' : 'create', 'global_visits', docRef.id, req, realId,
+        existingVisit.exists ? 'Reenvio idempotente de visita' : 'Nova visita registrada');
       res.json({ ...safeVisitData, id: docRef.id });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao salvar visita.' );
@@ -4172,6 +4180,7 @@ async function startServer() {
       const now = Date.now();
       const professionalName = req.user?.fullName || req.user?.username || 'Assistente Social';
       const professionalRole = req.user?.role || 'Serviço Social';
+      const muralRef = visibility === 'institutional' ? db.collection('muralMessages').doc() : null;
 
       const metadata: any = {
         id: recordId,
@@ -4193,7 +4202,8 @@ async function startServer() {
         hasConfidentialContent: visibility === 'confidential',
         authorUserId: req.user?.id,
         authorUsername: req.user?.username,
-        timestamp: now
+        timestamp: now,
+        ...(muralRef ? { muralMessageId: muralRef.id } : {})
       };
 
       if (visibility === 'institutional') {
@@ -4210,7 +4220,6 @@ async function startServer() {
       const batch = db.batch();
       batch.set(residentRef, { socialWork: updatedSocialWork }, { merge: true });
 
-      let muralRef: any = null;
       let muralPayload: any = null;
 
       if (visibility === 'confidential') {
@@ -4225,14 +4234,18 @@ async function startServer() {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
-      } else {
-        muralRef = db.collection('muralMessages').doc();
-        muralPayload = buildSocialMuralPayload(
-          resident.name || 'Residente',
-          { ...metadata, description },
-          institutionId,
-          req.user
-        );
+      } else if (muralRef) {
+        muralPayload = {
+          ...buildSocialMuralPayload(
+            resident.name || 'Residente',
+            { ...metadata, description },
+            institutionId,
+            req.user
+          ),
+          sourceType: 'social_work',
+          sourceRecordId: recordId,
+          residentId
+        };
         batch.set(muralRef, muralPayload);
       }
 
@@ -4332,6 +4345,7 @@ async function startServer() {
       const batch = db.batch();
       batch.set(residentRef, { socialWork: updatedSocialWork }, { merge: true });
 
+      let updatedMuralPayload: any = null;
       if (currentVisibility === 'confidential') {
         batch.set(db.collection('social_confidential_records').doc(req.params.recordId), {
           institutionId,
@@ -4343,10 +4357,34 @@ async function startServer() {
           authorUsername: current.authorUsername || req.user?.username,
           updatedAt: new Date().toISOString()
         }, { merge: true });
+      } else if (current.muralMessageId) {
+        updatedMuralPayload = {
+          ...buildSocialMuralPayload(
+            resident.name || 'Residente',
+            { ...updatedMetadata, description },
+            institutionId,
+            req.user
+          ),
+          sourceType: 'social_work',
+          sourceRecordId: req.params.recordId,
+          residentId,
+          updatedAt: new Date().toISOString()
+        };
+        batch.set(db.collection('muralMessages').doc(current.muralMessageId), updatedMuralPayload, { merge: true });
       }
 
       await batch.commit();
       invalidateCache('residents');
+
+      if (updatedMuralPayload && current.muralMessageId) {
+        updateMuralCacheIfLoaded(institutionId, (messages) =>
+          messages.map((msg: any) =>
+            msg.id === current.muralMessageId
+              ? normalizeMuralMessage({ ...msg, ...updatedMuralPayload }, current.muralMessageId)
+              : msg
+          )
+        );
+      }
 
       await logAudit('update', 'social_work', req.params.recordId, req, institutionId,
         `Atendimento do Serviço Social atualizado para ${resident.name || 'residente'}`,
@@ -4394,9 +4432,22 @@ async function startServer() {
       const batch = db.batch();
       batch.set(residentRef, { socialWork: updatedSocialWork }, { merge: true });
       batch.delete(db.collection('social_confidential_records').doc(req.params.recordId));
+      if (current.muralMessageId) {
+        batch.set(
+          db.collection('muralMessages').doc(current.muralMessageId),
+          { archived: true, archivedAt: new Date().toISOString() },
+          { merge: true }
+        );
+      }
       await batch.commit();
 
       invalidateCache('residents');
+
+      if (current.muralMessageId) {
+        updateMuralCacheIfLoaded(institutionId, (messages) =>
+          messages.filter((msg: any) => msg.id !== current.muralMessageId)
+        );
+      }
 
       await logAudit('delete', 'social_work', req.params.recordId, req, institutionId,
         `Atendimento do Serviço Social excluído de ${resident.name || 'residente'}`,
