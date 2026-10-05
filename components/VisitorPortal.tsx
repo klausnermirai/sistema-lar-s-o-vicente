@@ -27,7 +27,7 @@ import {
   Maximize2,
   Minimize2
 } from 'lucide-react';
-import { Resident, GlobalVisitRecord } from '../types';
+import { Resident, GlobalVisitRecord, Relative } from '../types';
 import { saveGlobalVisit, fetchGlobalVisits, clearAllBiometrics, saveRegisteredVisitor, fetchRegisteredVisitors } from '../lib/api';
 import { FacialRecognitionCamera, UnifiedVisitor } from './FacialRecognitionCamera';
 import { extractFaceFromCanvasOrVideo } from '../lib/faceRecognition';
