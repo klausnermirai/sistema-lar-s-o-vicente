@@ -1278,7 +1278,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               </div>
               <button
                 type="button"
-                onClick={() => setShowQuickNewModal(false)}
+                onClick={() => {
+                  setShowQuickNewModal(false);
+                  handleRetryScan();
+                }}
                 className="p-2 hover:bg-gray-100 rounded-full text-gray-400"
               >
                 <X size={20} />
@@ -1387,7 +1390,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             <div className="flex gap-3 pt-4 border-t">
               <button
                 type="button"
-                onClick={() => setShowQuickNewModal(false)}
+                onClick={() => {
+                  setShowQuickNewModal(false);
+                  handleRetryScan();
+                }}
                 className="flex-1 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl text-xs font-black uppercase tracking-wider"
               >
                 Cancelar
