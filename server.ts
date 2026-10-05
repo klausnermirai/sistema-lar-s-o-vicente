@@ -695,6 +695,16 @@ async function startServer() {
     };
   };
 
+  // Bloqueio pontual da conta de Portaria em APIs fora do Portal.
+  // Preserva os demais perfis e evita ampliar a matriz de permissões nesta mudança.
+  const rejectVisitor = (req: any, res: express.Response, next: express.NextFunction) => {
+    const userLevel = normalizeAccessLevel(req.user?.accessLevel || req.user?.role);
+    if (userLevel === 'visitante') {
+      return res.status(403).json({ error: 'A conta de Portaria não possui acesso a este recurso.' });
+    }
+    return next();
+  };
+
   app.use('/api', (req: any, res, next) => {
     // Rotas públicas estáticas exatas (qualquer método aplicável aos endpoints de login/setup/etc)
     const staticPublicRoutes = [
@@ -2795,7 +2805,7 @@ async function startServer() {
   });
 
   // User Management
-  app.get('/api/employees', requireAuth, async (req, res) => {
+  app.get('/api/employees', requireAuth, rejectVisitor, async (req, res) => {
     try {
       const q = req.query.q as string;
       const realId = await getRealInstitutionId((req as any).user.institutionId);
@@ -2837,6 +2847,10 @@ async function startServer() {
       data.atualizadoEm = now;
       
       if (data.id) {
+        const existingDoc = await db.collection('employees').doc(data.id).get();
+        if (!existingDoc.exists || !isAuthorizedForDocument((req as any).user, existingDoc.data())) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
         const { id, ...updateData } = data;
         await db.collection('employees').doc(id).set(updateData, { merge: true });
         invalidateCache('employees');
@@ -2883,7 +2897,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/employees/:id', requireAuth, async (req: any, res) => {
+  app.get('/api/employees/:id', requireAuth, rejectVisitor, async (req: any, res) => {
     try {
       const doc = await db.collection('employees').doc(req.params.id).get();
       if (!doc.exists) return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
@@ -3595,7 +3609,7 @@ async function startServer() {
   });
 
   // --- Amendments API ---
-  app.get('/api/amendments/categories', async (req, res) => {
+  app.get('/api/amendments/categories', rejectVisitor, async (req, res) => {
     const { institutionId } = req.query;
     try {
       const realId = await getRealInstitutionId(institutionId as string);
@@ -3614,6 +3628,10 @@ async function startServer() {
     try {
       const realId = await getRealInstitutionId(institutionId);
       if (data.id && !data.id.startsWith('new_')) {
+        const existingDoc = await db.collection('amendment_categories').doc(data.id).get();
+        if (!existingDoc.exists || !isAuthorizedForDocument((req as any).user, existingDoc.data())) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
         await db.collection('amendment_categories').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
         await logAudit('update', 'amendment_categories', data.id, req, realId, `Atualização de categoria de emenda`);
         res.json(data);
@@ -3630,7 +3648,12 @@ async function startServer() {
 
   app.delete('/api/amendments/categories/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
     try {
-      await db.collection('amendment_categories').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      const docRef = db.collection('amendment_categories').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists || !isAuthorizedForDocument((req as any).user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await docRef.update({ archived: true, archivedAt: new Date().toISOString() });
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
@@ -3638,7 +3661,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/amendments/grants', async (req, res) => {
+  app.get('/api/amendments/grants', rejectVisitor, async (req, res) => {
     const { institutionId } = req.query;
     try {
       const realId = await getRealInstitutionId(institutionId as string);
@@ -3657,6 +3680,10 @@ async function startServer() {
     try {
       const realId = await getRealInstitutionId(institutionId);
       if (data.id && !data.id.startsWith('new_')) {
+        const existingDoc = await db.collection('amendment_grants').doc(data.id).get();
+        if (!existingDoc.exists || !isAuthorizedForDocument((req as any).user, existingDoc.data())) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
         await db.collection('amendment_grants').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
         await logAudit('update', 'amendment_grants', data.id, req, realId, `Atualização de emenda`);
         res.json(data);
@@ -3673,7 +3700,12 @@ async function startServer() {
 
   app.delete('/api/amendments/grants/:id', requireRole(['administrador', 'gerencial']), async (req, res) => {
     try {
-      await db.collection('amendment_grants').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      const docRef = db.collection('amendment_grants').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists || !isAuthorizedForDocument((req as any).user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await docRef.update({ archived: true, archivedAt: new Date().toISOString() });
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
@@ -4431,7 +4463,7 @@ async function startServer() {
   });
 
   // Multidisciplinary History API
-  app.get('/api/multidisciplinary/history', requireAuth, async (req: any, res) => {
+  app.get('/api/multidisciplinary/history', requireAuth, rejectVisitor, async (req: any, res) => {
     const { institutionId, competence, residentId, dateFrom, dateTo, type, visibility, limit } = req.query;
     try {
       const realId = await getRealInstitutionId(institutionId as string);
@@ -4580,7 +4612,7 @@ async function startServer() {
   });
 
   // --- Group Activities API ---
-  app.get('/api/groupActivities', async (req, res) => {
+  app.get('/api/groupActivities', rejectVisitor, async (req, res) => {
     const { institutionId } = req.query;
     try {
       const realId = await getRealInstitutionId(institutionId as string);
@@ -4599,6 +4631,10 @@ async function startServer() {
     try {
       const realId = await getRealInstitutionId(institutionId);
       if (data.id && data.id.length > 10) {
+        const existingDoc = await db.collection('group_activities').doc(data.id).get();
+        if (!existingDoc.exists || !isAuthorizedForDocument((req as any).user, existingDoc.data())) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
         await db.collection('group_activities').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
         await logAudit('update', 'group_activities', data.id, req, realId, `Atualização da atividade: ${data.title}`);
         res.json({ ...data, id: data.id, institutionId: realId });
@@ -4652,7 +4688,12 @@ async function startServer() {
 
   app.delete('/api/groupActivities/:id', requireRole(['assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'gerencial']), async (req, res) => {
     try {
-      await db.collection('group_activities').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      const docRef = db.collection('group_activities').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists || !isAuthorizedForDocument((req as any).user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await docRef.update({ archived: true, archivedAt: new Date().toISOString() });
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
@@ -4661,7 +4702,7 @@ async function startServer() {
   });
 
   // --- Medication Stock Movements API ---
-  app.get('/api/medication_stock_movements', async (req, res) => {
+  app.get('/api/medication_stock_movements', rejectVisitor, async (req, res) => {
     try {
       const { institutionId, residentId } = req.query;
       const realId = await getRealInstitutionId(String(institutionId));
@@ -4680,7 +4721,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/medication_stock_movements', async (req, res) => {
+  app.post('/api/medication_stock_movements', rejectVisitor, async (req, res) => {
     try {
       const { ...data } = req.body;
       data.institutionId = await getRealInstitutionId(data.institutionId);
@@ -4694,7 +4735,7 @@ async function startServer() {
   });
 
   // --- Medication Administration Logs API ---
-  app.get('/api/medication_administration_logs', async (req, res) => {
+  app.get('/api/medication_administration_logs', rejectVisitor, async (req, res) => {
     try {
       const { institutionId, residentId, date } = req.query;
       const realId = await getRealInstitutionId(String(institutionId));
@@ -4716,7 +4757,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/medication_administration_logs', async (req, res) => {
+  app.post('/api/medication_administration_logs', rejectVisitor, async (req, res) => {
     try {
       const { ...data } = req.body;
       data.institutionId = await getRealInstitutionId(data.institutionId);
@@ -4736,7 +4777,7 @@ async function startServer() {
   });
 
   // --- Inventory API ---
-  app.get('/api/inventory', async (req, res) => {
+  app.get('/api/inventory', rejectVisitor, async (req, res) => {
     const { institutionId } = req.query;
     try {
       const realId = await getRealInstitutionId(institutionId as string);
@@ -4776,7 +4817,7 @@ async function startServer() {
   });
 
   // --- Companions API ---
-  app.get('/api/companions', async (req: any, res) => {
+  app.get('/api/companions', rejectVisitor, async (req: any, res) => {
     const { institutionId } = req.query;
     try {
       if (!institutionId) return res.json([]);
@@ -4796,6 +4837,10 @@ async function startServer() {
     try {
       const realId = await getRealInstitutionId(institutionId);
       if (data.id && data.id.length > 20) {
+        const existingDoc = await db.collection('companions').doc(data.id).get();
+        if (!existingDoc.exists || !isAuthorizedForDocument(req.user, existingDoc.data())) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
         await db.collection('companions').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
         await logAudit('update', 'companions', data.id, req, realId, `Atualização do acompanhante: ${data.name}`);
         res.json({ ...data, id: data.id, institutionId: realId });
@@ -4811,7 +4856,12 @@ async function startServer() {
 
   app.delete('/api/companions/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'medico', 'administrador']), async (req: any, res) => {
     try {
-      await db.collection('companions').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      const docRef = db.collection('companions').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists || !isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await docRef.update({ archived: true, archivedAt: new Date().toISOString() });
       res.json({ success: true, message: 'Arquivado com sucesso.' });
     } catch (error: any) {
       if (error.code === 5 || error.message?.includes('NOT_FOUND')) return res.json({ success: true });
@@ -4820,7 +4870,7 @@ async function startServer() {
   });
 
   // --- DOANTES E BENFEITORES FINANCEIROS API ---
-  app.get('/api/benefactors', async (req: any, res) => {
+  app.get('/api/benefactors', rejectVisitor, async (req: any, res) => {
     try {
       const institutionId = req.headers['x-institution-id'] as string || req.query.institutionId as string;
       if (!institutionId) return res.json([]);
@@ -4836,12 +4886,16 @@ async function startServer() {
     }
   });
 
-  app.post('/api/benefactors', async (req: any, res) => {
+  app.post('/api/benefactors', rejectVisitor, async (req: any, res) => {
     const { id, ...data } = req.body;
     try {
       const institutionId = req.headers['x-institution-id'] as string || req.body.institutionId;
       const realId = await getRealInstitutionId(institutionId);
       if (id && id.length > 10) {
+        const existingDoc = await db.collection('benefactors').doc(id).get();
+        if (!existingDoc.exists || !isAuthorizedForDocument(req.user, existingDoc.data())) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
         await db.collection('benefactors').doc(id).set({ ...data, institutionId: realId }, { merge: true });
         res.json({ ...data, id, institutionId: realId });
       } else {
@@ -4854,9 +4908,14 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/benefactors/:id', async (req: any, res) => {
+  app.delete('/api/benefactors/:id', rejectVisitor, async (req: any, res) => {
     try {
-      await db.collection('benefactors').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      const docRef = db.collection('benefactors').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists || !isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await docRef.update({ archived: true, archivedAt: new Date().toISOString() });
       res.json({ success: true });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao inativar benfeitor.' );
@@ -4864,7 +4923,7 @@ async function startServer() {
   });
 
   // --- CATEGORIAS DE DOAÇÃO API ---
-  app.get('/api/donation-categories', async (req: any, res) => {
+  app.get('/api/donation-categories', rejectVisitor, async (req: any, res) => {
     try {
       const institutionId = req.headers['x-institution-id'] as string || req.query.institutionId as string;
       if (!institutionId) return res.json([]);
@@ -4901,12 +4960,16 @@ async function startServer() {
     }
   });
 
-  app.post('/api/donation-categories', async (req: any, res) => {
+  app.post('/api/donation-categories', rejectVisitor, async (req: any, res) => {
     const { id, ...data } = req.body;
     try {
       const institutionId = req.headers['x-institution-id'] as string || req.body.institutionId;
       const realId = await getRealInstitutionId(institutionId);
       if (id && id.length > 10) {
+        const existingDoc = await db.collection('donation_categories').doc(id).get();
+        if (!existingDoc.exists || !isAuthorizedForDocument(req.user, existingDoc.data())) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
         await db.collection('donation_categories').doc(id).set({ ...data, institutionId: realId }, { merge: true });
         res.json({ ...data, id, institutionId: realId });
       } else {
@@ -4918,9 +4981,14 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/donation-categories/:id', async (req: any, res) => {
+  app.delete('/api/donation-categories/:id', rejectVisitor, async (req: any, res) => {
     try {
-      await db.collection('donation_categories').doc(req.params.id).update({ archived: true, archivedAt: new Date().toISOString() });
+      const docRef = db.collection('donation_categories').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists || !isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await docRef.update({ archived: true, archivedAt: new Date().toISOString() });
       res.json({ success: true });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao excluir categoria de doação.' );
@@ -4928,7 +4996,7 @@ async function startServer() {
   });
 
   // --- DOAÇÕES FINANCEIRAS API ---
-  app.get('/api/donations', async (req: any, res) => {
+  app.get('/api/donations', rejectVisitor, async (req: any, res) => {
     try {
       const institutionId = req.headers['x-institution-id'] as string || req.query.institutionId as string;
       if (!institutionId) return res.json([]);
@@ -4952,12 +5020,16 @@ async function startServer() {
     }
   });
 
-  app.post('/api/donations', async (req: any, res) => {
+  app.post('/api/donations', rejectVisitor, async (req: any, res) => {
     const { id, ...data } = req.body;
     try {
       const institutionId = req.headers['x-institution-id'] as string || req.body.institutionId;
       const realId = await getRealInstitutionId(institutionId);
       if (id && id.length > 10) {
+        const existingDoc = await db.collection('finance_donations').doc(id).get();
+        if (!existingDoc.exists || !isAuthorizedForDocument(req.user, existingDoc.data())) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
         await db.collection('finance_donations').doc(id).set({ ...data, institutionId: realId }, { merge: true });
         res.json({ ...data, id, institutionId: realId });
       } else {
@@ -4970,7 +5042,7 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/donations/:id', async (req: any, res) => {
+  app.delete('/api/donations/:id', rejectVisitor, async (req: any, res) => {
     try {
       const docRef = db.collection('finance_donations').doc(req.params.id);
       const doc = await docRef.get();
@@ -4986,7 +5058,7 @@ async function startServer() {
   });
 
   // --- CARNÊS DE BENFEITORES API ---
-  app.get('/api/carnes', async (req: any, res) => {
+  app.get('/api/carnes', rejectVisitor, async (req: any, res) => {
     try {
       const institutionId = req.headers['x-institution-id'] as string || req.query.institutionId as string;
       if (!institutionId) return res.json([]);
@@ -5007,7 +5079,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/carnes', async (req: any, res) => {
+  app.post('/api/carnes', rejectVisitor, async (req: any, res) => {
     const { id, ...data } = req.body;
     try {
       const institutionId = req.headers['x-institution-id'] as string || req.body.institutionId;
@@ -5035,6 +5107,10 @@ async function startServer() {
       }
 
       if (id && id.length > 10) {
+        const existingDoc = await db.collection('carnes').doc(id).get();
+        if (!existingDoc.exists || !isAuthorizedForDocument(req.user, existingDoc.data())) {
+          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+        }
         await db.collection('carnes').doc(id).set({ ...data, institutionId: realId }, { merge: true });
         res.json({ ...data, id, institutionId: realId });
       } else {
@@ -5053,7 +5129,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/carnes/:id/pay-parcelas', async (req: any, res) => {
+  app.post('/api/carnes/:id/pay-parcelas', rejectVisitor, async (req: any, res) => {
     const { id } = req.params;
     const { numeros, dataPagamento, formaPagamento, categoryId, categoryName, notes, userResponsible } = req.body;
     
@@ -5165,16 +5241,21 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/carnes/:id', async (req: any, res) => {
+  app.delete('/api/carnes/:id', rejectVisitor, async (req: any, res) => {
     try {
-      await db.collection('carnes').doc(req.params.id).update({ archived: true, status: 'cancelado', archivedAt: new Date().toISOString() });
+      const docRef = db.collection('carnes').doc(req.params.id);
+      const doc = await docRef.get();
+      if (!doc.exists || !isAuthorizedForDocument(req.user, doc.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
+      await docRef.update({ archived: true, status: 'cancelado', archivedAt: new Date().toISOString() });
       res.json({ success: true });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao cancelar carnê.');
     }
   });
 
-  app.post('/api/carnes/:id/log-whatsapp', async (req: any, res) => {
+  app.post('/api/carnes/:id/log-whatsapp', rejectVisitor, async (req: any, res) => {
     const { id } = req.params;
     const { messageType, parcelaNumero, textPreview, phone, userResponsible } = req.body;
     try {
@@ -5185,6 +5266,9 @@ async function startServer() {
       }
 
       const carneData = docSnap.data();
+      if (!isAuthorizedForDocument(req.user, carneData)) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
       const responsible = userResponsible || (req.user && req.user.nome) || 'Operador do Sistema';
       const logEntry = {
         id: db.collection('carnes').doc().id,
@@ -5461,6 +5545,10 @@ async function startServer() {
     try {
       const productId = req.params.id;
       const productRef = db.collection('product_stock').doc(productId);
+      const existingProduct = await productRef.get();
+      if (!existingProduct.exists || !isAuthorizedForDocument((req as any).user, existingProduct.data())) {
+        return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+      }
 
       await db.runTransaction(async (transaction) => {
         const prodSnap = await transaction.get(productRef);

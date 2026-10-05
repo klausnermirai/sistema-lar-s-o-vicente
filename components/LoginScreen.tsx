@@ -206,6 +206,22 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
     }
   };
 
+  const handleCancelReset = () => {
+    setResetToken(null);
+    setResetUserEmail(null);
+    setResetError(null);
+    setResetSuccess(null);
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('resetToken');
+    url.searchParams.delete('token');
+    window.history.replaceState({}, document.title, url.pathname + url.search);
+  };
+
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setResetError(null);
@@ -543,7 +559,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
       {resetToken && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-[250] animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden relative animate-in zoom-in duration-300">
-            <div className="p-8 border-b bg-gray-50">
+            <div className="p-8 border-b bg-gray-50 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-green-50 text-green-600 rounded-2xl">
                   <KeyRound size={20} />
@@ -553,6 +569,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
                   <p className="text-[10px] font-bold text-gray-400 uppercase">{resetUserEmail || 'Definição de Nova Credencial'}</p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={handleCancelReset}
+                className="text-gray-400 hover:text-gray-900 transition-colors p-2 cursor-pointer"
+                aria-label="Voltar ao login"
+                title="Voltar ao login"
+              >
+                <ArrowLeft size={20} />
+              </button>
             </div>
 
             <form onSubmit={handleResetPasswordSubmit} className="p-8 space-y-4">
@@ -627,6 +652,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onDevSetup, l
                       <Check size={18} /> Salvar Nova Senha
                     </>
                   )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelReset}
+                  disabled={resetLoading}
+                  className="w-full mt-3 py-3 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-[#004c99] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  <ArrowLeft size={16} /> Voltar ao login
                 </button>
               </div>
             </form>
