@@ -990,8 +990,22 @@ async function startServer() {
         });
       }
 
-      const centralSettingsDoc = await safeQuery(async () => await db.collection('institutions').doc(CENTRAL_JABOTICABAL_CNPJ).get());
-      if (centralSettingsDoc && centralSettingsDoc.exists) {
+      // Resolve o Conselho Central pelo documento real já carregado no snapshot.
+      // Nunca usa CNPJ formatado diretamente em collection.doc(...), pois "/" é separador de caminho no Firestore.
+      const centralCnpjDigits = CENTRAL_JABOTICABAL_CNPJ.replace(/\D/g, '');
+      const centralSettingsDoc = allInstSnap?.docs?.find((doc: any) => {
+        const data: any = doc.data() || {};
+        const docId = String(doc.id || '');
+        const cnpj = String(data.cnpj || '');
+        return (
+          docId === CENTRAL_JABOTICABAL_CNPJ ||
+          cnpj === CENTRAL_JABOTICABAL_CNPJ ||
+          docId.replace(/\D/g, '') === centralCnpjDigits ||
+          cnpj.replace(/\D/g, '') === centralCnpjDigits
+        );
+      });
+
+      if (centralSettingsDoc) {
         const centralSettings: any = centralSettingsDoc.data() || {};
         if (Array.isArray(centralSettings.obrasUnidas)) {
           centralSettings.obrasUnidas.forEach((obra: any) => {
@@ -1005,7 +1019,7 @@ async function startServer() {
               entityType: 'obra_unida',
               city: obra.city || '',
               state: obra.state || 'SP',
-              centralId: CENTRAL_JABOTICABAL_CNPJ,
+              centralId: centralSettingsDoc.id,
               parentName: 'Conselho Central de Jaboticabal'
             };
             institutionsMap.set(obraId, obraObj);
