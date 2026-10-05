@@ -359,6 +359,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
       });
     } catch (err) {
       console.warn('Erro ao salvar em registered_visitors:', err);
+      throw err;
     }
 
     // 2. Se for parente vinculado a residente, atualiza na ficha do residente
