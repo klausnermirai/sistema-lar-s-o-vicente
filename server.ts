@@ -624,13 +624,11 @@ async function startServer() {
 
   const sanitizeUserForResponse = (user: any) => {
     if (!user || typeof user !== 'object') return user;
-    const {
-      password,
-      resetToken,
-      resetTokenExpiresAt,
-      auditLog,
-      ...safeUser
-    } = user;
+    const safeUser = { ...user };
+    delete safeUser.password;
+    delete safeUser.resetToken;
+    delete safeUser.resetTokenExpiresAt;
+    delete safeUser.auditLog;
     return safeUser;
   };
 
