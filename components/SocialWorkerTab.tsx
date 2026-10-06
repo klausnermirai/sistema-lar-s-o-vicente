@@ -116,7 +116,8 @@ const ACTION_TYPE_CONFIG: Record<SocialWorkActionType, { label: string; icon: an
 
 export default function SocialWorkerTab({
   resident,
-  settings
+  settings,
+  onChange
 }: SocialWorkerTabProps) {
   const [activeSubTab, setActiveSubTab] = useState<'acoes' | 'novo' | 'notificacao'>('acoes');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -213,7 +214,9 @@ export default function SocialWorkerTab({
 
     try {
       const result = await deleteSocialWorkRecord(resident.id, id);
-      setEvolutions(result?.socialWork?.evolutions || evolutions.filter(e => e.id !== id));
+      const nextSocialWork = result?.socialWork || { ...(resident.socialWork || {}), evolutions: evolutions.filter(e => e.id !== id) };
+      setEvolutions(nextSocialWork.evolutions || []);
+      onChange(nextSocialWork);
       setUnlockedRecords(prev => {
         const next = { ...prev };
         delete next[id];
@@ -259,8 +262,10 @@ export default function SocialWorkerTab({
         ? await updateSocialWorkRecord(editingId, payload)
         : await saveSocialWorkRecord(payload);
 
-      const nextEvolutions = result?.socialWork?.evolutions || [];
+      const nextSocialWork = result?.socialWork || { ...(resident.socialWork || {}), evolutions: [] };
+      const nextEvolutions = nextSocialWork.evolutions || [];
       setEvolutions(nextEvolutions);
+      onChange(nextSocialWork);
 
       if (visibility === 'confidential' && result?.record?.id) {
         setUnlockedRecords(prev => ({

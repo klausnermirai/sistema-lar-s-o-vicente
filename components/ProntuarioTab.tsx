@@ -1,11 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Resident, InstitutionSettings } from '../types';
-import { Calendar, Clock, User, FileText, AlertCircle, Volume2, ChevronDown, ChevronUp, Printer, Stethoscope, Activity } from 'lucide-react';
+import { Calendar, Clock, User, FileText, AlertCircle, Volume2, ChevronDown, ChevronUp, Printer, Stethoscope, Activity, Lock, Eye } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { addPdfSignatureNode } from '../lib/pdfUtils';
 
 import 'jspdf-autotable';
 import { addPdfHeaderAndFooter } from '../lib/pdfHelpers';
+import { createSocialWorkReauthToken, unlockConfidentialSocialRecord } from '../lib/api';
 
 interface ProntuarioTabProps {
   resident: Resident;
@@ -23,6 +24,8 @@ type TimelineEvent = {
   fullContent: React.ReactNode;
   isPrivate?: boolean;
   isShared?: boolean;
+  isConfidential?: boolean;
+  recordId?: string;
   timestamp: number;
 };
 
@@ -32,6 +35,14 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
   const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [filterSharedOnly, setFilterSharedOnly] = useState<boolean>(false);
   const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({});
+  const [unlockedSocialRecords, setUnlockedSocialRecords] = useState<Record<string, { description: string; referrals: string }>>({});
+  const [unlockingRecordId, setUnlockingRecordId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setUnlockedSocialRecords({});
+    setUnlockingRecordId(null);
+    setExpandedEvents({});
+  }, [resident.id]);
 
   const toggleExpand = (id: string) => {
     setExpandedEvents(prev => ({ ...prev, [id]: !prev[id] }));
@@ -312,25 +323,31 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
         reuniao_equipe: 'Estudo de Caso / Equipe',
         outro: 'Ação Social'
       };
+      const isConfidential = ev.visibility === 'confidential';
+      const description = ev.description || '';
       allEvents.push({
         id: `social-evo-${ev.id}`,
+        recordId: ev.id,
         date: ev.date,
         time: ev.time,
         competence: 'Assistente Social',
-        type: typeLabels[ev.type] || 'Ação Social',
+        type: isConfidential ? 'Registro sigiloso' : (typeLabels[ev.type] || 'Ação Social'),
         professional: ev.professionalSignature || ev.professionalName || 'Assistente Social',
-        summary: ev.title ? `${ev.title}: ${ev.description.substring(0, 80)}...` : ev.description.substring(0, 100) + '...',
-        fullContent: (
+        summary: isConfidential
+          ? 'Conteúdo protegido. Autenticação necessária para visualização.'
+          : (ev.title ? `${ev.title}: ${description.substring(0, 80)}...` : (description ? description.substring(0, 100) + '...' : 'Atendimento do Serviço Social registrado.')),
+        fullContent: isConfidential ? null : (
           <div className="space-y-2 text-sm">
             <p><strong>Assunto:</strong> {ev.title || typeLabels[ev.type] || 'Ação Social'}</p>
-            <p><strong>Relato da Intervenção:</strong> {ev.description}</p>
+            <p><strong>Relato da Intervenção:</strong> {description}</p>
             {ev.targetPersonOrEntity && <p><strong>Envolvido / Órgão:</strong> {ev.targetPersonOrEntity}</p>}
             {ev.contactPhone && <p><strong>Telefone:</strong> {ev.contactPhone}</p>}
             {ev.referrals && <p><strong>Encaminhamentos / Providências:</strong> {ev.referrals}</p>}
             {ev.cress && <p className="text-xs text-gray-500 font-bold">CRESS: {ev.cress}</p>}
           </div>
         ),
-        isShared: !!ev.postToMural,
+        isConfidential,
+        isShared: !isConfidential && !!ev.postToMural,
         timestamp: new Date(ev.date + (ev.time ? `T${ev.time}` : 'T12:00:00')).getTime()
       });
     });
@@ -478,6 +495,25 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
   const session = sessionStr ? JSON.parse(sessionStr) : null;
   const accessLevel = session?.accessLevel?.toLowerCase() || '';
   const currentUser = { role: accessLevel === 'administrador' ? 'admin' : accessLevel };
+  const canUnlockSocialConfidential = accessLevel === 'assistente_social';
+
+  const handleUnlockSocialRecord = async (recordId?: string) => {
+    if (!recordId || !canUnlockSocialConfidential || unlockingRecordId) return;
+    const password = window.prompt('Digite sua senha para visualizar este registro sigiloso:');
+    if (!password) return;
+
+    setUnlockingRecordId(recordId);
+    try {
+      const reauthToken = await createSocialWorkReauthToken(password);
+      const content = await unlockConfidentialSocialRecord(resident.id, recordId, reauthToken);
+      setUnlockedSocialRecords(prev => ({ ...prev, [recordId]: content }));
+      setExpandedEvents(prev => ({ ...prev, [`social-evo-${recordId}`]: true }));
+    } catch (error: any) {
+      alert(error?.message || 'Não foi possível abrir o registro sigiloso.');
+    } finally {
+      setUnlockingRecordId(null);
+    }
+  };
 
   const handleGeneratePDF = async () => {
     const doc = new jsPDF();
@@ -566,9 +602,13 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
            const ga = resident.occupationalTherapy?.groupActivities?.find(a => a.date === (ev.dataEvolucao || ev.date));
            if(ga) contentText = `Descrição: ${ga.description}\nResultado: ${ga.result}\nObservações: ${ga.observations}`;
         } else if (ev.competence === 'Assistente Social') {
-          const evo = resident.socialWork?.evolutions?.find(e => `social-evo-${e.id}` === ev.id || e.date === ev.date);
-          if (evo) {
-            contentText = `Ação: ${evo.title}\nRelato: ${evo.description}${evo.targetPersonOrEntity ? `\nEnvolvido/Órgão: ${evo.targetPersonOrEntity}` : ''}${evo.referrals ? `\nEncaminhamentos: ${evo.referrals}` : ''}`;
+          if (ev.isConfidential) {
+            contentText = '[Registro sigiloso do Serviço Social — conteúdo protegido.]';
+          } else {
+            const evo = resident.socialWork?.evolutions?.find(e => `social-evo-${e.id}` === ev.id || e.date === ev.date);
+            if (evo) {
+              contentText = `Ação: ${evo.title || 'Ação Social'}\nRelato: ${evo.description || ''}${evo.targetPersonOrEntity ? `\nEnvolvido/Órgão: ${evo.targetPersonOrEntity}` : ''}${evo.referrals ? `\nEncaminhamentos: ${evo.referrals}` : ''}`;
+            }
           }
         } else if (ev.type === 'Parecer de Integração') {
            contentText = resident.integrationReport || '';
@@ -697,7 +737,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
                 {/* Timeline Dot */}
                 <div className="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-white border-4 border-[#004c99]"></div>
                 
-                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                <div className={`${ev.isConfidential ? 'bg-slate-50/70 border-slate-300 opacity-90' : 'bg-white border-gray-200'} border rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow`}>
                   {/* Event Header */}
                   <div className="bg-gray-50/50 p-4 border-b border-gray-100 flex flex-wrap justify-between items-start gap-4">
                     <div>
@@ -718,21 +758,55 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
                         <div className="flex items-center gap-1"><User size={14} /> {ev.professional}</div>
                       </div>
                     </div>
-                    <button type="button" 
-                      onClick={() => toggleExpand(ev.id)}
-                      className="text-[#004c99] hover:bg-blue-50 p-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold uppercase"
-                    >
-                      {isExpanded ? (
-                        <><ChevronUp size={16} /> Ocultar</>
+                    {ev.isConfidential ? (
+                      canUnlockSocialConfidential && !unlockedSocialRecords[ev.recordId || ''] ? (
+                        <button type="button"
+                          onClick={() => handleUnlockSocialRecord(ev.recordId)}
+                          disabled={unlockingRecordId === ev.recordId}
+                          className="text-slate-700 hover:bg-slate-100 p-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold uppercase disabled:opacity-50"
+                        >
+                          <Lock size={16} /> {unlockingRecordId === ev.recordId ? 'Validando...' : 'Visualizar registro'}
+                        </button>
+                      ) : unlockedSocialRecords[ev.recordId || ''] ? (
+                        <button type="button" onClick={() => toggleExpand(ev.id)}
+                          className="text-[#004c99] hover:bg-blue-50 p-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold uppercase">
+                          <Eye size={16} /> {isExpanded ? 'Ocultar' : 'Ver conteúdo'}
+                        </button>
                       ) : (
-                        <><ChevronDown size={16} /> Ver completo</>
-                      )}
-                    </button>
+                        <span className="text-slate-500 p-2 flex items-center gap-2 text-xs font-bold uppercase"><Lock size={16} /> Protegido</span>
+                      )
+                    ) : (
+                      <button type="button" 
+                        onClick={() => toggleExpand(ev.id)}
+                        className="text-[#004c99] hover:bg-blue-50 p-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold uppercase"
+                      >
+                        {isExpanded ? (
+                          <><ChevronUp size={16} /> Ocultar</>
+                        ) : (
+                          <><ChevronDown size={16} /> Ver completo</>
+                        )}
+                      </button>
+                    )}
                   </div>
 
                   {/* Event Content */}
                   <div className="p-4">
-                    {ev.isPrivate ? (
+                    {ev.isConfidential ? (
+                      <div className="bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-start gap-3">
+                        <Lock className="text-slate-500 shrink-0 mt-0.5" size={18} />
+                        <div className="w-full">
+                          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-tight mb-1">Registro sigiloso — Serviço Social</h4>
+                          {unlockedSocialRecords[ev.recordId || ''] && isExpanded ? (
+                            <div className="space-y-2 text-sm text-slate-800 mt-3">
+                              <p><strong>Relato da Intervenção:</strong> {unlockedSocialRecords[ev.recordId || ''].description}</p>
+                              {unlockedSocialRecords[ev.recordId || ''].referrals && <p><strong>Encaminhamentos / Providências:</strong> {unlockedSocialRecords[ev.recordId || ''].referrals}</p>}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-600 font-medium">Conteúdo protegido. Autenticação necessária para visualização.</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : ev.isPrivate ? (
                       <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex items-start gap-3">
                         <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
                         <div>
