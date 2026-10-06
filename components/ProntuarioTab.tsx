@@ -521,7 +521,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
 
     // A área útil precisa respeitar o cabeçalho/título aplicado posteriormente por
     // addPdfHeaderAndFooter e também o rodapé fixo do relatório.
-    const CONTENT_TOP = 52;
+    const CONTENT_TOP = 60;
     const CONTENT_BOTTOM = 278;
     const LEFT = 14;
     const TEXT_WIDTH = pageWidth - 28;
