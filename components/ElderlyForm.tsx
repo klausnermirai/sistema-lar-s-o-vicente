@@ -1,5 +1,7 @@
 
 import { getProfessionalSignature, fetchResidentById } from '../lib/api';
+import jsPDF from 'jspdf';
+import { addPdfHeaderAndFooter, createPdfContext, urlToBase64 } from '../lib/pdfHelpers';
 import React, { useRef } from 'react';
 import { motion } from 'motion/react';
 import { 
@@ -120,6 +122,8 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
   const [offset, setOffset] = React.useState({ x: 0, y: 0 });
   const [isDrag, setIsDrag] = React.useState(false);
   const [startPos, setStartPos] = React.useState({ x: 0, y: 0 });
+  const [visitDateFrom, setVisitDateFrom] = React.useState('');
+  const [visitDateTo, setVisitDateTo] = React.useState('');
 
   React.useEffect(() => {
     setActiveTab(initialTab);
@@ -224,10 +228,6 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   const updateListField = (listName: keyof Resident, id: string, field: string, value: any) => {
     setFormData(prev => {
       const list = prev[listName];
@@ -328,6 +328,153 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     setFormData(prev => ({ ...prev, medications: [...(prev.medications || []), newMed] }));
   };
 
+  const formatDate = (value?: string) => {
+    if (!value) return 'Não informado';
+    const base = value.includes('T') ? value.split('T')[0] : value;
+    const [year, month, day] = base.split('-');
+    return year && month && day ? `${day}/${month}/${year}` : value;
+  };
+
+  const calculateAge = (birthDate?: string) => {
+    if (!birthDate) return 'Não informado';
+    const birth = new Date(`${birthDate}T12:00:00`);
+    if (Number.isNaN(birth.getTime())) return 'Não informado';
+    const now = new Date();
+    let age = now.getFullYear() - birth.getFullYear();
+    const monthDiff = now.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birth.getDate())) age--;
+    return `${age} anos`;
+  };
+
+  const finalizePdf = async (doc: jsPDF, title: string, filename: string) => {
+    await addPdfHeaderAndFooter(doc, settings, title);
+    doc.save(filename);
+  };
+
+  const handleGenerateCadastroPdf = async () => {
+    const doc = new jsPDF();
+    const pdf = createPdfContext(doc);
+
+    pdf.writeSection('Identificação');
+    let photoRendered = false;
+    if (formData.photo) {
+      try {
+        const photo = await urlToBase64(formData.photo);
+        if (photo) {
+          const startY = pdf.getY();
+          doc.addImage(photo, 'PNG', 14, startY, 25, 25);
+          pdf.writeText(`Nome: ${pdf.safeValue(formData.name)}`, { font: 'bold', indent: 32 });
+          pdf.writeText(`Nascimento: ${formatDate(formData.birthDate)} | Idade: ${calculateAge(formData.birthDate)}`, { indent: 32 });
+          pdf.writeText(`Gênero: ${pdf.safeValue(formData.gender)} | Estado civil: ${pdf.safeValue(formData.maritalStatus)}`, { indent: 32 });
+          pdf.setY(Math.max(pdf.getY(), startY + 28));
+          photoRendered = true;
+        }
+      } catch (error) {
+        console.warn('Não foi possível incluir a foto no PDF cadastral:', error);
+      }
+    }
+    if (!photoRendered) {
+      pdf.writeField('Nome', formData.name);
+      pdf.writeField('Nascimento / Idade', `${formatDate(formData.birthDate)} / ${calculateAge(formData.birthDate)}`);
+      pdf.writeField('Gênero', formData.gender);
+      pdf.writeField('Estado civil', formData.maritalStatus);
+    }
+    pdf.writeField('Nacionalidade', formData.nationality);
+    pdf.writeField('Naturalidade', formData.naturalness);
+    pdf.writeField('Escolaridade', formData.education);
+    pdf.writeField('Apelido', formData.nickname);
+    pdf.writeField('Profissão', formData.profession);
+    pdf.writeField('Cônjuge', formData.spouse);
+    pdf.writeField('Pai', formData.fatherName);
+    pdf.writeField('Mãe', formData.motherName);
+
+    pdf.writeSection('Documentação e benefícios');
+    pdf.writeField('CPF', formData.cpf);
+    pdf.writeField('RG / Órgão expedidor', [formData.rg, formData.issuingBody].filter(Boolean).join(' - '));
+    pdf.writeField('Cartão SUS', formData.susCard);
+    pdf.writeField('Cartão SAMS', formData.samsCard);
+    pdf.writeField('Título de eleitor', formData.voterTitle);
+    pdf.writeField('Zona / Seção', [formData.voterZone, formData.voterSection].filter(Boolean).join(' / '));
+    pdf.writeField('Benefício INSS', formData.inssNumber);
+    pdf.writeField('Tipo / Situação INSS', [formData.inssType, formData.inssStatus].filter(Boolean).join(' / '));
+    pdf.writeField('Cadastro Único', formData.cadUnico);
+    pdf.writeField('Certidão civil', [formData.certType, formData.certNumber, formData.certBook, formData.certPage].filter(Boolean).join(' | '));
+
+    pdf.writeSection('Endereço');
+    pdf.writeField('Endereço', [formData.address, formData.addressNumber, formData.complement].filter(Boolean).join(', '));
+    pdf.writeField('Bairro', formData.neighborhood);
+    pdf.writeField('Cidade / UF', [formData.city, formData.state].filter(Boolean).join(' / '));
+    pdf.writeField('CEP', formData.cep);
+    pdf.writeField('Referência', formData.reference);
+
+    pdf.writeSection('Acolhimento');
+    pdf.writeField('Data do acolhimento', formatDate(formData.admissionDate));
+    pdf.writeField('Tipo de estadia', formData.stayType);
+    pdf.writeField('Quarto / Leito', [formData.room, formData.bedNumber].filter(Boolean).join(' / '));
+    pdf.writeField('Grau de dependência', formData.grauDependenciaFinal ?? formData.dependencyLevel);
+    pdf.writeField('Motivo do acolhimento', formData.admissionReason);
+    pdf.writeField('Hospitais preferenciais', formData.preferredHospitals);
+    pdf.writeField('Observações', formData.observations);
+
+    await finalizePdf(doc, 'Ficha Cadastral do Residente', `Ficha_Cadastral_${formData.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+  const handleGenerateFamiliaresPdf = async () => {
+    const doc = new jsPDF();
+    const pdf = createPdfContext(doc);
+    pdf.writeField('Residente', formData.name);
+    pdf.writeField('Moradia antes do acolhimento', formData.interview?.residesWith);
+
+    pdf.writeSection('Familiares e contatos');
+    if (!formData.relatives?.length) {
+      pdf.writeText('Nenhum familiar ou contato cadastrado.', { font: 'italic' });
+    } else {
+      formData.relatives.forEach((rel, index) => {
+        pdf.ensureSpace(24);
+        pdf.writeText(`${index + 1}. ${pdf.safeValue(rel.name)}`, { font: 'bold', size: 10 });
+        pdf.writeField('Vínculo', rel.kinship);
+        pdf.writeField('Telefone', rel.deceased ? 'Contato não ativo' : rel.phone);
+        pdf.writeField('Situação', rel.deceased ? 'Falecido' : (rel.isResponsible ? 'Responsável principal' : 'Contato'));
+        if (rel.document) pdf.writeField('Documento', rel.document);
+        if (rel.observation) pdf.writeField('Observação', rel.observation);
+        pdf.separator();
+      });
+    }
+
+    await finalizePdf(doc, 'Cadastro de Familiares e Contatos', `Familiares_${formData.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+  const handleGenerateVisitasPdf = async () => {
+    const doc = new jsPDF();
+    const pdf = createPdfContext(doc);
+    const visits = [...(formData.visitRecords || [])]
+      .filter(v => !visitDateFrom || v.date >= visitDateFrom)
+      .filter(v => !visitDateTo || v.date <= visitDateTo)
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    pdf.writeField('Residente', formData.name);
+    if (visitDateFrom || visitDateTo) {
+      pdf.writeField('Período', `${visitDateFrom ? formatDate(visitDateFrom) : 'início'} até ${visitDateTo ? formatDate(visitDateTo) : 'atual'}`);
+    }
+    pdf.writeSection('Visitas');
+
+    if (!visits.length) {
+      pdf.writeText('Nenhuma visita encontrada para o período selecionado.', { font: 'italic' });
+    } else {
+      visits.forEach((visit, index) => {
+        pdf.ensureSpace(24);
+        pdf.writeText(`${index + 1}. ${formatDate(visit.date)} — ${pdf.safeValue(visit.visitorName)}`, { font: 'bold', size: 10 });
+        pdf.writeField('Documento', visit.visitorDoc);
+        pdf.writeField('Entrada / Saída', `${pdf.safeValue(visit.timeIn, '--:--')} / ${pdf.safeValue(visit.timeOut, '--:--')}`);
+        if (visit.matchedVia) pdf.writeField('Identificação', visit.matchedVia === 'facial' ? 'Reconhecimento facial' : 'Manual');
+        if (visit.observation) pdf.writeField('Observação', visit.observation);
+        pdf.separator();
+      });
+    }
+
+    await finalizePdf(doc, 'Relação de Visitas do Residente', `Visitas_${formData.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(formData);
@@ -382,186 +529,12 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
           </div>
         </div>
         <div className="flex gap-3">
-           <button 
-             type="button" 
-             onClick={handlePrint} 
-             className="px-6 py-2 border-2 border-[#004c99] rounded-lg text-[#004c99] font-black text-xs uppercase hover:bg-blue-50 flex items-center gap-2 shadow-sm"
-           >
-             <Printer size={16} />
-             Exportar PDF
-           </button>
+           
            <button type="button" onClick={onCancel} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-bold text-xs uppercase hover:bg-gray-50">Sair</button>
            <button type="button" onClick={handleSubmit} className="bg-[#004c99] hover:bg-blue-800 text-white px-8 py-2 rounded-lg flex items-center gap-2 shadow-lg transition-all font-bold text-xs uppercase">
              <Save size={18} />
              <span>Salvar Tudo</span>
            </button>
-        </div>
-      </div>
-
-      {/* Hidden Printable Area (Mimics the SSVP PDF Layout) */}
-      <div id="printable-area" className="hidden print:block p-10 font-sans text-gray-900 bg-white">
-        <div className="flex justify-between items-start border-b-2 border-black pb-4 mb-6">
-          <div className="flex items-center gap-4">
-            <div className="bg-[#004c99] p-3 rounded-full text-white font-black text-xl">SSVP</div>
-            <div>
-              <div className="font-black text-lg uppercase leading-tight text-blue-900">Larsão Vicente de Paulo</div>
-              <div className="font-bold text-xs uppercase text-blue-800">Obraunida à Sociedade de São Vicente de Paulo</div>
-              <div className="text-[10px] mt-1 text-gray-600">LARGO 8 DE FEVEREIRO, 1384 • MONTE ALTO - SP • CEP 15910-000</div>
-            </div>
-          </div>
-          <div className="text-right">
-             <div className="font-black text-[10px] uppercase border-b border-gray-300 pb-1 mb-1">Ficha de Informações Cadastrais</div>
-             <div className="text-[10px] font-bold text-gray-500">{new Date().toLocaleDateString('pt-BR')}</div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-           {/* Section 1 */}
-           <section>
-              <div className="bg-gray-100 px-4 py-1 font-black text-[10px] uppercase mb-4 border-l-4 border-[#004c99]">I. Informações Pessoais</div>
-              <div className="flex gap-8 items-start">
-                 <img src={formData.photo || `https://ui-avatars.com/api/?name=${formData.name}&background=004c99&color=fff`} className="w-24 h-24 rounded-lg border border-gray-200 object-cover" />
-                 <div className="flex-1 grid grid-cols-3 gap-y-3 gap-x-4">
-                    <div className="col-span-2">
-                       <div className="text-[9px] font-black uppercase text-gray-400">Nome Completo</div>
-                       <div className="text-xs font-bold uppercase">{formData.name || 'NÃO INFORMADO'}</div>
-                    </div>
-                    <div>
-                       <div className="text-[9px] font-black uppercase text-gray-400">Nascimento</div>
-                       <div className="text-xs font-bold uppercase">{formData.birthDate ? new Date(formData.birthDate).toLocaleDateString('pt-BR') : '-'}</div>
-                    </div>
-                    <div>
-                       <div className="text-[9px] font-black uppercase text-gray-400">Gênero</div>
-                       <div className="text-xs font-bold uppercase">{formData.gender}</div>
-                    </div>
-                    <div>
-                       <div className="text-[9px] font-black uppercase text-gray-400">Estado Civil</div>
-                       <div className="text-xs font-bold uppercase">{formData.maritalStatus || '-'}</div>
-                    </div>
-                    <div>
-                       <div className="text-[9px] font-black uppercase text-gray-400">Naturalidade</div>
-                       <div className="text-xs font-bold uppercase">{formData.naturalness || '-'}</div>
-                    </div>
-                    <div>
-                       <div className="text-[9px] font-black uppercase text-gray-400">Nome do Pai</div>
-                       <div className="text-xs font-bold uppercase">{formData.fatherName || '-'}</div>
-                    </div>
-                    <div className="col-span-2">
-                       <div className="text-[9px] font-black uppercase text-gray-400">Nome da Mãe</div>
-                       <div className="text-xs font-bold uppercase">{formData.motherName || '-'}</div>
-                    </div>
-                 </div>
-              </div>
-           </section>
-
-           {/* Section 2 */}
-           <section>
-              <div className="bg-gray-100 px-4 py-1 font-black text-[10px] uppercase mb-4 border-l-4 border-[#004c99]">II. Documentação & Benefícios</div>
-              <div className="grid grid-cols-4 gap-y-3 gap-x-4">
-                 <div>
-                    <div className="text-[9px] font-black uppercase text-gray-400">CPF</div>
-                    <div className="text-xs font-bold">{formData.cpf || '-'}</div>
-                 </div>
-                 <div>
-                    <div className="text-[9px] font-black uppercase text-gray-400">RG</div>
-                    <div className="text-xs font-bold">{formData.rg || '-'}</div>
-                 </div>
-                 <div>
-                    <div className="text-[9px] font-black uppercase text-gray-400">Cartão SUS</div>
-                    <div className="text-xs font-bold">{formData.susCard || '-'}</div>
-                 </div>
-                 <div>
-                    <div className="text-[9px] font-black uppercase text-gray-400">Nº Benefício INSS</div>
-                    <div className="text-xs font-bold">{formData.inssNumber || '-'}</div>
-                 </div>
-              </div>
-           </section>
-
-           {/* Section 3 */}
-           <section>
-              <div className="bg-gray-100 px-4 py-1 font-black text-[10px] uppercase mb-4 border-l-4 border-[#004c99]">III. Endereço e Acolhimento</div>
-              <div className="grid grid-cols-4 gap-y-3 gap-x-4">
-                 <div className="col-span-2">
-                    <div className="text-[9px] font-black uppercase text-gray-400">Endereço</div>
-                    <div className="text-xs font-bold uppercase">{formData.address || '-'}, {formData.addressNumber || '-'}</div>
-                 </div>
-                 <div>
-                    <div className="text-[9px] font-black uppercase text-gray-400">Bairro</div>
-                    <div className="text-xs font-bold uppercase">{formData.neighborhood || '-'}</div>
-                 </div>
-                 <div>
-                    <div className="text-[9px] font-black uppercase text-gray-400">Cidade/UF</div>
-                    <div className="text-xs font-bold uppercase">{formData.city || '-'} / {formData.state || '-'}</div>
-                 </div>
-                 <div>
-                    <div className="text-[9px] font-black uppercase text-gray-400">Acolhimento</div>
-                    <div className="text-xs font-bold">{formData.admissionDate || '-'}</div>
-                 </div>
-                 <div>
-                    <div className="text-[9px] font-black uppercase text-gray-400">Estadia</div>
-                    <div className="text-xs font-bold uppercase">{formData.stayType || '-'}</div>
-                 </div>
-                 <div>
-                    <div className="text-[9px] font-black uppercase text-gray-400">Quarto/Ala</div>
-                    <div className="text-xs font-bold uppercase">{formData.room || '-'}</div>
-                 </div>
-                 <div>
-                    <div className="text-[9px] font-black uppercase text-gray-400">Rendimento</div>
-                    <div className="text-xs font-bold uppercase">{formData.income || '-'}</div>
-                 </div>
-              </div>
-           </section>
-
-           {/* Section 4 - Família e Visitantes (Summary) */}
-           <section>
-              <div className="bg-gray-100 px-4 py-1 font-black text-[10px] uppercase mb-4 border-l-4 border-[#004c99]">IV. Familiares e Contatos de Emergência</div>
-              <div className="space-y-2">
-                 {formData.relatives.map(rel => (
-                    <div key={rel.id} className="flex justify-between border-b border-gray-100 pb-1">
-                       <div className="text-[10px] font-bold uppercase">
-                         {rel.name} ({rel.kinship}) {rel.deceased && ' [FALECIDO]'}
-                       </div>
-                       <div className="text-[10px] font-bold">
-                         {rel.deceased ? 'Contato não ativo' : rel.phone} {!rel.deceased && rel.isResponsible && ' [RESPONSÁVEL]'}
-                       </div>
-                    </div>
-                 ))}
-                 {formData.relatives.length === 0 && <div className="text-[10px] text-gray-400 uppercase italic">Nenhum familiar cadastrado.</div>}
-              </div>
-           </section>
-
-           {/* Section 5 - Visits (Summary) */}
-           <section>
-              <div className="bg-gray-100 px-4 py-1 font-black text-[10px] uppercase mb-4 border-l-4 border-[#004c99]">V. Últimas Visitas Registradas</div>
-              <div className="grid grid-cols-4 gap-2 text-[9px] font-black uppercase text-gray-400 mb-1">
-                <div>Data</div>
-                <div>Visitante</div>
-                <div>Entrada</div>
-                <div>Saída</div>
-              </div>
-              <div className="space-y-1">
-                 {formData.visitRecords.slice(0, 5).map(v => (
-                    <div key={v.id} className="grid grid-cols-4 gap-2 text-[10px] border-b border-gray-50 pb-1">
-                       <div>{v.date}</div>
-                       <div className="font-bold">{v.visitorName}</div>
-                       <div>{v.timeIn}</div>
-                       <div>{v.timeOut || '--:--'}</div>
-                    </div>
-                 ))}
-                 {formData.visitRecords.length === 0 && <div className="text-[10px] text-gray-400 uppercase italic">Sem registros de visitas.</div>}
-              </div>
-           </section>
-        </div>
-
-        <div className="mt-16 flex justify-around border-t border-gray-200 pt-8">
-           <div className="flex flex-col items-center gap-1">
-              <div className="w-40 border-b border-black"></div>
-              <div className="text-[8px] font-black uppercase">Responsável SSVP</div>
-           </div>
-           <div className="flex flex-col items-center gap-1">
-              <div className="w-40 border-b border-black"></div>
-              <div className="text-[8px] font-black uppercase">Responsável Familiar</div>
-           </div>
         </div>
       </div>
 
@@ -583,6 +556,11 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
       <form onSubmit={handleSubmit} className="bg-white rounded-b-xl shadow-md border border-gray-200 overflow-hidden mb-12 no-print">
         {activeTab === 'geral' && (
           <div className="p-8 space-y-2 animate-in fade-in duration-300">
+            <div className="flex justify-end mb-6">
+              <button type="button" onClick={handleGenerateCadastroPdf} className="px-5 py-2.5 border-2 border-[#004c99] rounded-xl text-[#004c99] font-black text-xs uppercase hover:bg-blue-50 flex items-center gap-2">
+                <Printer size={16} /> Gerar Ficha Cadastral PDF
+              </button>
+            </div>
             <div className="flex flex-col md:flex-row gap-10 mb-8">
               <div className="w-full md:w-56 shrink-0 space-y-4">
                 <div 
@@ -888,9 +866,14 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
                     <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">1. Cadastro de Familiares e Contatos</h3>
                     <p className="text-[10px] font-bold text-gray-400 uppercase">Gerencie os vínculos permanentes e responsáveis legais.</p>
                  </div>
-                 <button type="button" onClick={addRelative} className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl transition-all shadow-lg uppercase">
-                   <Plus size={18} /> ADICIONAR FAMILIAR
-                 </button>
+                 <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={handleGenerateFamiliaresPdf} className="flex items-center gap-2 text-xs font-black text-[#004c99] border-2 border-[#004c99] hover:bg-blue-50 px-5 py-3 rounded-xl uppercase">
+                      <Printer size={16} /> GERAR CADASTRO PDF
+                    </button>
+                    <button type="button" onClick={addRelative} className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl transition-all shadow-lg uppercase">
+                      <Plus size={18} /> ADICIONAR FAMILIAR
+                    </button>
+                  </div>
               </div>
               <div className="grid grid-cols-1 gap-6">
                  {formData.relatives.map((rel) => (
@@ -933,9 +916,22 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
                      <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter">2. Controle de Portaria / Visitas</h3>
                      <p className="text-[10px] font-bold text-gray-400 uppercase">Registro pontual de entradas e saídas de visitantes.</p>
                   </div>
-                  <button type="button" onClick={addVisitRecord} className="flex items-center gap-2 text-xs font-black text-[#004c99] bg-white border-2 border-[#004c99] hover:bg-blue-50 px-6 py-3 rounded-xl transition-all shadow-md uppercase">
-                    <LogIn size={18} /> REGISTRAR ENTRADA
-                  </button>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-gray-400 mb-1">Data inicial</label>
+                      <input type="date" value={visitDateFrom} onChange={(e) => setVisitDateFrom(e.target.value)} className="border rounded-lg px-2 py-2 text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-gray-400 mb-1">Data final</label>
+                      <input type="date" value={visitDateTo} onChange={(e) => setVisitDateTo(e.target.value)} className="border rounded-lg px-2 py-2 text-xs" />
+                    </div>
+                    <button type="button" onClick={handleGenerateVisitasPdf} className="flex items-center gap-2 text-xs font-black text-[#004c99] bg-white border-2 border-[#004c99] hover:bg-blue-50 px-4 py-2.5 rounded-xl uppercase">
+                      <Printer size={16} /> GERAR RELAÇÃO PDF
+                    </button>
+                    <button type="button" onClick={addVisitRecord} className="flex items-center gap-2 text-xs font-black text-[#004c99] bg-white border-2 border-[#004c99] hover:bg-blue-50 px-4 py-2.5 rounded-xl transition-all shadow-md uppercase">
+                      <LogIn size={18} /> REGISTRAR ENTRADA
+                    </button>
+                  </div>
                </div>
 
                <div className="bg-white rounded-2xl border overflow-hidden shadow-sm">
@@ -1173,8 +1169,9 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
 
         {activeTab === 'intercorrencias' && (
           <IntercurrenceHistoryTab 
-            resident={formData} 
-            onUpdateIncidents={(newIncidents) => setFormData({...formData, incidents: newIncidents})}
+              resident={formData} 
+              settings={settings}
+              onUpdateIncidents={(newIncidents) => setFormData({...formData, incidents: newIncidents})}
           />
         )}
 
