@@ -898,11 +898,7 @@ const MultidisciplinaryModule: React.FC<MultidisciplinaryModuleProps> = ({ resid
                 settings={settings}
                 onPostToMural={onPostToMural}
                 onChange={(socialData) => {
-                  const updatedResident = {
-                    ...selectedResident,
-                    socialWork: socialData
-                  };
-                  handleSaveEntity(updatedResident);
+                  setFullResident(prev => prev ? { ...prev, socialWork: socialData } : prev);
                 }}
                 residents={residents}
                 onSaveResident={handleSaveEntity}
