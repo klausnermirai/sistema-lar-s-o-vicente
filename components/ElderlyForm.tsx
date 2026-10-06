@@ -362,7 +362,8 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
         const photo = await urlToBase64(formData.photo);
         if (photo) {
           const startY = pdf.getY();
-          doc.addImage(photo, 'PNG', 14, startY, 25, 25);
+          const photoFormat = photo.startsWith('data:image/jpeg') || photo.startsWith('data:image/jpg') ? 'JPEG' : 'PNG';
+          doc.addImage(photo, photoFormat, 14, startY, 25, 25);
           pdf.writeText(`Nome: ${pdf.safeValue(formData.name)}`, { font: 'bold', indent: 32 });
           pdf.writeText(`Nascimento: ${formatDate(formData.birthDate)} | Idade: ${calculateAge(formData.birthDate)}`, { indent: 32 });
           pdf.writeText(`Gênero: ${pdf.safeValue(formData.gender)} | Estado civil: ${pdf.safeValue(formData.maritalStatus)}`, { indent: 32 });
