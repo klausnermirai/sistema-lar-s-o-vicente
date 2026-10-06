@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Resident, Medication } from '../types';
+import { Resident, Medication, InstitutionSettings } from '../types';
 import { 
   Plus, 
   Trash2, 
@@ -9,16 +9,20 @@ import {
   Pill,
   CheckCircle2,
   X,
-  Edit2
+  Edit2,
+  Printer
 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import { addPdfHeaderAndFooter, createPdfContext } from '../lib/pdfHelpers';
 
 interface MedicationTabProps {
   resident: Resident;
+  settings?: InstitutionSettings | null;
   onUpdateMedications: (meds: Medication[]) => void;
   onPostToMural?: any;
 }
 
-const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedications, onPostToMural }) => {
+const MedicationTab: React.FC<MedicationTabProps> = ({ resident, settings, onUpdateMedications, onPostToMural }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMedId, setEditingMedId] = useState<string | null>(null);
   const [visibilidade, setVisibilidade] = useState<string[]>(['admin', 'publico']);
@@ -82,6 +86,49 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
     setIsModalOpen(false);
   };
 
+  const formatDate = (value?: string) => {
+    if (!value) return 'Não informado';
+    const base = value.includes('T') ? value.split('T')[0] : value;
+    const [year, month, day] = base.split('-');
+    return year && month && day ? `${day}/${month}/${year}` : value;
+  };
+
+  const handleGeneratePdf = async () => {
+    const doc = new jsPDF();
+    const pdf = createPdfContext(doc);
+    const medications = [...(resident.medications || [])].sort((a, b) => {
+      const aTime = a.startDate ? new Date(a.startDate).getTime() : 0;
+      const bTime = b.startDate ? new Date(b.startDate).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    pdf.writeField('Residente', resident.name);
+    pdf.writeSection('Medicamentos em uso');
+
+    if (!medications.length) {
+      pdf.writeText('Nenhum medicamento cadastrado.', { font: 'italic' });
+    } else {
+      medications.forEach((med, index) => {
+        pdf.ensureSpace(32);
+        pdf.writeText(`${index + 1}. ${pdf.safeValue(med.name)}${med.concentration ? ` — ${med.concentration}` : ''}`, { font: 'bold', size: 10 });
+        pdf.writeField('Dose', med.dose);
+        pdf.writeField('Via', med.route);
+        pdf.writeField('Tipo', med.type === 'continuo' ? 'Contínuo' : 'Temporário');
+        pdf.writeField('Frequência', med.frequency ? `${med.frequency} vez(es) ao dia` : 'Não informada');
+        pdf.writeField('Horários', med.times?.length ? med.times.join(', ') : 'Não informados');
+        pdf.writeField('Início', formatDate(med.startDate));
+        if (med.endDate) pdf.writeField('Término', formatDate(med.endDate));
+        if (med.type === 'temporario' && med.durationDays) pdf.writeField('Duração', `${med.durationDays} dia(s)`);
+        if (med.observation) pdf.writeField('Observação', med.observation);
+        if (med.reviewed === false) pdf.writeField('Situação', 'Pendente de revisão');
+        pdf.separator();
+      });
+    }
+
+    await addPdfHeaderAndFooter(doc, settings, 'Relação de Medicamentos em Uso');
+    doc.save(`Medicamentos_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
   const handleDelete = (id: string) => {
     if (confirm('Deseja arquivar este medicamento?')) {
       const updatedMeds = (resident.medications || []).filter(m => m.id !== id);
@@ -101,12 +148,21 @@ const MedicationTab: React.FC<MedicationTabProps> = ({ resident, onUpdateMedicat
             Gestão de prescrições e horários de administração
           </p>
         </div>
-        <button type="button"
-          onClick={() => handleOpenModal()}
-          className="px-6 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-xl flex items-center gap-2"
-        >
-          <Plus size={16} /> Adicionar Medicamento
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleGeneratePdf}
+            className="px-5 py-3 border-2 border-[#004c99] text-[#004c99] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-50 transition-all flex items-center gap-2"
+          >
+            <Printer size={16} /> Gerar Relação PDF
+          </button>
+          <button type="button"
+            onClick={() => handleOpenModal()}
+            className="px-6 py-3 bg-[#004c99] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-all shadow-xl flex items-center gap-2"
+          >
+            <Plus size={16} /> Adicionar Medicamento
+          </button>
+        </div>
       </div>
 
       <div className="space-y-8">
