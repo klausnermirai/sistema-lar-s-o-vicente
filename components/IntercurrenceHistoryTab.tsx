@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import { Resident, IncidentReport } from '../types';
-import { AlertCircle, Clock, Plus, Save, X, MessageSquare, ChevronDown } from 'lucide-react';
+import { Resident, IncidentReport, InstitutionSettings } from '../types';
+import { AlertCircle, Clock, Plus, Save, X, MessageSquare, ChevronDown, Printer } from 'lucide-react';
+import jsPDF from 'jspdf';
+import { addPdfHeaderAndFooter, createPdfContext } from '../lib/pdfHelpers';
 import { saveMuralMessage } from '../lib/api';
 
 interface IntercurrenceHistoryTabProps {
   resident: Resident;
+  settings?: InstitutionSettings | null;
   onUpdateIncidents?: (incidents: IncidentReport[]) => void;
 }
 
-const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resident, onUpdateIncidents }) => {
+const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resident, settings, onUpdateIncidents }) => {
   const incidents = resident.incidents || [];
   
   const [filterPeriod, setFilterPeriod] = useState<'7_dias' | 'mes' | 'tudo'>('7_dias');
@@ -28,6 +31,44 @@ const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resid
     
     return true;
   });
+
+  const handleGeneratePdf = async () => {
+    const doc = new jsPDF();
+    const pdf = createPdfContext(doc);
+    const ordered = [...filteredIncidents].sort((a, b) => b.timestamp - a.timestamp);
+
+    pdf.writeField('Residente', resident.name);
+    pdf.writeField(
+      'Período exibido',
+      filterPeriod === '7_dias' ? 'Últimos 7 dias' : filterPeriod === 'mes' ? 'Últimos 30 dias' : 'Todo o histórico'
+    );
+    pdf.writeSection('Intercorrências');
+
+    ordered.forEach((inc, index) => {
+      pdf.ensureSpace(30);
+      const date = new Date(inc.timestamp);
+      pdf.writeText(
+        `${index + 1}. ${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} — ${pdf.safeValue(inc.type)}`,
+        { font: 'bold', size: 10 }
+      );
+      pdf.writeField('Relatado por', inc.reporterName || inc.professionalName);
+      pdf.writeField('Descrição', inc.description);
+      if (inc.conduct) pdf.writeField('Conduta', inc.conduct);
+
+      (inc.actions || []).forEach((action, actionIndex) => {
+        const actionDate = new Date(action.timestamp);
+        pdf.writeText(
+          `Ação ${actionIndex + 1} — ${actionDate.toLocaleDateString('pt-BR')} ${actionDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} — ${pdf.safeValue(action.user)}`,
+          { font: 'bold', size: 9, indent: 4 }
+        );
+        pdf.writeText(action.text, { size: 9, indent: 4 });
+      });
+      pdf.separator();
+    });
+
+    await addPdfHeaderAndFooter(doc, settings, 'Histórico de Intercorrências');
+    doc.save(`Intercorrencias_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
 
   const handleSaveAnnotation = async (incidentId: string) => {
     if (!annotationText || !annotationUser) return;
@@ -106,7 +147,8 @@ const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resid
           </h3>
         </div>
         
-        <div className="flex gap-2 bg-gray-100 p-1 rounded-xl">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-2 bg-gray-100 p-1 rounded-xl">
           <button 
             type="button"
             onClick={() => setFilterPeriod('7_dias')} 
@@ -127,6 +169,14 @@ const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resid
             className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${filterPeriod === 'tudo' ? 'bg-[#004c99] text-white shadow-md' : 'text-gray-500 hover:bg-gray-200'}`}
           >
             Tudo
+          </button>
+        </div>
+          <button
+            type="button"
+            onClick={handleGeneratePdf}
+            className="px-4 py-2 border-2 border-[#004c99] text-[#004c99] rounded-xl text-[10px] font-black uppercase flex items-center gap-2 hover:bg-blue-50"
+          >
+            <Printer size={14} /> Gerar PDF
           </button>
         </div>
       </div>
