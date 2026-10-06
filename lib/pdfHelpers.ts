@@ -158,6 +158,92 @@ export const addPdfHeaderAndFooter = async (
   }
 };
 
+export const createPdfContext = (doc: jsPDF) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const CONTENT_TOP = 60;
+  const CONTENT_BOTTOM = 278;
+  const LEFT = 14;
+  const TEXT_WIDTH = pageWidth - 28;
+  const LINE_HEIGHT = 5;
+  let y = CONTENT_TOP;
+
+  const addPage = () => {
+    doc.addPage();
+    y = CONTENT_TOP;
+  };
+
+  const ensureSpace = (height: number) => {
+    if (y + height > CONTENT_BOTTOM) addPage();
+  };
+
+  const safeValue = (value: any, fallback = "Não informado") => {
+    if (value === undefined || value === null || String(value).trim() === "") return fallback;
+    return String(value);
+  };
+
+  const writeText = (
+    value: any,
+    options?: {
+      font?: "normal" | "bold" | "italic";
+      size?: number;
+      color?: [number, number, number];
+      indent?: number;
+      lineHeight?: number;
+    },
+  ) => {
+    const text = safeValue(value, "");
+    if (!text) return;
+    const lineHeight = options?.lineHeight || LINE_HEIGHT;
+    const indent = options?.indent || 0;
+    doc.setFont("helvetica", options?.font || "normal");
+    doc.setFontSize(options?.size || 9);
+    const color = options?.color || [0, 0, 0];
+    doc.setTextColor(color[0], color[1], color[2]);
+    const lines = doc.splitTextToSize(text, TEXT_WIDTH - indent) as string[];
+    lines.forEach((line) => {
+      ensureSpace(lineHeight);
+      doc.text(line, LEFT + indent, y);
+      y += lineHeight;
+    });
+  };
+
+  const writeSection = (title: string) => {
+    ensureSpace(12);
+    y += 2;
+    writeText(title, { font: "bold", size: 10, color: [0, 76, 153] });
+    y += 1;
+  };
+
+  const writeField = (label: string, value: any) => {
+    writeText(`${label}: ${safeValue(value)}`, { size: 9 });
+  };
+
+  const separator = () => {
+    ensureSpace(7);
+    y += 2;
+    doc.setDrawColor(210);
+    doc.line(LEFT, y, pageWidth - LEFT, y);
+    y += 5;
+  };
+
+  return {
+    CONTENT_TOP,
+    CONTENT_BOTTOM,
+    LEFT,
+    TEXT_WIDTH,
+    LINE_HEIGHT,
+    ensureSpace,
+    safeValue,
+    writeText,
+    writeSection,
+    writeField,
+    separator,
+    getY: () => y,
+    setY: (value: number) => { y = value; },
+    addPage,
+  };
+};
+
 export const getHtmlPrintHeader = async (
   settings: InstitutionSettings | null | undefined,
   title: string = "",
