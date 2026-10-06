@@ -124,6 +124,8 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
   const [startPos, setStartPos] = React.useState({ x: 0, y: 0 });
   const [visitDateFrom, setVisitDateFrom] = React.useState('');
   const [visitDateTo, setVisitDateTo] = React.useState('');
+  const [financeDateFrom, setFinanceDateFrom] = React.useState('');
+  const [financeDateTo, setFinanceDateTo] = React.useState('');
 
   React.useEffect(() => {
     setActiveTab(initialTab);
@@ -474,6 +476,70 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
     }
 
     await finalizePdf(doc, 'Relação de Visitas do Residente', `Visitas_${formData.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+  const formatCurrency = (value: number) =>
+    `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const handleGenerateFinancePdf = async () => {
+    const doc = new jsPDF();
+    const pdf = createPdfContext(doc);
+    const transactions = [...(formData.financials || [])]
+      .filter(fin => !financeDateFrom || fin.date >= financeDateFrom)
+      .filter(fin => !financeDateTo || fin.date <= financeDateTo)
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    const filteredEntries = transactions.reduce((sum, fin) => fin.type === 'entrada' ? sum + Number(fin.amount || 0) : sum, 0);
+    const filteredExits = transactions.reduce((sum, fin) => fin.type === 'saída' ? sum + Number(fin.amount || 0) : sum, 0);
+
+    pdf.writeField('Residente', formData.name);
+    if (financeDateFrom || financeDateTo) {
+      pdf.writeField('Período', `${financeDateFrom ? formatDate(financeDateFrom) : 'início'} até ${financeDateTo ? formatDate(financeDateTo) : 'atual'}`);
+    }
+
+    pdf.writeSection('Resumo financeiro');
+    pdf.writeField('Saldo inicial', formatCurrency(initialBalance));
+    pdf.writeField('Total de entradas no período', formatCurrency(filteredEntries));
+    pdf.writeField('Total de saídas no período', formatCurrency(filteredExits));
+    pdf.writeField('Saldo atual geral', formatCurrency(balance));
+
+    pdf.writeSection('Movimentações');
+    if (!transactions.length) {
+      pdf.writeText('Nenhuma movimentação encontrada para o período selecionado.', { font: 'italic' });
+    } else {
+      transactions.forEach((fin, index) => {
+        pdf.ensureSpace(20);
+        pdf.writeText(`${index + 1}. ${formatDate(fin.date)} — ${fin.type === 'entrada' ? 'Entrada' : 'Saída'} — ${formatCurrency(Number(fin.amount || 0))}`, { font: 'bold', size: 10 });
+        pdf.writeField('Descrição', fin.description);
+        pdf.separator();
+      });
+    }
+
+    await finalizePdf(doc, 'Extrato Financeiro Individual', `Extrato_Financeiro_${formData.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+  const handleGenerateItemsPdf = async () => {
+    const doc = new jsPDF();
+    const pdf = createPdfContext(doc);
+    const items = [...(formData.personalItems || [])].sort((a, b) => b.date.localeCompare(a.date));
+
+    pdf.writeField('Residente', formData.name);
+    pdf.writeSection('Itens pessoais');
+
+    if (!items.length) {
+      pdf.writeText('Nenhum item pessoal registrado.', { font: 'italic' });
+    } else {
+      items.forEach((item, index) => {
+        pdf.ensureSpace(20);
+        pdf.writeText(`${index + 1}. ${pdf.safeValue(item.description)}`, { font: 'bold', size: 10 });
+        pdf.writeField('Status', item.status);
+        pdf.writeField('Data', formatDate(item.date));
+        if (item.observation) pdf.writeField('Observação', item.observation);
+        pdf.separator();
+      });
+    }
+
+    await finalizePdf(doc, 'Relação de Itens Pessoais', `Itens_Pessoais_${formData.name.replace(/\s+/g, '_')}.pdf`);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -1021,23 +1087,33 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-150">
-               <span className="text-xs font-black uppercase text-gray-600 tracking-wider">
-                  Lançar Nova Movimentação Financeira
-               </span>
-               <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="flex flex-col xl:flex-row items-end xl:items-center justify-between gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-150">
+                <div className="flex flex-wrap items-end gap-3 w-full xl:w-auto">
+                  <div>
+                    <label className="block text-[9px] font-black uppercase text-gray-400 mb-1">Data inicial</label>
+                    <input type="date" value={financeDateFrom} onChange={(e) => setFinanceDateFrom(e.target.value)} className="border rounded-lg px-2 py-2 text-xs bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black uppercase text-gray-400 mb-1">Data final</label>
+                    <input type="date" value={financeDateTo} onChange={(e) => setFinanceDateTo(e.target.value)} className="border rounded-lg px-2 py-2 text-xs bg-white" />
+                  </div>
+                  <button type="button" onClick={handleGenerateFinancePdf} className="px-4 py-2.5 border-2 border-[#004c99] text-[#004c99] rounded-xl text-[10px] font-black uppercase flex items-center gap-2 hover:bg-blue-50 bg-white">
+                    <Printer size={15} /> Gerar Extrato PDF
+                  </button>
+                </div>
+                <div className="flex items-center gap-3 w-full sm:w-auto">
                   <button type="button" onClick={() => addFinancial('entrada')} className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-5 py-2.5 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition-all">
-                     <TrendingUp size={16} />
-                     <span>+ Nova Entrada</span>
+                    <TrendingUp size={16} />
+                    <span>+ Nova Entrada</span>
                   </button>
                   <button type="button" onClick={() => addFinancial('saída')} className="flex-1 sm:flex-initial bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition-all">
-                     <TrendingDown size={16} />
-                     <span>- Nova Saída</span>
+                    <TrendingDown size={16} />
+                    <span>- Nova Saída</span>
                   </button>
-               </div>
-            </div>
+                </div>
+             </div>
 
-            {/* High Contrast Zebrado Table */}
+             {/* High Contrast Zebrado Table */}
             <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-xl overflow-hidden">
                <div className="bg-[#004c99] text-white px-6 py-3.5 flex items-center justify-between">
                   <h4 className="text-xs font-black uppercase tracking-wider">
@@ -1132,7 +1208,10 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
          {activeTab === 'itens' && (
           <div className="p-8 animate-in slide-in-from-right duration-300">
              <div className="flex justify-between items-center mb-10">
-                <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Itens Pessoais</h3>
+                 <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Itens Pessoais</h3>
+                 <button type="button" onClick={handleGenerateItemsPdf} className="px-4 py-2.5 border-2 border-[#004c99] text-[#004c99] rounded-xl text-[10px] font-black uppercase flex items-center gap-2 hover:bg-blue-50">
+                   <Printer size={15} /> Gerar Relação PDF
+                 </button>
                 <button type="button" onClick={addPersonalItem} className="flex items-center gap-2 text-xs font-black text-white bg-[#004c99] hover:bg-blue-800 px-6 py-3 rounded-xl shadow-lg uppercase">
                   <Plus size={18} /> NOVO ITEM
                 </button>
