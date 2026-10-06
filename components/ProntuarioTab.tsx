@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Resident, InstitutionSettings } from '../types';
 import { Calendar, Clock, User, FileText, AlertCircle, Volume2, ChevronDown, ChevronUp, Printer, Stethoscope, Activity, Lock, Eye } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -37,6 +37,12 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
   const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({});
   const [unlockedSocialRecords, setUnlockedSocialRecords] = useState<Record<string, { description: string; referrals: string }>>({});
   const [unlockingRecordId, setUnlockingRecordId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setUnlockedSocialRecords({});
+    setUnlockingRecordId(null);
+    setExpandedEvents({});
+  }, [resident.id]);
 
   const toggleExpand = (id: string) => {
     setExpandedEvents(prev => ({ ...prev, [id]: !prev[id] }));
