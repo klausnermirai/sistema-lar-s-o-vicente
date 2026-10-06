@@ -1,5 +1,5 @@
 
-import { getProfessionalSignature } from '../lib/api';
+import { getProfessionalSignature, fetchResidentById } from '../lib/api';
 import React, { useRef } from 'react';
 import { motion } from 'motion/react';
 import { 
@@ -112,6 +112,8 @@ const FormField: React.FC<{
 const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'geral', financialOnly, settings, onSave, onCancel, accessLevel }) => {
   const [formData, setFormData] = React.useState<Resident>(initialData);
   const [activeTab, setActiveTab] = React.useState<SubTab>(initialTab);
+  const [prontuarioResident, setProntuarioResident] = React.useState<Resident | null>(null);
+  const [loadingProntuario, setLoadingProntuario] = React.useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [croppingImage, setCroppingImage] = React.useState<string | null>(null);
   const [zoom, setZoom] = React.useState(1);
@@ -122,6 +124,32 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
   React.useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  React.useEffect(() => {
+    setProntuarioResident(null);
+  }, [initialData.id]);
+
+  React.useEffect(() => {
+    if (activeTab !== 'prontuario' || !formData.id || prontuarioResident || loadingProntuario) return;
+
+    const loadProntuarioResident = async () => {
+      setLoadingProntuario(true);
+      try {
+        const sessionStr = localStorage.getItem('ssvp_session');
+        const session = sessionStr ? JSON.parse(sessionStr) : null;
+        const institutionId = session?.institutionId || session?.cnpj || formData.institutionId;
+        if (!institutionId) return;
+        const completeResident = await fetchResidentById(formData.id, institutionId);
+        setProntuarioResident(completeResident);
+      } catch (error) {
+        console.error('Erro ao carregar prontuário multidisciplinar completo:', error);
+      } finally {
+        setLoadingProntuario(false);
+      }
+    };
+
+    loadProntuarioResident();
+  }, [activeTab, formData.id, formData.institutionId, prontuarioResident, loadingProntuario]);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1128,7 +1156,11 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
         )}
 
         {activeTab === 'prontuario' && (
-          <ProntuarioTab resident={formData} settings={settings} />
+          loadingProntuario && !prontuarioResident ? (
+            <div className="p-8 text-sm font-bold text-gray-500">Carregando prontuário multidisciplinar...</div>
+          ) : (
+            <ProntuarioTab resident={prontuarioResident || formData} settings={settings} />
+          )
         )}
 
         {activeTab === 'prontuario-medico' && (
