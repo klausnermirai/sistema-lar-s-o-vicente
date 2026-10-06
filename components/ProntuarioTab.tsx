@@ -518,142 +518,165 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
   const handleGeneratePDF = async () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    
-    let yPos = 45;
 
-    filteredEvents.forEach((ev, index) => {
-      // Check page break
-      if (yPos > 270) {
-        doc.addPage();
-        yPos = 45;
-      }
+    // A área útil precisa respeitar o cabeçalho/título aplicado posteriormente por
+    // addPdfHeaderAndFooter e também o rodapé fixo do relatório.
+    const CONTENT_TOP = 60;
+    const CONTENT_BOTTOM = 278;
+    const LEFT = 14;
+    const TEXT_WIDTH = pageWidth - 28;
+    const LINE_HEIGHT = 5;
 
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(0, 76, 153); // Blue
-      doc.text(`${(ev.dataEvolucao || ev.date)} ${ev.time ? `- ${ev.time}` : ''} | ${ev.competence} - ${ev.type}`, 14, yPos);
-      yPos += 6;
+    let yPos = CONTENT_TOP;
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Profissional: ${ev.professional}`, 14, yPos);
-      yPos += 6;
+    const addContentPage = () => {
+      doc.addPage();
+      yPos = CONTENT_TOP;
+    };
 
-      doc.setTextColor(0, 0, 0);
-      
-      // Handle privacy
+    const ensureSpace = (requiredHeight: number) => {
+      if (yPos + requiredHeight > CONTENT_BOTTOM) addContentPage();
+    };
+
+    const writeWrappedText = (
+      value: string,
+      options?: { font?: 'normal' | 'bold' | 'italic'; size?: number; color?: [number, number, number] }
+    ) => {
+      const text = String(value || '').trim();
+      if (!text) return;
+
+      doc.setFont('helvetica', options?.font || 'normal');
+      doc.setFontSize(options?.size || 9);
+      const color = options?.color || [0, 0, 0];
+      doc.setTextColor(color[0], color[1], color[2]);
+
+      const lines = doc.splitTextToSize(text, TEXT_WIDTH) as string[];
+      lines.forEach((line) => {
+        ensureSpace(LINE_HEIGHT);
+        doc.text(line, LEFT, yPos);
+        yPos += LINE_HEIGHT;
+      });
+    };
+
+    const safeValue = (value: any, fallback = 'Não informado') => {
+      if (value === undefined || value === null || String(value).trim() === '') return fallback;
+      return String(value);
+    };
+
+    filteredEvents.forEach((ev) => {
+      // Evita deixar apenas o cabeçalho do registro no final da página.
+      ensureSpace(22);
+
+      writeWrappedText(
+        `${(ev.dataEvolucao || ev.date)} ${ev.time ? `- ${ev.time}` : ''} | ${ev.competence} - ${ev.type}`,
+        { font: 'bold', size: 11, color: [0, 76, 153] }
+      );
+
+      writeWrappedText(`Profissional: ${safeValue(ev.professional)}`, {
+        size: 9,
+        color: [100, 100, 100]
+      });
+      yPos += 1;
+
       const isPsychology = ev.competence === 'Psicologia';
       const hasPermission = currentUser?.role === 'admin' || currentUser?.role === 'psicologia';
 
       if (ev.isPrivate && isPsychology && !hasPermission) {
-        doc.setFont('helvetica', 'italic');
-        doc.text('Conteúdo restrito', 14, yPos);
-        yPos += 8;
+        writeWrappedText('Conteúdo restrito', { font: 'italic', size: 9 });
       } else {
-        // Extract text from fullContent (this is a simplified approach, a real app might need a better way to store raw text for PDF)
-        // Since fullContent is JSX, we'll use the summary and add a note about shared content
-        
-        // We need to extract the raw text data. Let's use the summary for now, and append mural notes if shared.
-        // In a real scenario, the TimelineEvent should store raw text data for PDF generation.
-        
-        let contentText = ev.summary;
-        
-        // Try to get more detailed text based on the event type (this is a workaround since we don't have raw text in TimelineEvent)
+        let contentText = safeValue(ev.summary, '');
+
         if (ev.type === 'Avaliação Inicial' && ev.competence === 'Nutrição') {
-           const assess = resident.nutrition?.initialAssessment;
-           if(assess) contentText = `Diagnóstico: ${assess.initialDiagnosis || 'N/A'}\nMetas PIA: ${assess.piaGoals || 'N/A'}\nVia de Alimentação: ${assess.feedingRoute || 'N/A'}\nConsistência: ${assess.dietConsistency || 'N/A'}${assess.needsSupplementation ? `\nSuplementação: ${assess.supplementationDetails}` : ''}`;
+          const assess = resident.nutrition?.initialAssessment;
+          if (assess) contentText = `Diagnóstico: ${safeValue(assess.initialDiagnosis, 'N/A')}\nMetas PIA: ${safeValue(assess.piaGoals, 'N/A')}\nVia de Alimentação: ${safeValue(assess.feedingRoute, 'N/A')}\nConsistência: ${safeValue(assess.dietConsistency, 'N/A')}${assess.needsSupplementation ? `\nSuplementação: ${safeValue(assess.supplementationDetails, 'N/A')}` : ''}`;
         } else if (ev.type === 'Evolução' && ev.competence === 'Nutrição') {
-           const evo = resident.nutrition?.evolutions?.find(e => e.date === (ev.dataEvolucao || ev.date));
-           if(evo) contentText = `Conduta: ${evo.newConduct}\nAceitação Alimentar: ${evo.foodAcceptance || 'N/A'}\nStatus Meta PIA: ${evo.piaGoalStatus || 'N/A'}`;
+          const evo = resident.nutrition?.evolutions?.find(e => e.date === (ev.dataEvolucao || ev.date));
+          if (evo) contentText = `Conduta: ${safeValue(evo.newConduct, 'N/A')}\nAceitação Alimentar: ${safeValue(evo.foodAcceptance, 'N/A')}\nStatus Meta PIA: ${safeValue(evo.piaGoalStatus, 'N/A')}`;
         } else if (ev.type === 'Atendimento' && ev.competence === 'Nutrição') {
-           const att = resident.nutrition?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
-           if(att) contentText = `Motivo: ${att.reason}\nAnotação: ${att.notes}`;
+          const att = resident.nutrition?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
+          if (att) contentText = `Motivo: ${safeValue(att.reason, 'N/A')}\nAnotação: ${safeValue(att.notes, 'N/A')}`;
         } else if (ev.type.startsWith('Atividade em grupo') && ev.competence === 'Nutrição') {
-           const ga = resident.nutrition?.groupActivities?.find(a => a.date === (ev.dataEvolucao || ev.date));
-           if(ga) contentText = `Descrição: ${ga.description}\nResultado: ${ga.result}\nObservações: ${ga.observations}`;
+          const ga = resident.nutrition?.groupActivities?.find(a => a.date === (ev.dataEvolucao || ev.date));
+          if (ga) contentText = `Descrição: ${safeValue(ga.description, 'N/A')}\nResultado: ${safeValue(ga.result, 'N/A')}\nObservações: ${safeValue(ga.observations, 'N/A')}`;
         } else if (ev.type === 'Anamnese' && ev.competence === 'Psicologia') {
-           const anamnesis = resident.psychology?.anamnese;
-           if(anamnesis) contentText = `Síntese Inicial: ${anamnesis.initialPsychologicalSynthesis}\nMetas PIA: ${anamnesis.piaPsychologicalGoals}`;
+          const anamnesis = resident.psychology?.anamnese;
+          if (anamnesis) contentText = `Síntese Inicial: ${safeValue(anamnesis.initialPsychologicalSynthesis, 'N/A')}\nMetas PIA: ${safeValue(anamnesis.piaPsychologicalGoals, 'N/A')}`;
         } else if (ev.type === 'Evolução' && ev.competence === 'Psicologia') {
-           const evo = resident.psychology?.evolutions?.find(e => e.date === (ev.dataEvolucao || ev.date));
-           if(evo) contentText = `Conduta: ${evo.newConduct}\nStatus Adaptação: ${evo.institutionalAdaptationStatus}\nEvolução Humor/Comportamento: ${evo.moodBehaviorEvolution}`;
+          const evo = resident.psychology?.evolutions?.find(e => e.date === (ev.dataEvolucao || ev.date));
+          if (evo) contentText = `Conduta: ${safeValue(evo.newConduct, 'N/A')}\nStatus Adaptação: ${safeValue(evo.institutionalAdaptationStatus, 'N/A')}\nEvolução Humor/Comportamento: ${safeValue(evo.moodBehaviorEvolution, 'N/A')}`;
         } else if (ev.type === 'Atendimento' && ev.competence === 'Psicologia') {
-           const att = resident.psychology?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
-           if(att) {
-             contentText = `Tipo de Intervenção: ${att.interventionType}\nEvolução: ${att.attendanceEvolution}`;
-             if(att.privateNotes && hasPermission) {
-                contentText += `\n\nNotas Privadas: ${att.privateNotes}`;
-             }
-           }
+          const att = resident.psychology?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
+          if (att) {
+            contentText = `Tipo de Intervenção: ${safeValue(att.interventionType, 'N/A')}\nEvolução: ${safeValue(att.attendanceEvolution, 'Não informada')}`;
+            if (att.privateNotes && hasPermission) {
+              contentText += `\n\nNotas Privadas: ${att.privateNotes}`;
+            }
+          }
         } else if (ev.type.startsWith('Atividade em grupo') && ev.competence === 'Psicologia') {
-           const ga = resident.psychology?.groupActivities?.find(a => a.date === (ev.dataEvolucao || ev.date));
-           if(ga) contentText = `Descrição: ${ga.description}\nResultado: ${ga.result}\nObservações: ${ga.observations}`;
+          const ga = resident.psychology?.groupActivities?.find(a => a.date === (ev.dataEvolucao || ev.date));
+          if (ga) contentText = `Descrição: ${safeValue(ga.description, 'N/A')}\nResultado: ${safeValue(ga.result, 'N/A')}\nObservações: ${safeValue(ga.observations, 'N/A')}`;
         } else if (ev.type === 'Primeira Avaliação' && ev.competence === 'Terapeuta Ocupacional') {
-           const assess = resident.occupationalTherapy?.initialAssessment;
-           if(assess) contentText = `Nível de Independência: ${assess.independenceLevel}\nMobilidade: ${assess.mobility}\nMetas PIA: ${assess.piaGoals}`;
+          const assess = resident.occupationalTherapy?.initialAssessment;
+          if (assess) contentText = `Nível de Independência: ${safeValue(assess.independenceLevel, 'N/A')}\nMobilidade: ${safeValue(assess.mobility, 'N/A')}\nMetas PIA: ${safeValue(assess.piaGoals, 'N/A')}`;
         } else if (ev.type === 'Evolução' && ev.competence === 'Terapeuta Ocupacional') {
-           const evo = resident.occupationalTherapy?.evolutions?.find(e => e.date === (ev.dataEvolucao || ev.date));
-           if(evo) contentText = `Conduta: ${evo.newConduct}\nStatus Meta PIA: ${evo.piaGoalStatus}`;
+          const evo = resident.occupationalTherapy?.evolutions?.find(e => e.date === (ev.dataEvolucao || ev.date));
+          if (evo) contentText = `Conduta: ${safeValue(evo.newConduct, 'N/A')}\nStatus Meta PIA: ${safeValue(evo.piaGoalStatus, 'N/A')}`;
         } else if (ev.type === 'Atendimento' && ev.competence === 'Terapeuta Ocupacional') {
-           const att = resident.occupationalTherapy?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
-           if(att) contentText = `Tipo: ${att.attendanceType}\nEvolução: ${att.attendanceEvolution}`;
+          const att = resident.occupationalTherapy?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
+          if (att) contentText = `Tipo: ${safeValue(att.attendanceType, 'N/A')}\nEvolução: ${safeValue(att.attendanceEvolution, 'Não informada')}`;
         } else if (ev.type.startsWith('Atividade em grupo') && ev.competence === 'Terapeuta Ocupacional') {
-           const ga = resident.occupationalTherapy?.groupActivities?.find(a => a.date === (ev.dataEvolucao || ev.date));
-           if(ga) contentText = `Descrição: ${ga.description}\nResultado: ${ga.result}\nObservações: ${ga.observations}`;
+          const ga = resident.occupationalTherapy?.groupActivities?.find(a => a.date === (ev.dataEvolucao || ev.date));
+          if (ga) contentText = `Descrição: ${safeValue(ga.description, 'N/A')}\nResultado: ${safeValue(ga.result, 'N/A')}\nObservações: ${safeValue(ga.observations, 'N/A')}`;
         } else if (ev.competence === 'Assistente Social') {
           if (ev.isConfidential) {
             contentText = '[Registro sigiloso do Serviço Social — conteúdo protegido.]';
           } else {
             const evo = resident.socialWork?.evolutions?.find(e => `social-evo-${e.id}` === ev.id || e.date === ev.date);
             if (evo) {
-              contentText = `Ação: ${evo.title || 'Ação Social'}\nRelato: ${evo.description || ''}${evo.targetPersonOrEntity ? `\nEnvolvido/Órgão: ${evo.targetPersonOrEntity}` : ''}${evo.referrals ? `\nEncaminhamentos: ${evo.referrals}` : ''}`;
+              contentText = `Ação: ${safeValue(evo.title, 'Ação Social')}\nRelato: ${safeValue(evo.description, 'Não informado')}${evo.targetPersonOrEntity ? `\nEnvolvido/Órgão: ${evo.targetPersonOrEntity}` : ''}${evo.referrals ? `\nEncaminhamentos: ${evo.referrals}` : ''}`;
             }
           }
         } else if (ev.type === 'Parecer de Integração') {
-           contentText = resident.integrationReport || '';
+          contentText = safeValue(resident.integrationReport, 'Não informado');
         } else if (ev.type === 'Parecer Médico') {
-           contentText = `Status: ${resident.medicalStatus}\n${resident.medicalOpinion}`;
+          contentText = `Status: ${safeValue(resident.medicalStatus, 'Não informado')}\n${safeValue(resident.medicalOpinion, 'Não informado')}`;
         } else if (ev.type === 'Parecer da Diretoria') {
-           contentText = resident.boardOpinion || '';
+          contentText = safeValue(resident.boardOpinion, 'Não informado');
         }
 
-        const splitText = doc.splitTextToSize(contentText, pageWidth - 28);
-        doc.text(splitText, 14, yPos);
-        yPos += (splitText.length * 5) + 4;
+        writeWrappedText(contentText, { size: 9 });
 
         if (ev.isShared) {
-          // Find mural notes
           let muralNotes = '';
           if (ev.competence === 'Nutrição') {
-             const att = resident.nutrition?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
-             if(att) muralNotes = att.muralNotes || '';
+            const att = resident.nutrition?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
+            if (att) muralNotes = att.muralNotes || '';
           } else if (ev.competence === 'Psicologia') {
-             const att = resident.psychology?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
-             if(att) muralNotes = att.muralNotes || '';
+            const att = resident.psychology?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
+            if (att) muralNotes = att.muralNotes || '';
           } else if (ev.competence === 'Terapeuta Ocupacional') {
-             const att = resident.occupationalTherapy?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
-             if(att) muralNotes = att.muralNotes || '';
+            const att = resident.occupationalTherapy?.attendances?.find(a => a.dateTime.startsWith((ev.dataEvolucao || ev.date)));
+            if (att) muralNotes = att.muralNotes || '';
           }
 
           if (muralNotes) {
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(200, 100, 0); // Orange
-            doc.text('Conteúdo compartilhável no mural:', 14, yPos);
-            yPos += 5;
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(0, 0, 0);
-            const splitMural = doc.splitTextToSize(muralNotes, pageWidth - 28);
-            doc.text(splitMural, 14, yPos);
-            yPos += (splitMural.length * 5) + 4;
+            yPos += 1;
+            writeWrappedText('Conteúdo compartilhável no mural:', {
+              font: 'bold',
+              size: 9,
+              color: [200, 100, 0]
+            });
+            writeWrappedText(muralNotes, { size: 9 });
           }
         }
       }
-      
-      yPos += 4; // Space between events
+
+      // Separador do registro, sempre dentro da área útil.
+      ensureSpace(8);
+      yPos += 3;
       doc.setDrawColor(200, 200, 200);
-      doc.line(14, yPos, pageWidth - 14, yPos);
-      yPos += 6;
+      doc.line(LEFT, yPos, pageWidth - LEFT, yPos);
+      yPos += 5;
     });
 
     await addPdfHeaderAndFooter(doc, settings, 'Prontuário Multidisciplinar');
