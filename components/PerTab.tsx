@@ -1,6 +1,6 @@
 import { getProfessionalSignature, fetchSosProtocols } from '../lib/api';
 import React, { useState, useEffect } from 'react';
-import { Resident, PerData, ClinicalProgressEntry, SosProtocol } from '../types';
+import { Resident, PerData, ClinicalProgressEntry, SosProtocol, InstitutionSettings } from '../types';
 import { 
   Heart, 
   Activity, 
@@ -15,15 +15,19 @@ import {
   Clock,
   Save,
   X,
-  Pill
+  Pill,
+  Printer
 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import { addPdfHeaderAndFooter, createPdfContext } from '../lib/pdfHelpers';
 
 interface PerTabProps {
   resident: Resident;
+  settings?: InstitutionSettings | null;
   onUpdatePer: (per: PerData) => void;
 }
 
-const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
+const PerTab: React.FC<PerTabProps> = ({ resident, settings, onUpdatePer }) => {
   const per = resident.per;
   const [isAddingProgress, setIsAddingProgress] = useState(false);
   const [newProgressNote, setNewProgressNote] = useState('');
@@ -126,6 +130,123 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
     ? per.vitalSignsHistory[per.vitalSignsHistory.length - 1] 
     : null;
 
+  const formatDateTime = (value?: string) => {
+    if (!value) return 'Não informado';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  };
+
+  const handleGeneratePdf = async () => {
+    if (!per) {
+      alert('Prontuário clínico não iniciado para este residente.');
+      return;
+    }
+
+    const doc = new jsPDF();
+    const pdf = createPdfContext(doc);
+
+    pdf.writeField('Residente', resident.name);
+    pdf.writeField('Última atualização', formatDateTime(per.lastUpdated));
+
+    pdf.writeSection('Alergias e alertas');
+    pdf.writeText(per.allergies || 'Nenhuma alergia relatada.');
+
+    pdf.writeSection('Última aferição de sinais vitais');
+    if (latestVitalSigns) {
+      pdf.writeField('Data', formatDateTime(latestVitalSigns.date));
+      pdf.writeField('Pressão arterial', latestVitalSigns.paSystolic !== undefined || latestVitalSigns.paDiastolic !== undefined
+        ? `${latestVitalSigns.paSystolic ?? '--'}/${latestVitalSigns.paDiastolic ?? '--'} mmHg`
+        : 'Não informada');
+      pdf.writeField('Frequência cardíaca', latestVitalSigns.fc !== undefined ? `${latestVitalSigns.fc} bpm` : 'Não informada');
+      pdf.writeField('Frequência respiratória', latestVitalSigns.fr !== undefined ? `${latestVitalSigns.fr} irpm` : 'Não informada');
+      pdf.writeField('Temperatura', latestVitalSigns.temperature !== undefined ? `${latestVitalSigns.temperature} °C` : 'Não informada');
+      pdf.writeField('Saturação O2', latestVitalSigns.spo2 !== undefined ? `${latestVitalSigns.spo2}%` : 'Não informada');
+      pdf.writeField('Glicemia (HGT)', latestVitalSigns.hgtValue !== undefined
+        ? `${latestVitalSigns.hgtValue} mg/dL${latestVitalSigns.hgtType ? ` (${latestVitalSigns.hgtType})` : ''}`
+        : 'Não informada');
+      if (latestVitalSigns.weight) pdf.writeField('Peso', latestVitalSigns.weight);
+      if (latestVitalSigns.height) pdf.writeField('Altura', latestVitalSigns.height);
+      if (latestVitalSigns.professionalName) pdf.writeField('Profissional', latestVitalSigns.professionalName);
+    } else {
+      pdf.writeText('Nenhuma aferição de sinais vitais registrada.', { font: 'italic' });
+    }
+
+    pdf.writeSection('Resumo da admissão e histórico clínico');
+    if (per.nursingAdmissionSummary) pdf.writeField('Nota de admissão', per.nursingAdmissionSummary);
+    pdf.writeField('Diagnósticos e comorbidades', per.diagnoses?.length ? per.diagnoses.join('; ') : 'Nenhum diagnóstico listado');
+    pdf.writeField('Histórico cirúrgico', per.surgeryHistory || 'Sem registros');
+    pdf.writeField('Histórico clínico', per.clinicalHistory || 'Nenhum detalhe adicional relatado');
+
+    pdf.writeSection('Quadro funcional e dependências');
+    pdf.writeField('Grau de dependência', `Grau ${getDependencyDegree(resident)}${resident.grauDependenciaManual !== undefined && resident.grauDependenciaManual !== null ? ' (ajuste manual)' : ''}`);
+    pdf.writeField('Dependências ativas', getActiveDependencies(resident).length ? getActiveDependencies(resident).join(', ') : 'Nenhuma dependência registrada');
+    pdf.writeField('Mobilidade', per.functionalStatus?.mobility);
+    pdf.writeField('Continência', per.functionalStatus?.continence);
+    pdf.writeField('Consciência', per.functionalStatus?.consciousness);
+    if (per.functionalStatus?.dependencyLevel) pdf.writeField('Dependência registrada no PER', per.functionalStatus.dependencyLevel);
+
+    pdf.writeSection('Medicações da triagem, hábitos e suporte de saúde');
+    pdf.writeField('Medicações informadas na triagem', per.currentMedications || 'Não informado');
+    pdf.writeField('Tabagismo', per.habits?.smoking ? 'Sim' : 'Não');
+    pdf.writeField('Etilismo', per.habits?.alcohol ? 'Sim' : 'Não');
+    if (per.healthSupport) {
+      pdf.writeField('UBS de referência', per.healthSupport.ubs);
+      pdf.writeField('Cartão SUS', per.healthSupport.susCard);
+      if (per.healthSupport.doctor) pdf.writeField('Médico de referência', per.healthSupport.doctor);
+    }
+
+    pdf.writeSection('Condutas SOS / medicações eventuais autorizadas');
+    if (!sosProtocols.length) {
+      pdf.writeText('Nenhuma conduta SOS ativa para este residente.', { font: 'italic' });
+    } else {
+      sosProtocols.forEach((protocol, index) => {
+        pdf.ensureSpace(34);
+        pdf.writeText(`${index + 1}. ${pdf.safeValue(protocol.sintomaOuQueixa)}`, { font: 'bold', size: 10 });
+        pdf.writeField('Medicamento autorizado', protocol.medicamentoAutorizado);
+        pdf.writeField('Dosagem / quantidade', [protocol.dosagem, protocol.quantidade].filter(Boolean).join(' '));
+        pdf.writeField('Forma farmacêutica', protocol.formaFarmaceutica);
+        pdf.writeField('Via', protocol.via);
+        if (protocol.intervaloMinimoHoras) pdf.writeField('Intervalo mínimo', `${protocol.intervaloMinimoHoras} hora(s)`);
+        pdf.writeField('Autorizado por', [protocol.autorizadoPorNome, protocol.autorizadoPorFuncao, protocol.autorizadoPorRegistro].filter(Boolean).join(' — '));
+        pdf.writeField('Data da autorização', formatDateTime(protocol.dataAutorizacao));
+        if (protocol.dataRevisao) pdf.writeField('Data de revisão', formatDateTime(protocol.dataRevisao));
+        if (protocol.observacoes) pdf.writeField('Observações', protocol.observacoes);
+        pdf.separator();
+      });
+    }
+
+    pdf.writeSection('Registros de consultas e evolução clínica');
+    const progressEntries = [...(per.clinicalProgress || [])].sort((a, b) => {
+      const aTime = new Date(a.date).getTime();
+      const bTime = new Date(b.date).getTime();
+      return bTime - aTime;
+    });
+
+    if (!progressEntries.length) {
+      pdf.writeText('Nenhuma evolução clínica registrada.', { font: 'italic' });
+    } else {
+      progressEntries.forEach((progress, index) => {
+        pdf.ensureSpace(28);
+        pdf.writeText(`${index + 1}. ${formatDateTime(progress.date)}`, { font: 'bold', size: 10 });
+        pdf.writeField('Profissional', progress.professionalName);
+        if (progress.crm) pdf.writeField('CRM / Registro', progress.crm);
+        pdf.writeField('Evolução', progress.note);
+        (progress.actions || []).forEach((action, actionIndex) => {
+          pdf.writeText(
+            `Ação ${actionIndex + 1} — ${formatDateTime(new Date(action.timestamp).toISOString())} — ${pdf.safeValue(action.user)}`,
+            { font: 'bold', size: 9, indent: 4 }
+          );
+          pdf.writeText(action.text, { size: 9, indent: 4 });
+        });
+        pdf.separator();
+      });
+    }
+
+    await addPdfHeaderAndFooter(doc, settings, 'Prontuário Clínico do Residente');
+    doc.save(`Prontuario_Clinico_${resident.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
   const handleAddProgress = () => {
     if (!newProgressNote.trim() || !professionalName.trim()) {
       alert("Por favor, preencha o nome do profissional e a nota clínica.");
@@ -166,6 +287,13 @@ const PerTab: React.FC<PerTabProps> = ({ resident, onUpdatePer }) => {
           </p>
         </div>
         <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={handleGeneratePdf}
+            className="px-5 py-2.5 border-2 border-[#004c99] text-[#004c99] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-50 transition-all flex items-center gap-2"
+          >
+            <Printer size={16} /> Gerar Prontuário Clínico PDF
+          </button>
         </div>
       </div>
 
