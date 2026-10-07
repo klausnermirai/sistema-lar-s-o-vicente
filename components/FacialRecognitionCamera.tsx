@@ -108,12 +108,16 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   const [bestCandidatePreview, setBestCandidatePreview] = useState<{ name: string; similarity: number } | null>(null);
   const [isResettingBiometrics, setIsResettingBiometrics] = useState<boolean>(false);
 
-  // Controle de Ciclo de Varredura (4.0 segundos) e Estado de Não Reconhecido
+  // Controle de Ciclo de Varredura e Estado de Não Reconhecido
+  const RECOGNITION_WINDOW_MS = 3000;
+  const MIN_RECOGNITION_MS = 2000;
+  const REQUIRED_STABLE_MATCHES = 3;
   const scanStartTimeRef = useRef<number | null>(null);
   const [scanProgress, setScanProgress] = useState<number>(0);
-  const [scanSecondsLeft, setScanSecondsLeft] = useState<number>(4.0);
+  const [scanSecondsLeft, setScanSecondsLeft] = useState<number>(3.0);
   const stableMatchVisitorIdRef = useRef<string | null>(null);
   const stableMatchCountRef = useRef<number>(0);
+  const stableMatchSimilaritiesRef = useRef<number[]>([]);
   const entryInProgressRef = useRef<boolean>(false);
   const [selectedMatchedResidentId, setSelectedMatchedResidentId] = useState<string>('');
   const [unrecognizedFace, setUnrecognizedFace] = useState<{
@@ -227,7 +231,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     setMatchConfidence(0);
     setBestCandidatePreview(null);
     setScanProgress(0);
-    setScanSecondsLeft(4.0);
+    setScanSecondsLeft(3.0);
     lastSeenFaceTimestampRef.current = null;
     scanStartTimeRef.current = null;
     stableMatchVisitorIdRef.current = null;
@@ -235,7 +239,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     entryInProgressRef.current = false;
   }, []);
 
-  const openAutomaticQuickRegistration = useCallback((
+  const showUnrecognizedResult = useCallback((
     photoUrl?: string,
     descriptor?: number[],
     bestCandidateName?: string,
@@ -250,12 +254,9 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       bestCandidateName,
       bestSimilarity
     });
-    setManualCapturedThumb(capturedPhoto || null);
-    setManualCapturedDescriptor(
-      isFaceDescriptorValid(capturedDescriptor) ? capturedDescriptor : null
-    );
-    setShowQuickNewModal(true);
-    speak('Visitante não identificado. Informe nome, telefone e quem veio visitar.');
+    setManualCapturedThumb(null);
+    setManualCapturedDescriptor(null);
+    speak('Visitante não reconhecido. Tente novamente ou faça o cadastro.');
   }, [speak]);
 
   // Loop de Detecção e Reconhecimento Facial em Tempo Real (a cada 400ms)
@@ -299,9 +300,9 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
           }
 
           const elapsedMs = Date.now() - scanStartTimeRef.current;
-          const remainingSec = Math.max(0, (4000 - elapsedMs) / 1000);
+          const remainingSec = Math.max(0, (RECOGNITION_WINDOW_MS - elapsedMs) / 1000);
           setScanSecondsLeft(Number(remainingSec.toFixed(1)));
-          setScanProgress(Math.min(100, Math.round((elapsedMs / 4000) * 100)));
+          setScanProgress(Math.min(100, Math.round((elapsedMs / RECOGNITION_WINDOW_MS) * 100)));
 
           const visitorsWithFace = registeredVisitors.filter(
             v =>
@@ -332,42 +333,55 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             const candidateId = String(matchResult.visitor.id);
             if (stableMatchVisitorIdRef.current === candidateId) {
               stableMatchCountRef.current += 1;
+              stableMatchSimilaritiesRef.current.push(matchResult.similarity);
             } else {
               stableMatchVisitorIdRef.current = candidateId;
               stableMatchCountRef.current = 1;
+              stableMatchSimilaritiesRef.current = [matchResult.similarity];
             }
 
-            // Só aceita depois de duas leituras consecutivas do mesmo visitante.
-            if (stableMatchCountRef.current >= 2) {
+            const hasMinimumObservationTime = elapsedMs >= MIN_RECOGNITION_MS;
+            const hasStableEvidence = stableMatchCountRef.current >= REQUIRED_STABLE_MATCHES;
+
+            if (hasMinimumObservationTime && hasStableEvidence) {
+              const similarities = stableMatchSimilaritiesRef.current.slice(-REQUIRED_STABLE_MATCHES);
+              const averageSimilarity = Math.round(
+                similarities.reduce((sum, value) => sum + value, 0) / similarities.length
+              );
+
               scanStartTimeRef.current = null;
               lastSeenFaceTimestampRef.current = null;
               stableMatchVisitorIdRef.current = null;
               stableMatchCountRef.current = 0;
+            stableMatchSimilaritiesRef.current = [];
+              stableMatchSimilaritiesRef.current = [];
               setScanProgress(0);
-              setScanSecondsLeft(4.0);
+              setScanSecondsLeft(3.0);
               setUnrecognizedFace(null);
               setMatchedVisitor(matchResult.visitor);
               setSelectedMatchedResidentId('');
-              setMatchConfidence(matchResult.similarity);
+              setMatchConfidence(averageSimilarity);
               speak(`Visitante identificado: ${matchResult.visitor.name}`);
               return;
             }
           } else {
             stableMatchVisitorIdRef.current = null;
             stableMatchCountRef.current = 0;
+            stableMatchSimilaritiesRef.current = [];
           }
 
-          if (elapsedMs >= 4000) {
+          if (elapsedMs >= RECOGNITION_WINDOW_MS) {
             scanStartTimeRef.current = null;
             lastSeenFaceTimestampRef.current = null;
             stableMatchVisitorIdRef.current = null;
             stableMatchCountRef.current = 0;
+            stableMatchSimilaritiesRef.current = [];
             setScanProgress(0);
             setScanSecondsLeft(0);
             setMatchedVisitor(null);
             setMatchConfidence(0);
 
-            openAutomaticQuickRegistration(
+            showUnrecognizedResult(
               detection.thumbnailDataUrl || lastValidThumbRef.current || undefined,
               detection.descriptor || lastValidDescRef.current || undefined,
               matchResult?.bestCandidate?.name,
@@ -382,29 +396,31 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             lastSeenFaceTimestampRef.current = null;
             stableMatchVisitorIdRef.current = null;
             stableMatchCountRef.current = 0;
+            stableMatchSimilaritiesRef.current = [];
             setScanProgress(0);
-            setScanSecondsLeft(4.0);
+            setScanSecondsLeft(3.0);
             setBestCandidatePreview(null);
             setMatchedVisitor(null);
             setSelectedMatchedResidentId('');
             setMatchConfidence(0);
           } else {
             const elapsedMs = Date.now() - scanStartTimeRef.current;
-            const remainingSec = Math.max(0, (4000 - elapsedMs) / 1000);
+            const remainingSec = Math.max(0, (RECOGNITION_WINDOW_MS - elapsedMs) / 1000);
             setScanSecondsLeft(Number(remainingSec.toFixed(1)));
-            setScanProgress(Math.min(100, Math.round((elapsedMs / 4000) * 100)));
+            setScanProgress(Math.min(100, Math.round((elapsedMs / RECOGNITION_WINDOW_MS) * 100)));
 
-            if (elapsedMs >= 4000) {
+            if (elapsedMs >= RECOGNITION_WINDOW_MS) {
               scanStartTimeRef.current = null;
               lastSeenFaceTimestampRef.current = null;
               stableMatchVisitorIdRef.current = null;
               stableMatchCountRef.current = 0;
+            stableMatchSimilaritiesRef.current = [];
               setScanProgress(0);
               setScanSecondsLeft(0);
               setMatchedVisitor(null);
               setMatchConfidence(0);
 
-              openAutomaticQuickRegistration(
+              showUnrecognizedResult(
                 lastValidThumbRef.current || undefined,
                 lastValidDescRef.current || undefined
               );
@@ -431,7 +447,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     unrecognizedFace,
     showQuickLinkModal,
     showQuickNewModal,
-    openAutomaticQuickRegistration
+    showUnrecognizedResult
   ]);
 
   const getVisitorLinkedResidents = useCallback((visitor: UnifiedVisitor | null) => {
@@ -505,7 +521,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
         entryInProgressRef.current = false;
         setConfirmedSuccess(null);
         setEntryObservation('');
-        setScanSecondsLeft(4.0);
+        setScanSecondsLeft(3.0);
         setScanProgress(0);
         onEntryCompleted?.();
       }, 2000);
@@ -695,7 +711,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       setTimeout(() => {
         entryInProgressRef.current = false;
         setConfirmedSuccess(null);
-        setScanSecondsLeft(4.0);
+        setScanSecondsLeft(3.0);
         setScanProgress(0);
         onEntryCompleted?.();
       }, 2000);
@@ -1035,7 +1051,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               <div>
                 <div className="flex items-center justify-between pb-2.5 border-b border-gray-100">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest rounded-full">
-                    <AlertCircle size={11} /> Rosto Não Identificado (4.0s)
+                    <AlertCircle size={11} /> Visitante Não Reconhecido
                   </span>
                   <button
                     type="button"
@@ -1062,7 +1078,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   <div className="min-w-0 flex-1">
                     <h3 className="text-base font-black text-gray-900 uppercase tracking-tight">Rosto Não Reconhecido</h3>
                     <p className="text-xs text-gray-600 mt-0.5 leading-tight">
-                      Nenhum cadastro compatível encontrado nesta instituição.
+                      Não houve correspondência segura com os cadastros desta instituição.
                     </p>
                     {unrecognizedFace.bestCandidateName && unrecognizedFace.bestSimilarity && unrecognizedFace.bestSimilarity > 20 ? (
                       <p className="text-[10px] font-bold text-amber-700 mt-1 truncate">
@@ -1142,7 +1158,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   </div>
                 ) : (
                   <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-                    Ao olhar para a câmera, a identificação ocorrerá automaticamente em até 4,0 segundos.
+                    Ao olhar para a câmera, a identificação ocorrerá automaticamente em cerca de 3 segundos.
                   </p>
                 )}
 
