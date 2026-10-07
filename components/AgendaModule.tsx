@@ -725,6 +725,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
           <button 
             onClick={() => {
               setFormData({ date: formatDate(currentDate), time: '08:00', type: 'comum' });
+              resetGroupActivityDraft();
               setIsFormOpen(true);
             }}
             className="flex items-center gap-2 bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl font-black text-xs transition-all uppercase tracking-widest shadow-lg shadow-blue-900/20 active:scale-95"
@@ -910,7 +911,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
       {/* MODAL: Criar / Editar Compromisso */}
       {isFormOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-           <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in duration-300 flex flex-col max-h-[90vh]">
+           <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in duration-300 flex flex-col max-h-[90vh]">
                <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                    <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">
                      {formData.id ? 'Editar Compromisso' : 'Agendar Novo Compromisso'}
@@ -926,7 +927,10 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                         {['comum', 'consulta_exame', 'atividade_grupo', 'triagem', 'salao_festas'].map(t => (
                             <button
                                 key={t}
-                                onClick={() => setFormData({...formData, type: t as any})}
+                                onClick={() => {
+                                  setFormData({...formData, type: t as any});
+                                  if (t === 'atividade_grupo') resetGroupActivityDraft();
+                                }}
                                 className={`px-4 py-2 text-xs font-bold rounded-lg capitalize whitespace-nowrap transition-all ${
                                     (formData.type || 'comum') === t 
                                     ? 'bg-white shadow-sm text-[#004c99]' 
@@ -939,7 +943,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                     </div>
                  </div>
                  
-                 {formData.type !== 'salao_festas' && (
+                 {formData.type !== 'salao_festas' && formData.type !== 'atividade_grupo' && (
                    <div className="space-y-1">
                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Título do Compromisso *</label>
                       <input 
@@ -1024,6 +1028,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                          </div>
                      </div>
     
+                     {formData.type !== 'atividade_grupo' && (
                      <div className="space-y-1">
                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Residente Relacionado (Opcional)</label>
                         <select 
@@ -1037,6 +1042,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                             ))}
                         </select>
                      </div>
+                     )}
                    </>
                  )}
 
