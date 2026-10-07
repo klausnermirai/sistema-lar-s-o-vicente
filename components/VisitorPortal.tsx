@@ -30,7 +30,7 @@ import {
 import { Resident, GlobalVisitRecord, Relative } from '../types';
 import { saveGlobalVisit, fetchGlobalVisits, clearAllBiometrics, saveRegisteredVisitor, fetchRegisteredVisitors } from '../lib/api';
 import { FacialRecognitionCamera, UnifiedVisitor } from './FacialRecognitionCamera';
-import { extractFaceFromCanvasOrVideo } from '../lib/faceRecognition';
+import { extractFaceFromCanvasOrVideo, isFaceDescriptorValid } from '../lib/faceRecognition';
 
 interface VisitorPortalProps {
   institutionId: string;
@@ -254,7 +254,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
         ? v.linkedResidents.map(link => link.residentId)
         : (v.residentId ? [v.residentId] : []);
       const hasActiveResidentLink = linkedIds.some(id => residents.some(resident => resident.id === id));
-      const hasValidBiometry = Array.isArray(v.faceDescriptor) && v.faceDescriptor.length === 128;
+      const hasValidBiometry = isFaceDescriptorValid(v.faceDescriptor);
       return v.type === 'residente' && v.sourceType !== 'global' && hasActiveResidentLink && hasValidBiometry;
     }),
     [unifiedVisitorsList, residents]
@@ -600,9 +600,9 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
     setCaptureStreamActive(false);
   };
 
-  const handleTakeModalSnapshot = () => {
+  const handleTakeModalSnapshot = async () => {
     if (!captureVideoRef.current) return;
-    const result = extractFaceFromCanvasOrVideo(captureVideoRef.current);
+    const result = await extractFaceFromCanvasOrVideo(captureVideoRef.current);
     if (!result.detected || !result.thumbnailDataUrl || !result.descriptor) {
       alert('Nenhum rosto foi detectado com clareza. Centralize o rosto e tente novamente.');
       return;
