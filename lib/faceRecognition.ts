@@ -109,6 +109,112 @@ export const isFaceDescriptorValid = (descriptor?: number[] | null): descriptor 
   && descriptor.every(Number.isFinite)
 );
 
+
+export interface FaceEnrollmentResult {
+  detected: boolean;
+  descriptor?: number[];
+  thumbnailDataUrl?: string;
+  samplesCollected: number;
+}
+
+/**
+ * Calcula o centróide L2-normalizado de múltiplos embeddings válidos.
+ * Mantém um único faceDescriptor no schema existente.
+ */
+export const averageFaceDescriptors = (descriptors: number[][]): number[] | null => {
+  const valid = descriptors.filter(isFaceDescriptorValid);
+  if (valid.length === 0) return null;
+
+  const average = new Array<number>(FACE_DESCRIPTOR_LENGTH).fill(0);
+  for (const descriptor of valid) {
+    for (let i = 0; i < FACE_DESCRIPTOR_LENGTH; i++) {
+      average[i] += descriptor[i];
+    }
+  }
+
+  let norm = 0;
+  for (let i = 0; i < FACE_DESCRIPTOR_LENGTH; i++) {
+    average[i] /= valid.length;
+    norm += average[i] * average[i];
+  }
+
+  norm = Math.sqrt(norm);
+  if (!Number.isFinite(norm) || norm <= 0) return null;
+
+  for (let i = 0; i < FACE_DESCRIPTOR_LENGTH; i++) {
+    average[i] /= norm;
+  }
+
+  return average;
+};
+
+const wait = (ms: number) => new Promise<void>(resolve => window.setTimeout(resolve, ms));
+
+/**
+ * Cadastro facial robusto: coleta várias leituras válidas por ~3 segundos
+ * e salva somente o descritor médio normalizado.
+ */
+export const captureFaceEnrollment = async (
+  source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
+  options?: {
+    durationMs?: number;
+    intervalMs?: number;
+    minSamples?: number;
+    maxSamples?: number;
+    minimumConsistency?: number;
+  }
+): Promise<FaceEnrollmentResult> => {
+  await initializeFaceRecognition();
+
+  const durationMs = options?.durationMs ?? 3000;
+  const intervalMs = options?.intervalMs ?? 300;
+  const minSamples = options?.minSamples ?? 4;
+  const maxSamples = options?.maxSamples ?? 8;
+  const minimumConsistency = options?.minimumConsistency ?? 60;
+
+  const descriptors: number[][] = [];
+  let thumbnailDataUrl: string | undefined;
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < durationMs && descriptors.length < maxSamples) {
+    const detection = await extractFaceFromCanvasOrVideo(source);
+
+    if (detection.detected && isFaceDescriptorValid(detection.descriptor)) {
+      const candidate = detection.descriptor;
+      const isConsistent = descriptors.length === 0
+        || calculateFaceSimilarity(descriptors[0], candidate) >= minimumConsistency;
+
+      if (isConsistent) {
+        descriptors.push(candidate);
+        if (detection.thumbnailDataUrl) thumbnailDataUrl = detection.thumbnailDataUrl;
+      }
+    }
+
+    if (Date.now() - startedAt < durationMs && descriptors.length < maxSamples) {
+      await wait(intervalMs);
+    }
+  }
+
+  const descriptor = descriptors.length >= minSamples
+    ? averageFaceDescriptors(descriptors)
+    : null;
+
+  if (!descriptor) {
+    return {
+      detected: false,
+      thumbnailDataUrl,
+      samplesCollected: descriptors.length
+    };
+  }
+
+  return {
+    detected: true,
+    descriptor,
+    thumbnailDataUrl,
+    samplesCollected: descriptors.length
+  };
+};
+
 const getSourceDimensions = (
   source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement
 ): { width: number; height: number } => {
