@@ -1230,7 +1230,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 value={linkSearchTerm}
                 onChange={(e) => setLinkSearchTerm(e.target.value)}
                 placeholder="Buscar por nome do visitante ou residente..."
-                className="w-full pl-12 pr-4 py-3 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                className="w-full pl-12 pr-4 py-3 bg-gray-50 border rounded-2xl text-xs font-bold text-gray-900 placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#004c99]/20"
               />
             </div>
 
@@ -1313,54 +1313,96 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               </button>
             </div>
 
-            {/* Foto Capturada e Controle Manual */}
-            {(manualCapturedThumb || unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl) ? (
+            {/* Status da Biometria Facial */}
+            {isCapturingInModal ? (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-blue-50 rounded-2xl border border-blue-200">
+                <div className="flex items-center gap-3.5">
+                  {(manualCapturedThumb || unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl) ? (
+                    <img
+                      src={manualCapturedThumb || unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl}
+                      alt="Rosto em captura"
+                      className="w-16 h-16 rounded-2xl object-cover border-2 border-blue-500 shadow-sm shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-blue-100 border-2 border-blue-300 flex items-center justify-center text-blue-700 shrink-0">
+                      <ScanFace size={28} className="animate-pulse" />
+                    </div>
+                  )}
+                  <div>
+                    <div className="flex items-center gap-1.5 text-blue-900 font-black text-xs uppercase">
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Capturando biometria...</span>
+                    </div>
+                    <p className="text-[11px] text-blue-700 font-medium mt-0.5">
+                      Mantenha o rosto visível por aproximadamente 3 segundos.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : isFaceDescriptorValid(manualCapturedDescriptor) ? (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
                 <div className="flex items-center gap-3.5">
-                  <img
-                    src={manualCapturedThumb || unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl}
-                    alt="Rosto Capturado"
-                    className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-600 shadow-sm shrink-0"
-                  />
+                  {(manualCapturedThumb || unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl) ? (
+                    <img
+                      src={manualCapturedThumb || unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl}
+                      alt="Rosto Capturado"
+                      className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-600 shadow-sm shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-emerald-100 border-2 border-emerald-300 flex items-center justify-center text-emerald-700 shrink-0">
+                      <CheckCircle2 size={28} />
+                    </div>
+                  )}
                   <div>
                     <div className="flex items-center gap-1.5 text-emerald-800 font-black text-xs uppercase">
                       <CheckCircle2 size={14} className="text-emerald-600" />
-                      <span>{manualCapturedDescriptor ? 'Biometria & Foto Prontas' : 'Capturando biometria...'}</span>
+                      <span>Biometria e Foto Prontas</span>
                     </div>
                     <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
-                      {manualCapturedDescriptor ? 'Múltiplas leituras faciais consolidadas com sucesso.' : 'Mantenha o rosto visível por alguns segundos.'}
+                      Múltiplas leituras faciais consolidadas com sucesso.
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={handleCaptureManualPhotoInModal}
-                  disabled={isCapturingInModal}
                   className="px-3.5 py-2 bg-white hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-300 shadow-sm flex items-center gap-1.5 shrink-0 transition-colors"
                 >
                   <Camera size={15} />
-                  {isCapturingInModal ? 'Capturando 3s...' : 'Recapturar Biometria'}
+                  Recapturar Biometria
                 </button>
               </div>
             ) : (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700 shrink-0">
-                    <Camera size={22} />
-                  </div>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-amber-50 rounded-2xl border border-amber-200">
+                <div className="flex items-center gap-3.5">
+                  {(manualCapturedThumb || unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl) ? (
+                    <img
+                      src={manualCapturedThumb || unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl}
+                      alt="Rosto sem biometria concluída"
+                      className="w-16 h-16 rounded-2xl object-cover border-2 border-amber-400 shadow-sm shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-amber-100 border-2 border-amber-300 flex items-center justify-center text-amber-700 shrink-0">
+                      <AlertCircle size={28} />
+                    </div>
+                  )}
                   <div>
-                    <span className="text-xs font-black uppercase text-amber-900 block">Nenhuma foto capturada</span>
-                    <p className="text-[11px] text-amber-700">Posicione o visitante em frente à câmera e clique no botão ao lado.</p>
+                    <div className="flex items-center gap-1.5 text-amber-900 font-black text-xs uppercase">
+                      <AlertCircle size={14} />
+                      <span>Biometria não concluída</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 font-medium mt-0.5">
+                      Não houve leituras faciais suficientes. Tente novamente antes de confirmar o cadastro.
+                    </p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={handleCaptureManualPhotoInModal}
-                  disabled={isCapturingInModal}
                   className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-2 shrink-0"
                 >
                   <Camera size={16} />
-                  {isCapturingInModal ? 'Capturando 3s...' : 'Capturar Biometria'}
+                  Capturar Biometria
                 </button>
               </div>
             )}
@@ -1380,7 +1422,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   value={quickName}
                   onChange={(e) => setQuickName(e.target.value)}
                   placeholder="Ex: Maria das Graças Silva"
-                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold text-gray-900 placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#004c99]/20"
                 />
               </div>
 
@@ -1426,7 +1468,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               <button
                 type="button"
                 onClick={handleSaveQuickNewVisitor}
-                disabled={isCapturingInModal || !isFaceDescriptorValid(manualCapturedDescriptor)}
+                disabled={isCapturingInModal}
                 className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5"
               >
                 <CheckCircle2 size={16} /> {isCapturingInModal ? 'Capturando biometria...' : 'Cadastrar e Registrar Entrada'}
