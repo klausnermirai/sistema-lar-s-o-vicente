@@ -37,6 +37,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
   const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({});
   const [unlockedSocialRecords, setUnlockedSocialRecords] = useState<Record<string, { description: string; referrals: string }>>({});
   const [unlockingRecordId, setUnlockingRecordId] = useState<string | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   useEffect(() => {
     setUnlockedSocialRecords({});
@@ -516,7 +517,14 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
   };
 
   const handleGeneratePDF = async () => {
-    const doc = new jsPDF();
+    if (isGeneratingPdf) return;
+
+    setIsGeneratingPdf(true);
+    // Permite que o React atualize o botão antes do processamento síncrono mais pesado do jsPDF.
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+    try {
+      const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
 
     // A área útil precisa respeitar o cabeçalho/título aplicado posteriormente por
@@ -681,8 +689,14 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
 
     await addPdfHeaderAndFooter(doc, settings, 'Prontuário Multidisciplinar');
 
-    addPdfSignatureNode(doc);
-    doc.save(`Prontuario_Multidisciplinar_${resident.name.replace(/\s+/g, '_')}.pdf`);
+      addPdfSignatureNode(doc);
+      doc.save(`Prontuario_Multidisciplinar_${resident.name.replace(/\s+/g, '_')}.pdf`);
+    } catch (error) {
+      console.error('Erro ao gerar PDF do prontuário multidisciplinar:', error);
+      alert('Não foi possível gerar o PDF do prontuário multidisciplinar.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   const uniqueCompetences = Array.from(new Set(events.map(e => e.competence)));
@@ -697,10 +711,11 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
         <button 
           type="button" 
           onClick={handleGeneratePDF}
-          className="px-4 py-2 bg-[#004c99] text-white rounded-lg font-black text-xs uppercase hover:bg-blue-800 flex items-center gap-2 shadow-sm transition-colors"
+          disabled={isGeneratingPdf}
+          className="px-4 py-2 bg-[#004c99] text-white rounded-lg font-black text-xs uppercase hover:bg-blue-800 flex items-center gap-2 shadow-sm transition-colors disabled:opacity-60 disabled:cursor-wait"
         >
           <Printer size={16} />
-          Gerar PDF
+          {isGeneratingPdf ? 'Gerando PDF...' : 'Gerar PDF'}
         </button>
       </div>
 
@@ -716,6 +731,26 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
             <option value="">Todas</option>
             {uniqueCompetences.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Mês/Ano</label>
+          <input
+            type="month"
+            onChange={(e) => {
+              const value = e.target.value;
+              if (!value) {
+                setFilterStartDate('');
+                setFilterEndDate('');
+                return;
+              }
+              const [year, month] = value.split('-');
+              const lastDay = new Date(Number(year), Number(month), 0).getDate();
+              setFilterStartDate(`${year}-${month}-01`);
+              setFilterEndDate(`${year}-${month}-${String(lastDay).padStart(2, '0')}`);
+            }}
+            className="p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#004c99] outline-none"
+            title="Atalho para preencher o período mensal"
+          />
         </div>
         <div>
           <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Data Inicial</label>
