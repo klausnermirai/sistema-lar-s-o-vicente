@@ -1,7 +1,8 @@
 import { getProfessionalSignature } from '../lib/api';
 import React, { useState, useEffect, useRef } from 'react';
-import { AgendaEvent, Resident, InstitutionSettings, MuralMessage, Appointment } from '../types';
+import { AgendaEvent, Resident, InstitutionSettings, MuralMessage, Appointment, GroupActivity } from '../types';
 import { loadAgendaEvents, saveAgendaEvent, deleteAgendaEvent } from '../lib/agendaStore';
+import { buildGroupActivityAgendaEvent, loadGroupActivities, saveGroupActivity, syncGroupActivityResidents } from '../lib/groupActivityStore';
 import { fetchSettings } from '../lib/api';
 import { getLocalDateString, formatDateToBR } from '../lib/utils';
 import { 
@@ -44,6 +45,14 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
   // Modais de Criação/Edição
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<AgendaEvent>>({});
+  const [groupActivityDraft, setGroupActivityDraft] = useState<Partial<GroupActivity>>({
+    status: 'agendada',
+    participationType: 'Todos os residentes',
+    selectedResidents: [],
+    involvedProfessionals: [],
+    visibilidade: ['admin', 'publico']
+  });
+  const [involvedProfessionalInput, setInvolvedProfessionalInput] = useState('');
   
   // Modal de Cancelamento
   const [eventToCancel, setEventToCancel] = useState<AgendaEvent | null>(null);
@@ -92,7 +101,92 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
     return days;
   };
 
+  const getSessionCompetence = (): GroupActivity['competence'] | undefined => {
+    const level = session?.accessLevel;
+    return ['nutricionista', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta'].includes(level)
+      ? level as GroupActivity['competence']
+      : undefined;
+  };
+
+  const resetGroupActivityDraft = () => {
+    setGroupActivityDraft({
+      status: 'agendada',
+      competence: getSessionCompetence(),
+      participationType: 'Todos os residentes',
+      selectedResidents: [],
+      responsibleProfessional: session?.username || 'Profissional',
+      involvedProfessionals: [],
+      visibilidade: ['admin', 'publico']
+    });
+    setInvolvedProfessionalInput('');
+  };
+
+  const handleSaveGroupActivityFromAgenda = async () => {
+    const institutionId = session?.institutionId;
+    if (!institutionId) {
+      alert('Não foi possível identificar a instituição da sessão.');
+      return;
+    }
+
+    if (!formData.date || !formData.time || !formData.description || !groupActivityDraft.competence || !groupActivityDraft.type) {
+      alert('Preencha data, hora, área responsável, tipo de atividade e descrição.');
+      return;
+    }
+
+    if (
+      (groupActivityDraft.participationType === 'Grupo específico' || groupActivityDraft.participationType === 'Participação parcial')
+      && !(groupActivityDraft.selectedResidents || []).length
+    ) {
+      alert('Selecione pelo menos um residente.');
+      return;
+    }
+
+    const existingActivityId = formData.id?.startsWith('ga-') ? formData.id.slice(3) : groupActivityDraft.id;
+    const activity: GroupActivity = {
+      id: existingActivityId || Date.now().toString(),
+      institutionId,
+      competence: groupActivityDraft.competence,
+      status: groupActivityDraft.status || 'agendada',
+      date: formData.date,
+      time: formData.time,
+      type: groupActivityDraft.type,
+      description: formData.description,
+      participationType: groupActivityDraft.participationType || 'Todos os residentes',
+      selectedResidents: groupActivityDraft.selectedResidents || [],
+      responsibleProfessional: groupActivityDraft.responsibleProfessional || session?.username || 'Profissional',
+      involvedProfessionals: groupActivityDraft.involvedProfessionals || [],
+      result: groupActivityDraft.result || '',
+      observations: groupActivityDraft.observations || '',
+      visibilidade: groupActivityDraft.visibilidade || ['admin', 'publico'],
+      timestamp: groupActivityDraft.timestamp || Date.now()
+    };
+
+    const isUpdate = !!existingActivityId;
+    await saveGroupActivity(activity);
+    await saveAgendaEvent(buildGroupActivityAgendaEvent(activity));
+    syncGroupActivityResidents(activity, residents, onSaveResident);
+
+    if (!isUpdate && onPostToMural && activity.visibilidade?.length) {
+      onPostToMural({
+        author: activity.responsibleProfessional,
+        text: `Atividade em Grupo (${activity.type}): ${activity.description}`,
+        detailedContent: `Data e Hora: ${activity.date} às ${activity.time}\nCompetência: ${activity.competence}\nParticipantes selecionados: ${activity.selectedResidents.length}\n\nDescrição:\n${activity.description}\n\nResultado/Evolução:\n${activity.result || 'Sem resultado registrado.'}`,
+        visibilidade: activity.visibilidade
+      });
+    }
+
+    setEvents(await loadAgendaEvents(institutionId));
+    setIsFormOpen(false);
+    setFormData({});
+    resetGroupActivityDraft();
+  };
+
   const handleSave = async () => {
+    if (formData.type === 'atividade_grupo') {
+      await handleSaveGroupActivityFromAgenda();
+      return;
+    }
+
     if (formData.type !== 'salao_festas' && (!formData.title || !formData.date || !formData.time)) {
       alert("Preencha título, data e hora.");
       return;
@@ -157,8 +251,22 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
     setFormData({});
   };
 
-  const handleEdit = (event: AgendaEvent) => {
+  const handleEdit = async (event: AgendaEvent) => {
     setFormData(event);
+
+    if (event.type === 'atividade_grupo' && session?.institutionId) {
+      try {
+        const activities = await loadGroupActivities(session.institutionId);
+        const activityId = event.id.startsWith('ga-') ? event.id.slice(3) : event.id;
+        const activity = activities.find(a => a.id === activityId);
+        if (activity) setGroupActivityDraft(activity);
+        else resetGroupActivityDraft();
+      } catch (error) {
+        console.error('Erro ao carregar atividade em grupo vinculada:', error);
+        resetGroupActivityDraft();
+      }
+    }
+
     setIsFormOpen(true);
   };
 
