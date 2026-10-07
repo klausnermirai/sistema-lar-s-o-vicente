@@ -1046,6 +1046,166 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                    </>
                  )}
 
+                 {formData.type === 'atividade_grupo' && (
+                   <div className="space-y-5 rounded-2xl border border-blue-100 bg-blue-50/40 p-5">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Área responsável *</label>
+                         <select
+                           value={groupActivityDraft.competence || ''}
+                           onChange={e => setGroupActivityDraft({...groupActivityDraft, competence: e.target.value as GroupActivity['competence']})}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                         >
+                           <option value="">Selecione...</option>
+                           <option value="terapeuta_ocupacional">Terapia Ocupacional</option>
+                           <option value="psicologia">Psicologia</option>
+                           <option value="nutricionista">Nutrição</option>
+                           <option value="fisioterapeuta">Fisioterapia</option>
+                         </select>
+                       </div>
+                       <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Tipo de atividade *</label>
+                         <select
+                           value={groupActivityDraft.type || ''}
+                           onChange={e => setGroupActivityDraft({...groupActivityDraft, type: e.target.value})}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                         >
+                           <option value="">Selecione...</option>
+                           {['Recreativa', 'Cognitiva', 'Motora', 'Social', 'Espiritual', 'Outro'].map(type => <option key={type} value={type}>{type}</option>)}
+                         </select>
+                       </div>
+                     </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Status</label>
+                         <select
+                           value={groupActivityDraft.status || 'agendada'}
+                           onChange={e => setGroupActivityDraft({...groupActivityDraft, status: e.target.value as GroupActivity['status']})}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                         >
+                           <option value="agendada">Agendada</option>
+                           <option value="realizada">Realizada</option>
+                           <option value="cancelada">Cancelada</option>
+                         </select>
+                       </div>
+                       <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Participação</label>
+                         <select
+                           value={groupActivityDraft.participationType || 'Todos os residentes'}
+                           onChange={e => setGroupActivityDraft({...groupActivityDraft, participationType: e.target.value as GroupActivity['participationType'], selectedResidents: e.target.value === 'Todos os residentes' ? [] : groupActivityDraft.selectedResidents})}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                         >
+                           <option value="Todos os residentes">Todos os residentes</option>
+                           <option value="Grupo específico">Grupo específico</option>
+                           <option value="Participação parcial">Participação parcial</option>
+                         </select>
+                       </div>
+                     </div>
+
+                     {groupActivityDraft.participationType !== 'Todos os residentes' && (
+                       <div className="space-y-2">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Residentes participantes *</label>
+                         <div className="max-h-40 overflow-y-auto rounded-xl border bg-white p-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                           {residents.map(resident => (
+                             <label key={resident.id} className="flex items-center gap-2 text-xs font-medium text-gray-700">
+                               <input
+                                 type="checkbox"
+                                 checked={(groupActivityDraft.selectedResidents || []).includes(resident.id)}
+                                 onChange={() => {
+                                   const selected = groupActivityDraft.selectedResidents || [];
+                                   setGroupActivityDraft({
+                                     ...groupActivityDraft,
+                                     selectedResidents: selected.includes(resident.id)
+                                       ? selected.filter(id => id !== resident.id)
+                                       : [...selected, resident.id]
+                                   });
+                                 }}
+                               />
+                               {resident.name}
+                             </label>
+                           ))}
+                         </div>
+                       </div>
+                     )}
+
+                     <div className="space-y-1">
+                       <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Profissional responsável</label>
+                       <input
+                         type="text"
+                         value={groupActivityDraft.responsibleProfessional || session?.username || ''}
+                         onChange={e => setGroupActivityDraft({...groupActivityDraft, responsibleProfessional: e.target.value})}
+                         className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                       />
+                     </div>
+
+                     <div className="space-y-2">
+                       <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Profissionais envolvidos</label>
+                       <div className="flex gap-2">
+                         <input
+                           type="text"
+                           value={involvedProfessionalInput}
+                           onChange={e => setInvolvedProfessionalInput(e.target.value)}
+                           className="flex-1 p-3 border-2 border-gray-100 rounded-xl text-sm bg-white"
+                           placeholder="Nome do profissional"
+                         />
+                         <button
+                           type="button"
+                           onClick={() => {
+                             const name = involvedProfessionalInput.trim();
+                             if (!name) return;
+                             setGroupActivityDraft({...groupActivityDraft, involvedProfessionals: [...(groupActivityDraft.involvedProfessionals || []), name]});
+                             setInvolvedProfessionalInput('');
+                           }}
+                           className="px-4 py-2 bg-white border border-blue-200 text-[#004c99] rounded-xl text-xs font-black uppercase"
+                         >
+                           Adicionar
+                         </button>
+                       </div>
+                       <div className="flex flex-wrap gap-2">
+                         {(groupActivityDraft.involvedProfessionals || []).map((name, index) => (
+                           <span key={`${name}-${index}`} className="px-3 py-1 bg-white border border-blue-100 rounded-full text-xs font-bold text-gray-700">
+                             {name}
+                             <button
+                               type="button"
+                               onClick={() => setGroupActivityDraft({...groupActivityDraft, involvedProfessionals: (groupActivityDraft.involvedProfessionals || []).filter((_, i) => i !== index)})}
+                               className="ml-2 text-gray-400 hover:text-red-500"
+                             >
+                               ×
+                             </button>
+                           </span>
+                         ))}
+                       </div>
+                     </div>
+
+                     {groupActivityDraft.status === 'realizada' && (
+                       <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Resultado / evolução</label>
+                         <select
+                           value={groupActivityDraft.result || ''}
+                           onChange={e => setGroupActivityDraft({...groupActivityDraft, result: e.target.value})}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                         >
+                           <option value="">Sem resultado informado</option>
+                           <option value="Excelente">Excelente</option>
+                           <option value="Boa">Boa</option>
+                           <option value="Regular">Regular</option>
+                           <option value="Baixa adesão">Baixa adesão</option>
+                         </select>
+                       </div>
+                     )}
+
+                     <div className="space-y-1">
+                       <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Observações</label>
+                       <textarea
+                         value={groupActivityDraft.observations || ''}
+                         onChange={e => setGroupActivityDraft({...groupActivityDraft, observations: e.target.value})}
+                         className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm bg-white min-h-[80px]"
+                       />
+                     </div>
+                   </div>
+                 )}
+
                  {formData.type === 'consulta_exame' && (
                      <div className="space-y-1 animate-in fade-in slide-in-from-top-2">
                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Acompanhante (Opcional)</label>
