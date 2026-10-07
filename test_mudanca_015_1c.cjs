@@ -23,6 +23,7 @@ check(agenda.includes('Residentes participantes *'), 'Agenda permite selecionar 
 check(agenda.includes("formData.type !== 'salao_festas' && formData.type !== 'atividade_grupo'"), 'Atividade em grupo não exige título genérico');
 check(agenda.includes("const institutionId = session?.institutionId"), 'Fluxo da Agenda usa tenant real da sessão');
 check(agenda.includes("loadGroupActivities(session.institutionId)"), 'Edição pela Agenda recupera GroupActivity existente');
+check(agenda.includes('disabled={!!groupActivityDraft.id}'), 'Competência fica protegida durante edição de atividade existente');
 check(store.includes('id: `ga-${activity.id}`'), 'Espelho da Agenda usa ID derivado do GroupActivity');
 check(store.includes('export const syncGroupActivityResidents'), 'Sincronização de residentes está centralizada');
 check(groupTab.includes("session?.institutionId || session?.cnpj || ''"), 'Aba multidisciplinar deixou de usar default-inst');
