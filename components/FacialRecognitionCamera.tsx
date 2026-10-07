@@ -236,6 +236,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     scanStartTimeRef.current = null;
     stableMatchVisitorIdRef.current = null;
     stableMatchCountRef.current = 0;
+    stableMatchSimilaritiesRef.current = [];
     entryInProgressRef.current = false;
   }, []);
 
@@ -353,7 +354,6 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               lastSeenFaceTimestampRef.current = null;
               stableMatchVisitorIdRef.current = null;
               stableMatchCountRef.current = 0;
-            stableMatchSimilaritiesRef.current = [];
               stableMatchSimilaritiesRef.current = [];
               setScanProgress(0);
               setScanSecondsLeft(3.0);
@@ -414,7 +414,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               lastSeenFaceTimestampRef.current = null;
               stableMatchVisitorIdRef.current = null;
               stableMatchCountRef.current = 0;
-            stableMatchSimilaritiesRef.current = [];
+              stableMatchSimilaritiesRef.current = [];
               setScanProgress(0);
               setScanSecondsLeft(0);
               setMatchedVisitor(null);
@@ -1046,7 +1046,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               </div>
             </div>
           ) : unrecognizedFace ? (
-            /* Card de Rosto Não Identificado após 4.0 segundos de Varredura */
+            /* Card de visitante não reconhecido após a janela de varredura */
             <div className="bg-white p-5 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-rose-300 shadow-lg space-y-4 animate-in slide-in-from-right duration-300 h-full flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between pb-2.5 border-b border-gray-100">
@@ -1080,16 +1080,12 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                     <p className="text-xs text-gray-600 mt-0.5 leading-tight">
                       Não houve correspondência segura com os cadastros desta instituição.
                     </p>
-                    {unrecognizedFace.bestCandidateName && unrecognizedFace.bestSimilarity && unrecognizedFace.bestSimilarity > 20 ? (
-                      <p className="text-[10px] font-bold text-amber-700 mt-1 truncate">
-                        Mais próximo: {unrecognizedFace.bestSimilarity}% ({unrecognizedFace.bestCandidateName})
-                      </p>
-                    ) : null}
+
                   </div>
                 </div>
 
                 <div className="mt-3 p-3 bg-rose-50 rounded-xl border border-rose-200 text-[11px] text-rose-950 font-bold leading-tight">
-                  <strong>Cadastro rápido aberto automaticamente.</strong> Informe nome, telefone e o residente visitado.
+                  Você pode tentar novamente ou cadastrar este visitante.
                 </div>
               </div>
 
