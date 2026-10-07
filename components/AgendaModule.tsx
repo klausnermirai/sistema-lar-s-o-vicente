@@ -1054,7 +1054,8 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                          <select
                            value={groupActivityDraft.competence || ''}
                            onChange={e => setGroupActivityDraft({...groupActivityDraft, competence: e.target.value as GroupActivity['competence']})}
-                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                           disabled={!!groupActivityDraft.id}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white disabled:bg-gray-100 disabled:text-gray-500"
                          >
                            <option value="">Selecione...</option>
                            <option value="terapeuta_ocupacional">Terapia Ocupacional</option>
