@@ -30,7 +30,7 @@ import {
 import { Resident, GlobalVisitRecord, Relative } from '../types';
 import { saveGlobalVisit, fetchGlobalVisits, clearAllBiometrics, saveRegisteredVisitor, fetchRegisteredVisitors } from '../lib/api';
 import { FacialRecognitionCamera, UnifiedVisitor } from './FacialRecognitionCamera';
-import { extractFaceFromCanvasOrVideo, isFaceDescriptorValid } from '../lib/faceRecognition';
+import { captureFaceEnrollment, isFaceDescriptorValid } from '../lib/faceRecognition';
 
 interface VisitorPortalProps {
   institutionId: string;
@@ -82,6 +82,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
   const [captureStreamActive, setCaptureStreamActive] = useState<boolean>(false);
   const [capturedThumb, setCapturedThumb] = useState<string | null>(null);
   const [capturedDescriptor, setCapturedDescriptor] = useState<number[] | null>(null);
+  const [isCapturingFace, setIsCapturingFace] = useState<boolean>(false);
 
   // Busca e Filtros na Lista de Visitantes
   const [visitorSearch, setVisitorSearch] = useState('');
@@ -601,15 +602,22 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
   };
 
   const handleTakeModalSnapshot = async () => {
-    if (!captureVideoRef.current) return;
-    const result = await extractFaceFromCanvasOrVideo(captureVideoRef.current);
-    if (!result.detected || !result.thumbnailDataUrl || !result.descriptor) {
-      alert('Nenhum rosto foi detectado com clareza. Centralize o rosto e tente novamente.');
-      return;
+    if (!captureVideoRef.current || isCapturingFace) return;
+
+    setIsCapturingFace(true);
+    try {
+      const result = await captureFaceEnrollment(captureVideoRef.current);
+      if (!result.detected || !result.thumbnailDataUrl || !result.descriptor) {
+        alert('Não foi possível obter leituras faciais suficientes. Mantenha o rosto visível por alguns segundos e tente novamente.');
+        return;
+      }
+
+      setCapturedThumb(result.thumbnailDataUrl);
+      setCapturedDescriptor(result.descriptor);
+      stopModalCamera();
+    } finally {
+      setIsCapturingFace(false);
     }
-    setCapturedThumb(result.thumbnailDataUrl);
-    setCapturedDescriptor(result.descriptor);
-    stopModalCamera();
   };
 
   const handleSaveModalFace = async () => {
