@@ -1414,9 +1414,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               <button
                 type="button"
                 onClick={handleSaveQuickNewVisitor}
-                className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5"
+                disabled={isCapturingInModal || !isFaceDescriptorValid(manualCapturedDescriptor)}
+                className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5"
               >
-                <CheckCircle2 size={16} /> Cadastrar e Registrar Entrada
+                <CheckCircle2 size={16} /> {isCapturingInModal ? 'Capturando biometria...' : 'Cadastrar e Registrar Entrada'}
               </button>
             </div>
           </div>
