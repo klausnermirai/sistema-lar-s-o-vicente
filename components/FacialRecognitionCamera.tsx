@@ -26,6 +26,7 @@ import {
   extractFaceFromCanvasOrVideo, 
   findBestFaceMatch, 
   calculateFaceSimilarity,
+  isFaceDescriptorValid,
   FaceDetectionResult 
 } from '../lib/faceRecognition';
 
@@ -249,7 +250,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     });
     setManualCapturedThumb(capturedPhoto || null);
     setManualCapturedDescriptor(
-      capturedDescriptor && capturedDescriptor.length === 128 ? capturedDescriptor : null
+      isFaceDescriptorValid(capturedDescriptor) ? capturedDescriptor : null
     );
     setShowQuickNewModal(true);
     speak('Visitante não identificado. Informe nome, telefone e quem veio visitar.');
@@ -275,7 +276,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
 
       setIsProcessing(true);
       try {
-        const detection = extractFaceFromCanvasOrVideo(videoRef.current);
+        const detection = await extractFaceFromCanvasOrVideo(videoRef.current);
         setLastDetection(detection);
 
         if (detection.detected && detection.descriptor) {
@@ -298,8 +299,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             v =>
               v.type === 'residente' &&
               ((Array.isArray(v.linkedResidents) && v.linkedResidents.length > 0) || !!v.residentId) &&
-              v.faceDescriptor &&
-              v.faceDescriptor.length === 128
+              isFaceDescriptorValid(v.faceDescriptor)
           );
 
           let matchResult: any = null;
@@ -556,15 +556,15 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   };
 
   // Abrir Modal de Cadastro Rápido com foto do frame atual
-  const handleOpenQuickNewModal = () => {
+  const handleOpenQuickNewModal = async () => {
     let initialThumb = unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl || lastValidThumbRef.current || null;
     let initialDesc = unrecognizedFace?.descriptor || lastDetection?.descriptor || lastValidDescRef.current || null;
     
     if ((!initialThumb || !initialDesc) && videoRef.current) {
       try {
-        const result = extractFaceFromCanvasOrVideo(videoRef.current, canvasRef.current || undefined);
+        const result = await extractFaceFromCanvasOrVideo(videoRef.current);
         if (result.thumbnailDataUrl) initialThumb = result.thumbnailDataUrl;
-        if (result.descriptor && result.descriptor.length === 128) initialDesc = result.descriptor;
+        if (isFaceDescriptorValid(result.descriptor)) initialDesc = result.descriptor;
       } catch (e) {
         console.warn('Tentativa de captura inicial:', e);
       }
@@ -580,10 +580,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     if (!videoRef.current || !canvasRef.current) return;
     setIsCapturingInModal(true);
     try {
-      const result = await extractFaceFromCanvasOrVideo(videoRef.current, canvasRef.current);
+      const result = await extractFaceFromCanvasOrVideo(videoRef.current);
       if (result.thumbnailDataUrl) {
         setManualCapturedThumb(result.thumbnailDataUrl);
-        if (result.descriptor && result.descriptor.length === 128) {
+        if (isFaceDescriptorValid(result.descriptor)) {
           setManualCapturedDescriptor(result.descriptor);
         }
       } else {
@@ -624,7 +624,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       lastDetection?.descriptor ||
       lastValidDescRef.current;
 
-    if (!descriptorToUse || descriptorToUse.length !== 128) {
+    if (!isFaceDescriptorValid(descriptorToUse)) {
       alert('Não foi possível obter uma biometria facial válida. Recapture a foto ou utilize a entrada manual.');
       return;
     }
@@ -701,7 +701,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     (v.residentName && v.residentName.toLowerCase().includes(linkSearchTerm.toLowerCase()))
   );
 
-  const totalBiometricCount = registeredVisitors.filter(v => v.faceDescriptor && v.faceDescriptor.length === 128).length;
+  const totalBiometricCount = registeredVisitors.filter(v => isFaceDescriptorValid(v.faceDescriptor)).length;
   const matchedLinkedResidents = getVisitorLinkedResidents(matchedVisitor);
 
   return (
