@@ -309,7 +309,7 @@ export default function SocialWorkerTab({
     }
   };
 
-  const handlePrintSingleAction = (evo: SocialWorkEvolution) => {
+  const handlePrintSingleAction = async (evo: SocialWorkEvolution) => {
     const config = ACTION_TYPE_CONFIG[evo.type] || ACTION_TYPE_CONFIG.outro;
     const unlocked = getVisibleContent(evo);
     const printDescription = isConfidential(evo) && !unlocked
@@ -318,14 +318,14 @@ export default function SocialWorkerTab({
     const printReferrals = isConfidential(evo) && !unlocked
       ? ''
       : (unlocked?.referrals || evo.referrals || '');
-    const headerHtml = getHtmlPrintHeader(settings, "RELATÓRIO DE AÇÃO DO SERVIÇO SOCIAL");
+    const headerHtml = await getHtmlPrintHeader(settings, "RELATÓRIO DE AÇÃO DO SERVIÇO SOCIAL");
 
     const html = `
       <!DOCTYPE html>
       <html>
         <head>
           <title>Ação Social - ${resident.name}</title>
-          ${getHtmlPrintStyles()}
+          <style>${getHtmlPrintStyles()}</style>
         </head>
         <body>
           ${headerHtml}
@@ -418,13 +418,13 @@ export default function SocialWorkerTab({
     printHtml(html);
   };
 
-  const handlePrintFullHistory = () => {
+  const handlePrintFullHistory = async () => {
     if (evolutions.length === 0) {
       alert('Não há registros de ações sociais para imprimir.');
       return;
     }
 
-    const headerHtml = getHtmlPrintHeader(settings, "PRONTUÁRIO SOCIAL - HISTÓRICO DE ATENDIMENTOS E EVOLUÇÕES");
+    const headerHtml = await getHtmlPrintHeader(settings, "PRONTUÁRIO SOCIAL - HISTÓRICO DE ATENDIMENTOS E EVOLUÇÕES");
 
     const rowsHtml = evolutions.map((evo, idx) => {
       const config = ACTION_TYPE_CONFIG[evo.type] || ACTION_TYPE_CONFIG.outro;
@@ -463,7 +463,7 @@ export default function SocialWorkerTab({
       <html>
         <head>
           <title>Prontuário Social - ${resident.name}</title>
-          ${getHtmlPrintStyles()}
+          <style>${getHtmlPrintStyles()}</style>
         </head>
         <body>
           ${headerHtml}
