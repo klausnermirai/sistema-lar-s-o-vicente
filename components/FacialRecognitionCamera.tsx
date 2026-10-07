@@ -25,7 +25,6 @@ import { Resident, Relative, GlobalVisitRecord } from '../types';
 import { 
   extractFaceFromCanvasOrVideo, 
   findBestFaceMatch, 
-  calculateFaceSimilarity,
   isFaceDescriptorValid,
   FaceDetectionResult 
 } from '../lib/faceRecognition';
@@ -94,6 +93,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   
   // Detecção e Reconhecimento
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const recognitionLoopRunningRef = useRef<boolean>(false);
   const [lastDetection, setLastDetection] = useState<FaceDetectionResult | null>(null);
   const lastSeenFaceTimestampRef = useRef<number | null>(null);
   const lastValidThumbRef = useRef<string | null>(null);
@@ -272,8 +272,14 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     }
 
     const runRecognitionLoop = async () => {
-      if (!videoRef.current || videoRef.current.readyState < 2 || entryInProgressRef.current) return;
+      if (
+        !videoRef.current ||
+        videoRef.current.readyState < 2 ||
+        entryInProgressRef.current ||
+        recognitionLoopRunningRef.current
+      ) return;
 
+      recognitionLoopRunningRef.current = true;
       setIsProcessing(true);
       try {
         const detection = await extractFaceFromCanvasOrVideo(videoRef.current);
@@ -406,6 +412,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       } catch (err) {
         console.error('Erro no loop de reconhecimento:', err);
       } finally {
+        recognitionLoopRunningRef.current = false;
         setIsProcessing(false);
       }
     };
