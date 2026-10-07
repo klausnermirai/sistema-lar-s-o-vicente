@@ -8,8 +8,8 @@ const sourceDir = join(root, 'node_modules', '@vladmandic', 'human', 'models');
 const targetDir = join(root, 'public', 'models');
 
 const requiredModels = [
-  'blazeface-back.json',
-  'blazeface-back.bin',
+  'blazeface.json',
+  'blazeface.bin',
   'facemesh.json',
   'facemesh.bin',
   'faceres.json',
