@@ -26,6 +26,7 @@ import {
   extractFaceFromCanvasOrVideo, 
   findBestFaceMatch, 
   isFaceDescriptorValid,
+  captureFaceEnrollment,
   FaceDetectionResult 
 } from '../lib/faceRecognition';
 
@@ -143,6 +144,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   const [manualCapturedThumb, setManualCapturedThumb] = useState<string | null>(null);
   const [manualCapturedDescriptor, setManualCapturedDescriptor] = useState<number[] | null>(null);
   const [isCapturingInModal, setIsCapturingInModal] = useState<boolean>(false);
+  const [isCapturingLink, setIsCapturingLink] = useState<boolean>(false);
 
   const speak = useCallback((text: string) => {
     if (!voiceEnabled) return;
@@ -530,26 +532,29 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
 
   // Salvar Vínculo Rápido de Rosto
   const handleSaveQuickLink = async () => {
-    const photoToUse = unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl;
-    const descriptorToUse = unrecognizedFace?.descriptor || lastDetection?.descriptor;
-
-    if (!selectedVisitorToLink || !photoToUse || !descriptorToUse) {
-      alert('Selecione um visitante e certifique-se de que o rosto esteja enquadrado.');
+    if (!selectedVisitorToLink || !videoRef.current || isCapturingLink) {
+      if (!selectedVisitorToLink) alert('Selecione o visitante que deseja vincular.');
       return;
     }
 
+    setIsCapturingLink(true);
     try {
+      const enrollment = await captureFaceEnrollment(videoRef.current);
+      if (!enrollment.detected || !enrollment.descriptor || !enrollment.thumbnailDataUrl) {
+        alert('Não foi possível obter leituras faciais suficientes. Mantenha o rosto visível por alguns segundos e tente novamente.');
+        return;
+      }
+
       await onUpdateVisitorFace(
         selectedVisitorToLink,
-        photoToUse,
-        descriptorToUse
+        enrollment.thumbnailDataUrl,
+        enrollment.descriptor
       );
 
-      // Já define como visitante reconhecido imediatamente!
       setMatchedVisitor({
         ...selectedVisitorToLink,
-        photoUrl: photoToUse,
-        faceDescriptor: descriptorToUse
+        photoUrl: enrollment.thumbnailDataUrl,
+        faceDescriptor: enrollment.descriptor
       });
       setMatchConfidence(98);
       setUnrecognizedFace(null);
@@ -559,45 +564,48 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     } catch (err) {
       console.error(err);
       alert('Erro ao salvar biometria facial.');
+    } finally {
+      setIsCapturingLink(false);
     }
   };
 
   // Abrir Modal de Cadastro Rápido com foto do frame atual
   const handleOpenQuickNewModal = async () => {
-    let initialThumb = unrecognizedFace?.photoUrl || lastDetection?.thumbnailDataUrl || lastValidThumbRef.current || null;
-    let initialDesc = unrecognizedFace?.descriptor || lastDetection?.descriptor || lastValidDescRef.current || null;
-    
-    if ((!initialThumb || !initialDesc) && videoRef.current) {
-      try {
-        const result = await extractFaceFromCanvasOrVideo(videoRef.current);
-        if (result.thumbnailDataUrl) initialThumb = result.thumbnailDataUrl;
-        if (isFaceDescriptorValid(result.descriptor)) initialDesc = result.descriptor;
-      } catch (e) {
-        console.warn('Tentativa de captura inicial:', e);
-      }
-    }
-
-    setManualCapturedThumb(initialThumb);
-    setManualCapturedDescriptor(initialDesc);
     setShowQuickNewModal(true);
+    setManualCapturedThumb(null);
+    setManualCapturedDescriptor(null);
+
+    if (!videoRef.current) return;
+
+    setIsCapturingInModal(true);
+    try {
+      const enrollment = await captureFaceEnrollment(videoRef.current);
+      if (enrollment.thumbnailDataUrl) setManualCapturedThumb(enrollment.thumbnailDataUrl);
+      if (enrollment.detected && enrollment.descriptor) {
+        setManualCapturedDescriptor(enrollment.descriptor);
+      }
+    } catch (e) {
+      console.warn('Tentativa de cadastro facial inicial:', e);
+    } finally {
+      setIsCapturingInModal(false);
+    }
   };
 
   // Capturar/Recapturar Foto Manualmente no Modal
   const handleCaptureManualPhotoInModal = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || isCapturingInModal) return;
     setIsCapturingInModal(true);
+    setManualCapturedDescriptor(null);
     try {
-      const result = await extractFaceFromCanvasOrVideo(videoRef.current);
-      if (result.thumbnailDataUrl) {
-        setManualCapturedThumb(result.thumbnailDataUrl);
-        if (isFaceDescriptorValid(result.descriptor)) {
-          setManualCapturedDescriptor(result.descriptor);
-        }
+      const enrollment = await captureFaceEnrollment(videoRef.current);
+      if (enrollment.thumbnailDataUrl) setManualCapturedThumb(enrollment.thumbnailDataUrl);
+      if (enrollment.detected && enrollment.descriptor) {
+        setManualCapturedDescriptor(enrollment.descriptor);
       } else {
-        alert('Não foi possível obter imagem da câmera. Posicione o visitante em frente à câmera e tente novamente.');
+        alert('Não foi possível obter leituras faciais suficientes. Mantenha o rosto visível por alguns segundos e tente novamente.');
       }
     } catch (err) {
-      console.warn('Erro ao capturar foto no modal:', err);
+      console.warn('Erro ao capturar biometria no modal:', err);
     } finally {
       setIsCapturingInModal(false);
     }
@@ -625,11 +633,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       lastDetection?.thumbnailDataUrl ||
       lastValidThumbRef.current;
 
-    const descriptorToUse =
-      manualCapturedDescriptor ||
-      unrecognizedFace?.descriptor ||
-      lastDetection?.descriptor ||
-      lastValidDescRef.current;
+    const descriptorToUse = manualCapturedDescriptor;
 
     if (!isFaceDescriptorValid(descriptorToUse)) {
       alert('Não foi possível obter uma biometria facial válida. Recapture a foto ou utilize a entrada manual.');
@@ -1087,7 +1091,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowQuickNewModal(true)}
+                    onClick={() => { void handleOpenQuickNewModal(); }}
                     className="py-2.5 bg-[#004c99] hover:bg-blue-700 text-white rounded-xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 shadow-sm"
                   >
                     <UserPlus size={13} />
@@ -1264,10 +1268,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               <button
                 type="button"
                 onClick={handleSaveQuickLink}
-                disabled={!selectedVisitorToLink}
+                disabled={!selectedVisitorToLink || isCapturingLink}
                 className="flex-1 py-3 bg-[#004c99] hover:bg-blue-800 disabled:opacity-40 text-white rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg"
               >
-                Confirmar Vínculo
+                {isCapturingLink ? 'Capturando biometria...' : 'Confirmar Vínculo'}
               </button>
             </div>
           </div>
@@ -1309,10 +1313,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   <div>
                     <div className="flex items-center gap-1.5 text-emerald-800 font-black text-xs uppercase">
                       <CheckCircle2 size={14} className="text-emerald-600" />
-                      <span>Biometria & Foto Prontas</span>
+                      <span>{manualCapturedDescriptor ? 'Biometria & Foto Prontas' : 'Capturando biometria...'}</span>
                     </div>
                     <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
-                      Rosto registrado com sucesso para o reconhecimento facial.
+                      {manualCapturedDescriptor ? 'Múltiplas leituras faciais consolidadas com sucesso.' : 'Mantenha o rosto visível por alguns segundos.'}
                     </p>
                   </div>
                 </div>
@@ -1323,7 +1327,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   className="px-3.5 py-2 bg-white hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-300 shadow-sm flex items-center gap-1.5 shrink-0 transition-colors"
                 >
                   <Camera size={15} />
-                  {isCapturingInModal ? 'Capturando...' : 'Recapturar Foto'}
+                  {isCapturingInModal ? 'Capturando 3s...' : 'Recapturar Biometria'}
                 </button>
               </div>
             ) : (
@@ -1344,7 +1348,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-2 shrink-0"
                 >
                   <Camera size={16} />
-                  {isCapturingInModal ? 'Capturando...' : 'Tirar Foto Agora'}
+                  {isCapturingInModal ? 'Capturando 3s...' : 'Capturar Biometria'}
                 </button>
               </div>
             )}
