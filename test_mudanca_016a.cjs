@@ -42,7 +42,11 @@ check(camera.includes('recognitionLoopRunningRef.current'), 'loop bloqueia infer
 check(camera.includes('isFaceDescriptorValid(v.faceDescriptor)'), 'câmera ignora descritores biométricos legados');
 check(!camera.includes('length === 128') && !camera.includes('length !== 128'), 'câmera não depende mais do descritor legado de 128 posições');
 check(portal.includes('isFaceDescriptorValid(v.faceDescriptor)'), 'Portal valida apenas biometria neural compatível');
-check(portal.includes('await extractFaceFromCanvasOrVideo(captureVideoRef.current)'), 'captura administrativa aguarda inferência neural');
+check(
+  portal.includes('await extractFaceFromCanvasOrVideo(captureVideoRef.current)') ||
+  portal.includes('await captureFaceEnrollment(captureVideoRef.current)'),
+  'captura administrativa usa o motor facial neural'
+);
 check(!portal.includes('length === 128') && !portal.includes('length !== 128'), 'Portal não depende mais do descritor legado de 128 posições');
 
 console.log('\nMudança 016A:', passed, 'passou |', failed, 'falhou');
