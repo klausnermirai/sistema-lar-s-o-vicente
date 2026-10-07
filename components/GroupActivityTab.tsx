@@ -2,7 +2,7 @@ import { getProfessionalSignature } from '../lib/api';
 import React, { useState, useEffect } from 'react';
 import { Resident, GroupActivity, MuralMessage } from '../types';
 import { Plus, Save, ArrowLeft, Users, Calendar, CheckCircle, Edit, Search, Trash2 } from 'lucide-react';
-import { loadGroupActivities, saveGroupActivity, deleteGroupActivity } from '../lib/groupActivityStore';
+import { buildGroupActivityAgendaEvent, loadGroupActivities, saveGroupActivity, deleteGroupActivity, syncGroupActivityResidents } from '../lib/groupActivityStore';
 import { saveAgendaEvent } from '../lib/agendaStore';
 
 interface GroupActivityTabProps {
@@ -29,7 +29,13 @@ const RESULTS = [
 ];
 
 const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residents, onSaveResident, onPostToMural }) => {
-  const currentUser = { name: 'Profissional Logado', institutionId: 'default-inst' }; // Mock user
+  const sessionStr = localStorage.getItem('ssvp_session');
+  const session = sessionStr ? JSON.parse(sessionStr) : null;
+  const signature = getProfessionalSignature();
+  const currentUser = {
+    name: session?.username || signature.profissionalNome || 'Profissional',
+    institutionId: session?.institutionId || session?.cnpj || ''
+  };
   const [activities, setActivities] = useState<GroupActivity[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -126,9 +132,14 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
       return;
     }
 
+    if (!currentUser.institutionId) {
+      alert('Não foi possível identificar a instituição da sessão.');
+      return;
+    }
+
     const newActivity: GroupActivity = {
       id: editingId || Date.now().toString(),
-      institutionId: currentUser?.institutionId || 'default-inst',
+      institutionId: currentUser.institutionId,
       competence,
       status: formData.status as any,
       date: formData.date!,
@@ -148,19 +159,8 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
     // Save to global store
     await saveGroupActivity(newActivity);
     
-    // Convert and save to Agenda
-    const agendaEvent: any = { // Use any briefly or import AgendaEvent
-      id: `ga-${newActivity.id}`,
-      institutionId: newActivity.institutionId,
-      title: `Atividade em Grupo: ${newActivity.type} (${newActivity.competence.replace('_', ' ')})`,
-      date: newActivity.date,
-      time: newActivity.time,
-      description: newActivity.description,
-      professionalName: newActivity.responsibleProfessional,
-      professionalRole: newActivity.competence,
-      type: 'atividade_grupo'
-    };
-    await saveAgendaEvent(agendaEvent);
+    // Mantém um único espelho canônico da atividade na Agenda.
+    await saveAgendaEvent(buildGroupActivityAgendaEvent(newActivity));
     
     setActivities(prev => {
       if (editingId) {
@@ -179,41 +179,8 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
       });
     }
 
-    // Save to each participating resident's attendances
-    let participatingResidents: Resident[] = [];
-    if (newActivity.participationType === 'Todos os residentes') {
-      participatingResidents = residents;
-    } else if (newActivity.participationType === 'Grupo específico' || newActivity.participationType === 'Participação parcial') {
-      participatingResidents = residents.filter(r => newActivity.selectedResidents.includes(r.id));
-    }
-
-    participatingResidents.forEach(res => {
-      const updatedResident = { ...res };
-      
-      if (competence === 'nutricionista') {
-        const existingGAs = updatedResident.nutrition?.groupActivities || [];
-        const index = existingGAs.findIndex(a => a.id === newActivity.id);
-        const replaced = index >= 0 ? existingGAs.map(a => a.id === newActivity.id ? newActivity : a) : [newActivity, ...existingGAs];
-        updatedResident.nutrition = { ...updatedResident.nutrition, groupActivities: replaced };
-      } else if (competence === 'psicologia') {
-        const existingGAs = updatedResident.psychology?.groupActivities || [];
-        const index = existingGAs.findIndex(a => a.id === newActivity.id);
-        const replaced = index >= 0 ? existingGAs.map(a => a.id === newActivity.id ? newActivity : a) : [newActivity, ...existingGAs];
-        updatedResident.psychology = { ...updatedResident.psychology, groupActivities: replaced };
-      } else if (competence === 'terapeuta_ocupacional') {
-        const existingGAs = updatedResident.occupationalTherapy?.groupActivities || [];
-        const index = existingGAs.findIndex(a => a.id === newActivity.id);
-        const replaced = index >= 0 ? existingGAs.map(a => a.id === newActivity.id ? newActivity : a) : [newActivity, ...existingGAs];
-        updatedResident.occupationalTherapy = { ...updatedResident.occupationalTherapy, groupActivities: replaced };
-      } else if (competence === 'fisioterapeuta') {
-        const existingGAs = updatedResident.physiotherapy?.groupActivities || [];
-        const index = existingGAs.findIndex(a => a.id === newActivity.id);
-        const replaced = index >= 0 ? existingGAs.map(a => a.id === newActivity.id ? newActivity : a) : [newActivity, ...existingGAs];
-        updatedResident.physiotherapy = { ...updatedResident.physiotherapy, groupActivities: replaced };
-      }
-      
-      onSaveResident(updatedResident);
-    });
+    // Mantém a mesma atividade vinculada aos residentes participantes sem duplicar IDs.
+    syncGroupActivityResidents(newActivity, residents, onSaveResident);
 
     setIsFormOpen(false);
   };

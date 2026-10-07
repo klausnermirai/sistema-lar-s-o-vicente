@@ -1,7 +1,8 @@
 import { getProfessionalSignature } from '../lib/api';
 import React, { useState, useEffect, useRef } from 'react';
-import { AgendaEvent, Resident, InstitutionSettings, MuralMessage, Appointment } from '../types';
+import { AgendaEvent, Resident, InstitutionSettings, MuralMessage, Appointment, GroupActivity } from '../types';
 import { loadAgendaEvents, saveAgendaEvent, deleteAgendaEvent } from '../lib/agendaStore';
+import { buildGroupActivityAgendaEvent, loadGroupActivities, saveGroupActivity, syncGroupActivityResidents } from '../lib/groupActivityStore';
 import { fetchSettings } from '../lib/api';
 import { getLocalDateString, formatDateToBR } from '../lib/utils';
 import { 
@@ -44,6 +45,14 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
   // Modais de Criação/Edição
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<AgendaEvent>>({});
+  const [groupActivityDraft, setGroupActivityDraft] = useState<Partial<GroupActivity>>({
+    status: 'agendada',
+    participationType: 'Todos os residentes',
+    selectedResidents: [],
+    involvedProfessionals: [],
+    visibilidade: ['admin', 'publico']
+  });
+  const [involvedProfessionalInput, setInvolvedProfessionalInput] = useState('');
   
   // Modal de Cancelamento
   const [eventToCancel, setEventToCancel] = useState<AgendaEvent | null>(null);
@@ -92,7 +101,92 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
     return days;
   };
 
+  const getSessionCompetence = (): GroupActivity['competence'] | undefined => {
+    const level = session?.accessLevel;
+    return ['nutricionista', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta'].includes(level)
+      ? level as GroupActivity['competence']
+      : undefined;
+  };
+
+  const resetGroupActivityDraft = () => {
+    setGroupActivityDraft({
+      status: 'agendada',
+      competence: getSessionCompetence(),
+      participationType: 'Todos os residentes',
+      selectedResidents: [],
+      responsibleProfessional: session?.username || 'Profissional',
+      involvedProfessionals: [],
+      visibilidade: ['admin', 'publico']
+    });
+    setInvolvedProfessionalInput('');
+  };
+
+  const handleSaveGroupActivityFromAgenda = async () => {
+    const institutionId = session?.institutionId;
+    if (!institutionId) {
+      alert('Não foi possível identificar a instituição da sessão.');
+      return;
+    }
+
+    if (!formData.date || !formData.time || !formData.description || !groupActivityDraft.competence || !groupActivityDraft.type) {
+      alert('Preencha data, hora, área responsável, tipo de atividade e descrição.');
+      return;
+    }
+
+    if (
+      (groupActivityDraft.participationType === 'Grupo específico' || groupActivityDraft.participationType === 'Participação parcial')
+      && !(groupActivityDraft.selectedResidents || []).length
+    ) {
+      alert('Selecione pelo menos um residente.');
+      return;
+    }
+
+    const existingActivityId = formData.id?.startsWith('ga-') ? formData.id.slice(3) : groupActivityDraft.id;
+    const activity: GroupActivity = {
+      id: existingActivityId || Date.now().toString(),
+      institutionId,
+      competence: groupActivityDraft.competence,
+      status: groupActivityDraft.status || 'agendada',
+      date: formData.date,
+      time: formData.time,
+      type: groupActivityDraft.type,
+      description: formData.description,
+      participationType: groupActivityDraft.participationType || 'Todos os residentes',
+      selectedResidents: groupActivityDraft.selectedResidents || [],
+      responsibleProfessional: groupActivityDraft.responsibleProfessional || session?.username || 'Profissional',
+      involvedProfessionals: groupActivityDraft.involvedProfessionals || [],
+      result: groupActivityDraft.result || '',
+      observations: groupActivityDraft.observations || '',
+      visibilidade: groupActivityDraft.visibilidade || ['admin', 'publico'],
+      timestamp: groupActivityDraft.timestamp || Date.now()
+    };
+
+    const isUpdate = !!existingActivityId;
+    await saveGroupActivity(activity);
+    await saveAgendaEvent(buildGroupActivityAgendaEvent(activity));
+    syncGroupActivityResidents(activity, residents, onSaveResident);
+
+    if (!isUpdate && onPostToMural && activity.visibilidade?.length) {
+      onPostToMural({
+        author: activity.responsibleProfessional,
+        text: `Atividade em Grupo (${activity.type}): ${activity.description}`,
+        detailedContent: `Data e Hora: ${activity.date} às ${activity.time}\nCompetência: ${activity.competence}\nParticipantes selecionados: ${activity.selectedResidents.length}\n\nDescrição:\n${activity.description}\n\nResultado/Evolução:\n${activity.result || 'Sem resultado registrado.'}`,
+        visibilidade: activity.visibilidade
+      });
+    }
+
+    setEvents(await loadAgendaEvents(institutionId));
+    setIsFormOpen(false);
+    setFormData({});
+    resetGroupActivityDraft();
+  };
+
   const handleSave = async () => {
+    if (formData.type === 'atividade_grupo') {
+      await handleSaveGroupActivityFromAgenda();
+      return;
+    }
+
     if (formData.type !== 'salao_festas' && (!formData.title || !formData.date || !formData.time)) {
       alert("Preencha título, data e hora.");
       return;
@@ -157,8 +251,22 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
     setFormData({});
   };
 
-  const handleEdit = (event: AgendaEvent) => {
+  const handleEdit = async (event: AgendaEvent) => {
     setFormData(event);
+
+    if (event.type === 'atividade_grupo' && session?.institutionId) {
+      try {
+        const activities = await loadGroupActivities(session.institutionId);
+        const activityId = event.id.startsWith('ga-') ? event.id.slice(3) : event.id;
+        const activity = activities.find(a => a.id === activityId);
+        if (activity) setGroupActivityDraft(activity);
+        else resetGroupActivityDraft();
+      } catch (error) {
+        console.error('Erro ao carregar atividade em grupo vinculada:', error);
+        resetGroupActivityDraft();
+      }
+    }
+
     setIsFormOpen(true);
   };
 
@@ -617,6 +725,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
           <button 
             onClick={() => {
               setFormData({ date: formatDate(currentDate), time: '08:00', type: 'comum' });
+              resetGroupActivityDraft();
               setIsFormOpen(true);
             }}
             className="flex items-center gap-2 bg-[#004c99] hover:bg-blue-800 text-white px-6 py-3 rounded-xl font-black text-xs transition-all uppercase tracking-widest shadow-lg shadow-blue-900/20 active:scale-95"
@@ -802,7 +911,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
       {/* MODAL: Criar / Editar Compromisso */}
       {isFormOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-           <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in duration-300 flex flex-col max-h-[90vh]">
+           <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in duration-300 flex flex-col max-h-[90vh]">
                <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                    <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">
                      {formData.id ? 'Editar Compromisso' : 'Agendar Novo Compromisso'}
@@ -818,7 +927,10 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                         {['comum', 'consulta_exame', 'atividade_grupo', 'triagem', 'salao_festas'].map(t => (
                             <button
                                 key={t}
-                                onClick={() => setFormData({...formData, type: t as any})}
+                                onClick={() => {
+                                  setFormData({...formData, type: t as any});
+                                  if (t === 'atividade_grupo') resetGroupActivityDraft();
+                                }}
                                 className={`px-4 py-2 text-xs font-bold rounded-lg capitalize whitespace-nowrap transition-all ${
                                     (formData.type || 'comum') === t 
                                     ? 'bg-white shadow-sm text-[#004c99]' 
@@ -831,7 +943,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                     </div>
                  </div>
                  
-                 {formData.type !== 'salao_festas' && (
+                 {formData.type !== 'salao_festas' && formData.type !== 'atividade_grupo' && (
                    <div className="space-y-1">
                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Título do Compromisso *</label>
                       <input 
@@ -916,6 +1028,7 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                          </div>
                      </div>
     
+                     {formData.type !== 'atividade_grupo' && (
                      <div className="space-y-1">
                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Residente Relacionado (Opcional)</label>
                         <select 
@@ -929,7 +1042,169 @@ const AgendaModule: React.FC<AgendaModuleProps> = ({ session, residents, onSaveR
                             ))}
                         </select>
                      </div>
+                     )}
                    </>
+                 )}
+
+                 {formData.type === 'atividade_grupo' && (
+                   <div className="space-y-5 rounded-2xl border border-blue-100 bg-blue-50/40 p-5">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Área responsável *</label>
+                         <select
+                           value={groupActivityDraft.competence || ''}
+                           onChange={e => setGroupActivityDraft({...groupActivityDraft, competence: e.target.value as GroupActivity['competence']})}
+                           disabled={!!groupActivityDraft.id}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white disabled:bg-gray-100 disabled:text-gray-500"
+                         >
+                           <option value="">Selecione...</option>
+                           <option value="terapeuta_ocupacional">Terapia Ocupacional</option>
+                           <option value="psicologia">Psicologia</option>
+                           <option value="nutricionista">Nutrição</option>
+                           <option value="fisioterapeuta">Fisioterapia</option>
+                         </select>
+                       </div>
+                       <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Tipo de atividade *</label>
+                         <select
+                           value={groupActivityDraft.type || ''}
+                           onChange={e => setGroupActivityDraft({...groupActivityDraft, type: e.target.value})}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                         >
+                           <option value="">Selecione...</option>
+                           {['Recreativa', 'Cognitiva', 'Motora', 'Social', 'Espiritual', 'Outro'].map(type => <option key={type} value={type}>{type}</option>)}
+                         </select>
+                       </div>
+                     </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Status</label>
+                         <select
+                           value={groupActivityDraft.status || 'agendada'}
+                           onChange={e => setGroupActivityDraft({...groupActivityDraft, status: e.target.value as GroupActivity['status']})}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                         >
+                           <option value="agendada">Agendada</option>
+                           <option value="realizada">Realizada</option>
+                           <option value="cancelada">Cancelada</option>
+                         </select>
+                       </div>
+                       <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Participação</label>
+                         <select
+                           value={groupActivityDraft.participationType || 'Todos os residentes'}
+                           onChange={e => setGroupActivityDraft({...groupActivityDraft, participationType: e.target.value as GroupActivity['participationType'], selectedResidents: e.target.value === 'Todos os residentes' ? [] : groupActivityDraft.selectedResidents})}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                         >
+                           <option value="Todos os residentes">Todos os residentes</option>
+                           <option value="Grupo específico">Grupo específico</option>
+                           <option value="Participação parcial">Participação parcial</option>
+                         </select>
+                       </div>
+                     </div>
+
+                     {groupActivityDraft.participationType !== 'Todos os residentes' && (
+                       <div className="space-y-2">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Residentes participantes *</label>
+                         <div className="max-h-40 overflow-y-auto rounded-xl border bg-white p-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                           {residents.map(resident => (
+                             <label key={resident.id} className="flex items-center gap-2 text-xs font-medium text-gray-700">
+                               <input
+                                 type="checkbox"
+                                 checked={(groupActivityDraft.selectedResidents || []).includes(resident.id)}
+                                 onChange={() => {
+                                   const selected = groupActivityDraft.selectedResidents || [];
+                                   setGroupActivityDraft({
+                                     ...groupActivityDraft,
+                                     selectedResidents: selected.includes(resident.id)
+                                       ? selected.filter(id => id !== resident.id)
+                                       : [...selected, resident.id]
+                                   });
+                                 }}
+                               />
+                               {resident.name}
+                             </label>
+                           ))}
+                         </div>
+                       </div>
+                     )}
+
+                     <div className="space-y-1">
+                       <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Profissional responsável</label>
+                       <input
+                         type="text"
+                         value={groupActivityDraft.responsibleProfessional || session?.username || ''}
+                         onChange={e => setGroupActivityDraft({...groupActivityDraft, responsibleProfessional: e.target.value})}
+                         className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                       />
+                     </div>
+
+                     <div className="space-y-2">
+                       <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Profissionais envolvidos</label>
+                       <div className="flex gap-2">
+                         <input
+                           type="text"
+                           value={involvedProfessionalInput}
+                           onChange={e => setInvolvedProfessionalInput(e.target.value)}
+                           className="flex-1 p-3 border-2 border-gray-100 rounded-xl text-sm bg-white"
+                           placeholder="Nome do profissional"
+                         />
+                         <button
+                           type="button"
+                           onClick={() => {
+                             const name = involvedProfessionalInput.trim();
+                             if (!name) return;
+                             setGroupActivityDraft({...groupActivityDraft, involvedProfessionals: [...(groupActivityDraft.involvedProfessionals || []), name]});
+                             setInvolvedProfessionalInput('');
+                           }}
+                           className="px-4 py-2 bg-white border border-blue-200 text-[#004c99] rounded-xl text-xs font-black uppercase"
+                         >
+                           Adicionar
+                         </button>
+                       </div>
+                       <div className="flex flex-wrap gap-2">
+                         {(groupActivityDraft.involvedProfessionals || []).map((name, index) => (
+                           <span key={`${name}-${index}`} className="px-3 py-1 bg-white border border-blue-100 rounded-full text-xs font-bold text-gray-700">
+                             {name}
+                             <button
+                               type="button"
+                               onClick={() => setGroupActivityDraft({...groupActivityDraft, involvedProfessionals: (groupActivityDraft.involvedProfessionals || []).filter((_, i) => i !== index)})}
+                               className="ml-2 text-gray-400 hover:text-red-500"
+                             >
+                               ×
+                             </button>
+                           </span>
+                         ))}
+                       </div>
+                     </div>
+
+                     {groupActivityDraft.status === 'realizada' && (
+                       <div className="space-y-1">
+                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Resultado / evolução</label>
+                         <select
+                           value={groupActivityDraft.result || ''}
+                           onChange={e => setGroupActivityDraft({...groupActivityDraft, result: e.target.value})}
+                           className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-bold bg-white"
+                         >
+                           <option value="">Sem resultado informado</option>
+                           <option value="Excelente">Excelente</option>
+                           <option value="Boa">Boa</option>
+                           <option value="Regular">Regular</option>
+                           <option value="Baixa adesão">Baixa adesão</option>
+                         </select>
+                       </div>
+                     )}
+
+                     <div className="space-y-1">
+                       <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Observações</label>
+                       <textarea
+                         value={groupActivityDraft.observations || ''}
+                         onChange={e => setGroupActivityDraft({...groupActivityDraft, observations: e.target.value})}
+                         className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm bg-white min-h-[80px]"
+                       />
+                     </div>
+                   </div>
                  )}
 
                  {formData.type === 'consulta_exame' && (
