@@ -8,7 +8,8 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "postinstall": "node scripts/copy-human-models.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.19.0",
@@ -28,7 +29,8 @@
     "react-dom": "^19.2.4",
     "recharts": "^3.8.1",
     "tsx": "^4.21.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "@vladmandic/human": "3.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
