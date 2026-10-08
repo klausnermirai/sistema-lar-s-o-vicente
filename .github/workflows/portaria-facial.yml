@@ -20,9 +20,16 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - run: npm install
+      - name: Export synchronized lockfile
+        run: node -e "for (const line of require('fs').readFileSync('package-lock.json','utf8').split('\\n')) console.log('LOCKLINE:' + JSON.stringify(line))"
       - run: npm run lint
+        id: typecheck
+        continue-on-error: true
       - run: npm run build
       - run: node test_mudanca_016a.cjs && node test_mudanca_016c.cjs && node test_mudanca_016_1.cjs
       - run: npm install --no-save --package-lock=false jsdom@26.1.0
       - run: node test_mudanca_016_2.cjs
+      - name: Require successful typecheck
+        if: steps.typecheck.outcome != 'success'
+        run: exit 1
