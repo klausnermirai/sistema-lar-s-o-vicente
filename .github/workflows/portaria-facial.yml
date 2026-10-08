@@ -24,3 +24,5 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: node test_mudanca_016a.cjs && node test_mudanca_016c.cjs && node test_mudanca_016_1.cjs
+      - run: npm install --no-save --package-lock=false jsdom@26.1.0
+      - run: node test_mudanca_016_2.cjs
