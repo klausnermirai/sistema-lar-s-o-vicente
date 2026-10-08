@@ -125,4 +125,4 @@ const props = {
   assert.ok(streams.every(stream => stream.getTracks()[0].stopped), 'unmount stops every camera');
   dom.window.close();
   console.log('PASS: real React rendering, preparation, restart, capture modal, retry, success and cleanup');
-})().catch(error => { console.error(error); process.exitCode = 1; dom.window.close(); });
+})().catch(error => { console.error(error); dom.window.close(); process.exit(1); });
