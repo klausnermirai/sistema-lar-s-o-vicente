@@ -27,6 +27,7 @@ import {
   findBestFaceMatch, 
   isFaceDescriptorValid,
   captureFaceEnrollment,
+  initializeFaceRecognition,
   FaceDetectionResult 
 } from '../lib/faceRecognition';
 
@@ -86,6 +87,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraRequestRef = useRef(0);
+  const captureVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [camerasListed, setCamerasListed] = useState(false);
 
   const [streamActive, setStreamActive] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -149,6 +154,8 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   const [manualCapturedDescriptor, setManualCapturedDescriptor] = useState<number[] | null>(null);
   const [isCapturingInModal, setIsCapturingInModal] = useState<boolean>(false);
   const [isCapturingLink, setIsCapturingLink] = useState<boolean>(false);
+  const [showCaptureModal, setShowCaptureModal] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
 
   const speak = useCallback((text: string) => {
     if (!voiceEnabled) return;
@@ -173,36 +180,49 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
         }
       } catch (err) {
         console.warn('Não foi possível listar dispositivos de vídeo:', err);
+      } finally {
+        setCamerasListed(true);
       }
     }
     listCameras();
-  }, [selectedDeviceId]);
+  }, []);
 
   // Iniciar Stream de Vídeo
   const startCamera = useCallback(async () => {
+    const requestId = ++cameraRequestRef.current;
     setCameraError(null);
+    setStreamActive(false);
+    setLastDetection(null);
+    cameraStreamRef.current?.getTracks().forEach(track => track.stop());
+    cameraStreamRef.current = null;
+    let preparingModels = true;
     try {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
-      }
-
+      await initializeFaceRecognition();
+      if (requestId !== cameraRequestRef.current) return;
+      preparingModels = false;
       const constraints: MediaStreamConstraints = {
-        video: selectedDeviceId 
+        video: selectedDeviceId
           ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
           : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
       };
-
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-        setStreamActive(true);
+      if (requestId !== cameraRequestRef.current || !videoRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
       }
+      cameraStreamRef.current = stream;
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      if (requestId !== cameraRequestRef.current) return;
+      setStreamActive(true);
     } catch (err: any) {
-      console.error('Erro ao acessar câmera:', err);
-      setStreamActive(false);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      if (requestId !== cameraRequestRef.current) return;
+      cameraStreamRef.current?.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+      console.error('Erro ao preparar câmera:', err);
+      if (preparingModels) {
+        setCameraError('Não foi possível carregar o reconhecimento facial. Verifique a conexão e tente novamente.');
+      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setCameraError('Permissão para uso da câmera foi negada. Por favor, autorize no navegador.');
       } else if (err.name === 'NotFoundError') {
         setCameraError('Nenhuma câmera encontrada no dispositivo.');
@@ -212,16 +232,26 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     }
   }, [selectedDeviceId]);
 
-  // Desligar câmera ao desmontar
+  // Aguarda a seleção inicial para abrir apenas um stream.
   useEffect(() => {
-    startCamera();
+    if (!camerasListed) return;
+    void startCamera();
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
-      }
+      cameraRequestRef.current += 1;
+      cameraStreamRef.current?.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
     };
-  }, [startCamera]);
+  }, [camerasListed, startCamera]);
+
+  // A prévia do modal compartilha o stream; não solicita outra câmera.
+  const attachCaptureVideo = useCallback((video: HTMLVideoElement | null) => {
+    if (captureVideoRef.current) captureVideoRef.current.srcObject = null;
+    captureVideoRef.current = video;
+    if (video && cameraStreamRef.current) {
+      video.srcObject = cameraStreamRef.current;
+      void video.play().catch(() => setCaptureError('Não foi possível exibir a câmera. Feche a captura e reinicie a câmera.'));
+    }
+  }, [streamActive]);
 
   // Resetar e reiniciar escaneamento
   const handleRetryScan = useCallback(() => {
@@ -263,6 +293,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   // Loop de Detecção e Reconhecimento Facial em Tempo Real (a cada 400ms)
   useEffect(() => {
     let timer: NodeJS.Timeout;
+    let cancelled = false;
     if (
       !streamActive ||
       confirmedSuccess ||
@@ -287,6 +318,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       setIsProcessing(true);
       try {
         const detection = await extractFaceFromCanvasOrVideo(videoRef.current);
+        if (cancelled) return;
         setLastDetection(detection);
 
         if (detection.detected && detection.descriptor) {
@@ -436,7 +468,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     };
 
     timer = setInterval(runRecognitionLoop, 400);
-    return () => clearInterval(timer);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [
     streamActive,
     registeredVisitors,
@@ -585,43 +620,40 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     }
   };
 
-  // Abrir Modal de Cadastro Rápido com foto do frame atual
-  const handleOpenQuickNewModal = async () => {
+  // O cadastro abre primeiro; a captura é iniciada pelo visitante.
+  const handleOpenQuickNewModal = () => {
     setShowQuickNewModal(true);
     setManualCapturedThumb(null);
     setManualCapturedDescriptor(null);
-
-    if (!videoRef.current) return;
-
-    setIsCapturingInModal(true);
-    try {
-      const enrollment = await captureFaceEnrollment(videoRef.current);
-      if (enrollment.thumbnailDataUrl) setManualCapturedThumb(enrollment.thumbnailDataUrl);
-      if (enrollment.detected && enrollment.descriptor) {
-        setManualCapturedDescriptor(enrollment.descriptor);
-      }
-    } catch (e) {
-      console.warn('Tentativa de cadastro facial inicial:', e);
-    } finally {
-      setIsCapturingInModal(false);
-    }
   };
 
-  // Capturar/Recapturar Foto Manualmente no Modal
+  const handleOpenCaptureModal = () => {
+    setCaptureError(null);
+    setShowCaptureModal(true);
+  };
+
+  // Captura no vídeo visível do modal, usando o mesmo stream.
   const handleCaptureManualPhotoInModal = async () => {
-    if (!videoRef.current || isCapturingInModal) return;
+    const video = captureVideoRef.current;
+    if (!streamActive || !video || video.readyState < 2 || isCapturingInModal) {
+      setCaptureError('Aguarde a câmera ficar pronta e tente novamente.');
+      return;
+    }
+    setCaptureError(null);
     setIsCapturingInModal(true);
     setManualCapturedDescriptor(null);
     try {
-      const enrollment = await captureFaceEnrollment(videoRef.current);
+      const enrollment = await captureFaceEnrollment(video);
       if (enrollment.thumbnailDataUrl) setManualCapturedThumb(enrollment.thumbnailDataUrl);
       if (enrollment.detected && enrollment.descriptor) {
         setManualCapturedDescriptor(enrollment.descriptor);
+        setShowCaptureModal(false);
       } else {
-        alert('Não foi possível obter leituras faciais suficientes. Mantenha o rosto visível por alguns segundos e tente novamente.');
+        setCaptureError('Não houve leituras faciais suficientes. Mantenha o rosto visível e tente novamente.');
       }
     } catch (err) {
       console.warn('Erro ao capturar biometria no modal:', err);
+      setCaptureError('Não foi possível capturar a biometria. Tente novamente.');
     } finally {
       setIsCapturingInModal(false);
     }
@@ -764,7 +796,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
           <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 shadow-sm">
             <Shield size={13} className="text-[#004c99]" />
             <span className="text-[9px] font-black uppercase text-gray-400">Validação facial</span>
-            <span className="text-[11px] font-black text-gray-700">75% + 2 leituras</span>
+            <span className="text-[11px] font-black text-gray-700">75% + 3 leituras</span>
           </div>
 
           {availableDevices.length > 1 && (
@@ -854,9 +886,15 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 autoPlay
                 playsInline
                 muted
-                className="w-full h-full object-cover transform -scale-x-100"
+                className={`w-full h-full object-cover transform -scale-x-100 ${streamActive ? '' : 'invisible'}`}
               />
               <canvas ref={canvasRef} className="hidden" />
+            {!streamActive && (
+              <div className="absolute inset-0 z-10 bg-gray-900 flex flex-col items-center justify-center gap-3 text-white" role="status">
+                <RefreshCw size={28} className="animate-spin" />
+                <p className="text-sm font-bold">Preparando reconhecimento facial...</p>
+              </div>
+            )}
 
               {/* Moldura Guia de Enquadramento Facial (HUD) */}
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
@@ -1365,7 +1403,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 </div>
                 <button
                   type="button"
-                  onClick={handleCaptureManualPhotoInModal}
+                  onClick={handleOpenCaptureModal}
                   className="px-3.5 py-2 bg-white hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-300 shadow-sm flex items-center gap-1.5 shrink-0 transition-colors"
                 >
                   <Camera size={15} />
@@ -1398,7 +1436,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 </div>
                 <button
                   type="button"
-                  onClick={handleCaptureManualPhotoInModal}
+                  onClick={handleOpenCaptureModal}
                   className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-2 shrink-0"
                 >
                   <Camera size={16} />
@@ -1434,7 +1472,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   value={quickPhone}
                   onChange={(e) => setQuickPhone(e.target.value)}
                   placeholder="(00) 00000-0000"
-                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold text-gray-900 placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#004c99]/20"
                 />
               </div>
 
@@ -1444,7 +1482,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   required
                   value={quickResidentId}
                   onChange={(e) => setQuickResidentId(e.target.value)}
-                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-[#004c99]/20"
+                  className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold text-gray-900 placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-[#004c99]/20"
                 >
                   <option value="">Selecione o residente...</option>
                   {residents.map((r) => (
@@ -1472,6 +1510,35 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5"
               >
                 <CheckCircle2 size={16} /> {isCapturingInModal ? 'Capturando biometria...' : 'Cadastrar e Registrar Entrada'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Captura dedicada, sem abrir um segundo dispositivo de câmera */}
+      {showCaptureModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="capture-title" className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <h3 id="capture-title" className="text-lg font-black text-gray-900">Capturar biometria facial</h3>
+            <div className="relative bg-gray-900 rounded-2xl overflow-hidden aspect-[4/3]">
+              <video ref={attachCaptureVideo} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
+              {!streamActive && (
+                <div className="absolute inset-0 bg-gray-900 flex items-center justify-center text-white" role="status">
+                  Preparando reconhecimento facial...
+                </div>
+              )}
+            </div>
+            <p className="text-sm text-gray-700" role="status">
+              {isCapturingInModal ? 'Capturando biometria... Mantenha o rosto visível por aproximadamente 3 segundos.' : 'Posicione o rosto no centro da câmera e inicie a captura.'}
+            </p>
+            {captureError && <p role="alert" className="text-sm font-bold text-rose-700">{captureError}</p>}
+            <div className="flex gap-3">
+              <button type="button" disabled={isCapturingInModal} onClick={() => setShowCaptureModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold disabled:opacity-40">
+                Voltar ao cadastro
+              </button>
+              <button type="button" disabled={!streamActive || isCapturingInModal} onClick={handleCaptureManualPhotoInModal} className="flex-1 py-3 bg-[#004c99] text-white rounded-xl font-bold disabled:opacity-40">
+                {isCapturingInModal ? 'Capturando...' : 'Iniciar captura'}
               </button>
             </div>
           </div>
