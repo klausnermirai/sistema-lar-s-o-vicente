@@ -866,8 +866,15 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
         
         {/* Lado Esquerdo: Feed da Câmera com Overlay Biométrico HUD */}
         <div className="lg:col-span-7 bg-gray-900 rounded-2xl sm:rounded-3xl overflow-hidden relative shadow-xl h-[320px] sm:h-[420px] lg:h-[calc(100vh-160px)] lg:min-h-[420px] lg:max-h-[660px] flex items-center justify-center border-2 border-slate-700/60">
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={`w-full h-full object-cover transform -scale-x-100 ${streamActive ? '' : 'invisible'}`}
+          />
           {cameraError ? (
-            <div className="p-6 text-center text-white max-w-md space-y-3">
+            <div className="absolute inset-0 z-20 bg-gray-900 p-6 text-center text-white space-y-3 flex flex-col items-center justify-center">
               <CameraOff size={40} className="mx-auto text-rose-400" />
               <h3 className="text-base font-black uppercase tracking-wider">Câmera Indisponível</h3>
               <p className="text-xs text-gray-300">{cameraError}</p>
@@ -881,20 +888,13 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             </div>
           ) : (
             <>
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className={`w-full h-full object-cover transform -scale-x-100 ${streamActive ? '' : 'invisible'}`}
-              />
               <canvas ref={canvasRef} className="hidden" />
-            {!streamActive && (
-              <div className="absolute inset-0 z-10 bg-gray-900 flex flex-col items-center justify-center gap-3 text-white" role="status">
-                <RefreshCw size={28} className="animate-spin" />
-                <p className="text-sm font-bold">Preparando reconhecimento facial...</p>
-              </div>
-            )}
+              {!streamActive && (
+                <div className="absolute inset-0 z-10 pointer-events-none bg-gray-900 flex flex-col items-center justify-center gap-3 text-white" role="status">
+                  <RefreshCw size={28} className="animate-spin" />
+                  <p className="text-sm font-bold">Preparando reconhecimento facial...</p>
+                </div>
+              )}
 
               {/* Moldura Guia de Enquadramento Facial (HUD) */}
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
