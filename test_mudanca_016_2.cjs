@@ -23,10 +23,12 @@ const { createRoot } = require('react-dom/client');
 let releaseModels;
 const modelsReady = new Promise(resolve => { releaseModels = resolve; });
 let opened = 0;
+let denyCamera = false;
 const streams = [];
 navigator.mediaDevices = {
   enumerateDevices: async () => [{ kind: 'videoinput', deviceId: 'camera-1', label: 'Camera 1' }],
   getUserMedia: async () => {
+    if (denyCamera) { const error = new Error('denied'); error.name = 'NotAllowedError'; throw error; }
     opened++;
     const track = { stopped: false, stop() { this.stopped = true; } };
     const stream = { getTracks: () => [track] };
@@ -121,6 +123,13 @@ const props = {
   assert.equal(document.querySelector('[role=dialog]'), null, 'successful capture returns to registration');
   assert.match(document.body.textContent, /Biometria e Foto Prontas/);
   assert.ok(button('Recapturar Biometria'), 'successful enrollment permits recapture');
+  denyCamera = true;
+  await click('Reiniciar Câmera');
+  assert.match(document.body.textContent, /Permissão para uso da câmera foi negada/);
+  denyCamera = false;
+  await click('Tentar Novamente');
+  assert.equal(document.querySelector('video').srcObject, streams.at(-1), 'retry after camera failure reconnects video');
+  assert.ok(!document.querySelector('video').className.includes('invisible'), 'retry makes camera ready');
   await act(async () => { root.unmount(); });
   assert.ok(streams.every(stream => stream.getTracks()[0].stopped), 'unmount stops every camera');
   dom.window.close();
