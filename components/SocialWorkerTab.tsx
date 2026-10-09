@@ -26,7 +26,8 @@ import {
   X,
   Volume2,
   Lock,
-  Eye
+  Eye,
+  AlertCircle
 } from 'lucide-react';
 import { getLocalDateString, formatDateToBR } from '../lib/utils';
 import {
@@ -129,11 +130,12 @@ export default function SocialWorkerTab({
   const [filterDateTo, setFilterDateTo] = useState('');
 
   const [evolutions, setEvolutions] = useState<SocialWorkEvolution[]>(resident.socialWork?.evolutions || []);
-  const [unlockedRecords, setUnlockedRecords] = useState<Record<string, { description: string; referrals: string }>>({});
+  const [unlockedRecords, setUnlockedRecords] = useState<Record<string, { description: string; referrals: string; reauthToken?: string }>>({});
   const [unlockTarget, setUnlockTarget] = useState<SocialWorkEvolution | null>(null);
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlockError, setUnlockError] = useState('');
   const [isUnlocking, setIsUnlocking] = useState(false);
+  const [pendingEditId, setPendingEditId] = useState<string | null>(null);
 
   const makeInitialForm = (): Partial<SocialWorkEvolution> => {
     const prof = getProfessionalSignature();
@@ -171,10 +173,12 @@ export default function SocialWorkerTab({
 
   const activeRelatives = (resident.relatives || []).filter(r => !r.deceased);
   const responsible = activeRelatives.find(r => r.isResponsible) || activeRelatives[0];
+  const originalEvo = editingId ? evolutions.find(e => e.id === editingId) : null;
 
   const resetForm = () => {
     setFormData(makeInitialForm());
     setEditingId(null);
+    setPendingEditId(null);
   };
 
   const handleStartNew = () => {
@@ -194,12 +198,14 @@ export default function SocialWorkerTab({
   const handleStartEdit = (evo: SocialWorkEvolution) => {
     const unlocked = getVisibleContent(evo);
     if (isConfidential(evo) && !unlocked) {
+      setPendingEditId(evo.id);
       setUnlockTarget(evo);
       setUnlockPassword('');
       setUnlockError('Desbloqueie o registro antes de editá-lo.');
       return;
     }
 
+    setPendingEditId(null);
     setEditingId(evo.id);
     setFormData({
       ...evo,
@@ -242,7 +248,10 @@ export default function SocialWorkerTab({
       : (formData.type === 'contato_familia' ? 'contato_familia' : 'atendimento_individual');
     const visibility = formData.visibility === 'confidential' ? 'confidential' : 'institutional';
 
-    const payload = {
+    const originalEvo = editingId ? evolutions.find(e => e.id === editingId) : null;
+    const isConverting = originalEvo?.visibility === 'confidential' && visibility === 'institutional';
+
+    const payload: any = {
       institutionId: resident.institutionId,
       residentId: resident.id,
       date: formData.date || getLocalDateString(),
@@ -257,6 +266,21 @@ export default function SocialWorkerTab({
       visibility
     };
 
+    if (isConverting) {
+      const storedToken = unlockedRecords[editingId]?.reauthToken;
+      if (!storedToken) {
+        alert('Para converter este registro sigiloso em institucional, é necessário reautenticar sua senha.');
+        if (originalEvo) {
+          setPendingEditId(editingId);
+          setUnlockTarget(originalEvo);
+          setUnlockPassword('');
+          setUnlockError('Confirme sua senha para validar a conversão de sigilo.');
+        }
+        return;
+      }
+      payload.reauthToken = storedToken;
+    }
+
     try {
       const result = editingId
         ? await updateSocialWorkRecord(editingId, payload)
@@ -267,14 +291,30 @@ export default function SocialWorkerTab({
       setEvolutions(nextEvolutions);
       onChange(nextSocialWork);
 
-      if (visibility === 'confidential' && result?.record?.id) {
+      if (isConverting) {
+        setUnlockedRecords(prev => {
+          const next = { ...prev };
+          delete next[editingId];
+          return next;
+        });
+      } else if (visibility === 'confidential' && result?.record?.id) {
         setUnlockedRecords(prev => ({
           ...prev,
-          [result.record.id]: { description, referrals: payload.referrals }
+          [result.record.id]: {
+            description,
+            referrals: payload.referrals,
+            reauthToken: prev[result.record.id]?.reauthToken
+          }
         }));
       }
 
-      setFeedbackMsg(editingId ? 'Atendimento atualizado com sucesso!' : 'Atendimento registrado no prontuário!');
+      setFeedbackMsg(
+        editingId
+          ? (isConverting
+              ? 'Atendimento convertido para institucional e publicado no mural!'
+              : 'Atendimento atualizado com sucesso!')
+          : 'Atendimento registrado no prontuário!'
+      );
       setTimeout(() => setFeedbackMsg(null), 3500);
       resetForm();
       setActiveSubTab('acoes');
@@ -292,13 +332,28 @@ export default function SocialWorkerTab({
     try {
       const reauthToken = await createSocialWorkReauthToken(unlockPassword);
       const content = await unlockConfidentialSocialRecord(resident.id, unlockTarget.id, reauthToken);
+      const unlockedData = {
+        description: content?.description || '',
+        referrals: content?.referrals || '',
+        reauthToken
+      };
       setUnlockedRecords(prev => ({
         ...prev,
-        [unlockTarget.id]: {
-          description: content?.description || '',
-          referrals: content?.referrals || ''
-        }
+        [unlockTarget.id]: unlockedData
       }));
+
+      // Se havia intenção de editar este registro, entra diretamente no modo de edição
+      if (pendingEditId === unlockTarget.id) {
+        setEditingId(unlockTarget.id);
+        setFormData({
+          ...unlockTarget,
+          description: unlockedData.description,
+          referrals: unlockedData.referrals
+        });
+        setActiveSubTab('novo');
+        setPendingEditId(null);
+      }
+
       setUnlockTarget(null);
       setUnlockPassword('');
     } catch (err: any) {
@@ -1041,7 +1096,7 @@ export default function SocialWorkerTab({
               <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">Visibilidade *</label>
               <select
                 value={formData.visibility || 'institutional'}
-                disabled={!!editingId}
+                disabled={Boolean(editingId && originalEvo?.visibility === 'institutional')}
                 onChange={e => {
                   const visibility = e.target.value === 'confidential' ? 'confidential' : 'institutional';
                   setFormData({ ...formData, visibility, postToMural: visibility === 'institutional' });
@@ -1049,10 +1104,24 @@ export default function SocialWorkerTab({
                 className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-[#004c99] focus:outline-none disabled:opacity-60"
               >
                 <option value="institutional">Institucional — vai para o mural</option>
-                <option value="confidential">Sigiloso — somente Serviço Social</option>
+                {!(editingId && originalEvo?.visibility === 'institutional') && (
+                  <option value="confidential">Sigiloso — somente Serviço Social</option>
+                )}
               </select>
             </div>
           </div>
+
+          {editingId && originalEvo?.visibility === 'confidential' && formData.visibility === 'institutional' && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3">
+              <AlertCircle size={18} className="text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs font-black text-amber-900 uppercase tracking-wide">Conversão para Registro Institucional</p>
+                <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
+                  Ao salvar como institucional, este atendimento deixará de ser sigiloso, passará a integrar o prontuário geral do residente e será publicado no mural da equipe.
+                </p>
+              </div>
+            </div>
+          )}
 
           {formData.type === 'atendimento_individual' && (
             <div>

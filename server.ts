@@ -4306,8 +4306,17 @@ async function startServer() {
 
       const currentVisibility = current.visibility === 'confidential' ? 'confidential' : 'institutional';
       const requestedVisibility = data.visibility === 'confidential' ? 'confidential' : 'institutional';
-      if (currentVisibility !== requestedVisibility) {
-        return res.status(400).json({ error: 'A classificação de sigilo não pode ser alterada nesta edição.' });
+
+      if (currentVisibility === 'institutional' && requestedVisibility === 'confidential') {
+        return res.status(400).json({ error: 'A conversão de registro institucional para sigiloso não é permitida.' });
+      }
+
+      const isConvertingFromConfidential = currentVisibility === 'confidential' && requestedVisibility === 'institutional';
+      if (isConvertingFromConfidential) {
+        const proof = verifyReauthToken(String(data.reauthToken || ''));
+        if (!proof.valid || proof.userId !== req.user?.id) {
+          return res.status(401).json({ error: 'Confirmação de identidade inválida ou expirada para conversão de sigilo.' });
+        }
       }
 
       const description = sanitizeSocialText(data.description);
@@ -4316,6 +4325,16 @@ async function startServer() {
       const type = ['atendimento_individual', 'contato_familia'].includes(data.type)
         ? data.type
         : (current.type || 'atendimento_individual');
+
+      let targetMuralId = current.muralMessageId;
+      let muralRef: any = null;
+      if (isConvertingFromConfidential && !targetMuralId) {
+        muralRef = db.collection('muralMessages').doc();
+        targetMuralId = muralRef.id;
+      } else if (targetMuralId) {
+        muralRef = db.collection('muralMessages').doc(targetMuralId);
+      }
+
       const updatedMetadata: any = {
         ...current,
         date: sanitizeSocialText(data.date) || current.date,
@@ -4327,12 +4346,13 @@ async function startServer() {
         title: sanitizeSocialText(data.title) || (type === 'contato_familia' ? 'Atendimento Familiar' : 'Atendimento Individual'),
         targetPersonOrEntity: sanitizeSocialText(data.targetPersonOrEntity),
         contactPhone: sanitizeSocialText(data.contactPhone),
-        visibility: currentVisibility,
-        postToMural: currentVisibility === 'institutional',
-        hasConfidentialContent: currentVisibility === 'confidential'
+        visibility: requestedVisibility,
+        postToMural: requestedVisibility === 'institutional',
+        hasConfidentialContent: requestedVisibility === 'confidential',
+        ...(targetMuralId ? { muralMessageId: targetMuralId } : {})
       };
 
-      if (currentVisibility === 'institutional') {
+      if (requestedVisibility === 'institutional') {
         updatedMetadata.description = description;
         updatedMetadata.referrals = sanitizeSocialText(data.referrals);
       } else {
@@ -4346,18 +4366,11 @@ async function startServer() {
       batch.set(residentRef, { socialWork: updatedSocialWork }, { merge: true });
 
       let updatedMuralPayload: any = null;
-      if (currentVisibility === 'confidential') {
-        batch.set(db.collection('social_confidential_records').doc(req.params.recordId), {
-          institutionId,
-          residentId,
-          recordId: req.params.recordId,
-          description,
-          referrals: sanitizeSocialText(data.referrals),
-          authorUserId: current.authorUserId || req.user?.id,
-          authorUsername: current.authorUsername || req.user?.username,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      } else if (current.muralMessageId) {
+      if (isConvertingFromConfidential) {
+        // Remover conteúdo da coleção de sigilosos
+        batch.delete(db.collection('social_confidential_records').doc(req.params.recordId));
+
+        // Publicar no mural institucional
         updatedMuralPayload = {
           ...buildSocialMuralPayload(
             resident.name || 'Residente',
@@ -4370,25 +4383,62 @@ async function startServer() {
           residentId,
           updatedAt: new Date().toISOString()
         };
-        batch.set(db.collection('muralMessages').doc(current.muralMessageId), updatedMuralPayload, { merge: true });
+        batch.set(muralRef, updatedMuralPayload, { merge: true });
+      } else if (currentVisibility === 'confidential') {
+        batch.set(db.collection('social_confidential_records').doc(req.params.recordId), {
+          institutionId,
+          residentId,
+          recordId: req.params.recordId,
+          description,
+          referrals: sanitizeSocialText(data.referrals),
+          authorUserId: current.authorUserId || req.user?.id,
+          authorUsername: current.authorUsername || req.user?.username,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } else if (targetMuralId && muralRef) {
+        updatedMuralPayload = {
+          ...buildSocialMuralPayload(
+            resident.name || 'Residente',
+            { ...updatedMetadata, description },
+            institutionId,
+            req.user
+          ),
+          sourceType: 'social_work',
+          sourceRecordId: req.params.recordId,
+          residentId,
+          updatedAt: new Date().toISOString()
+        };
+        batch.set(muralRef, updatedMuralPayload, { merge: true });
       }
 
       await batch.commit();
       invalidateCache('residents');
 
-      if (updatedMuralPayload && current.muralMessageId) {
-        updateMuralCacheIfLoaded(institutionId, (messages) =>
-          messages.map((msg: any) =>
-            msg.id === current.muralMessageId
-              ? normalizeMuralMessage({ ...msg, ...updatedMuralPayload }, current.muralMessageId)
-              : msg
-          )
-        );
+      if (updatedMuralPayload && targetMuralId) {
+        updateMuralCacheIfLoaded(institutionId, (messages) => {
+          const exists = messages.some((msg: any) => msg.id === targetMuralId);
+          if (exists) {
+            return messages.map((msg: any) =>
+              msg.id === targetMuralId
+                ? normalizeMuralMessage({ ...msg, ...updatedMuralPayload }, targetMuralId)
+                : msg
+            );
+          }
+          return [normalizeMuralMessage(updatedMuralPayload, targetMuralId), ...messages];
+        });
       }
 
-      await logAudit('update', 'social_work', req.params.recordId, req, institutionId,
-        `Atendimento do Serviço Social atualizado para ${resident.name || 'residente'}`,
-        { residentId, visibility: currentVisibility, type });
+      await logAudit(
+        isConvertingFromConfidential ? 'convert_confidential_to_institutional' : 'update',
+        'social_work',
+        req.params.recordId,
+        req,
+        institutionId,
+        isConvertingFromConfidential
+          ? `Atendimento do Serviço Social desclassificado de sigiloso para institucional para ${resident.name || 'residente'}`
+          : `Atendimento do Serviço Social atualizado para ${resident.name || 'residente'}`,
+        { residentId, visibility: requestedVisibility, type }
+      );
 
       return res.json({ success: true, record: updatedMetadata, socialWork: updatedSocialWork });
     } catch (error: any) {
