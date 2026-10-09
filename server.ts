@@ -4141,7 +4141,7 @@ async function startServer() {
       `Tipo: ${record.type === 'contato_familia' ? 'Atendimento Familiar' : 'Atendimento Individual'}\n` +
       `Data: ${record.date}${record.time ? ` às ${record.time}` : ''}\n` +
       (record.targetPersonOrEntity ? `Envolvido: ${record.targetPersonOrEntity}\n` : '') +
-      `Resumo: ${String(record.description || '').slice(0, 240)}${String(record.description || '').length > 240 ? '...' : ''}`,
+      `Resumo: ${String(record.description || '')}`,
     visibilidade: ['publico'],
     isPublic: true,
     timestamp: Date.now()
