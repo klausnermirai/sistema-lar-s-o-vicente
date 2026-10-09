@@ -4731,19 +4731,26 @@ async function startServer() {
     const { institutionId, ...data } = req.body;
     try {
       const realId = await getRealInstitutionId(institutionId);
-      if (data.id && data.id.length > 10) {
+      if (data.id) {
         const existingDoc = await db.collection('group_activities').doc(data.id).get();
-        if (!existingDoc.exists || !isAuthorizedForDocument((req as any).user, existingDoc.data())) {
-          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+
+        if (existingDoc.exists) {
+          if (!isAuthorizedForDocument((req as any).user, existingDoc.data())) {
+            return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+          }
+          await db.collection('group_activities').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
+          await logAudit('update', 'group_activities', data.id, req, realId, `Atualização da atividade: ${data.title}`);
+          return res.json({ ...data, id: data.id, institutionId: realId });
         }
-        await db.collection('group_activities').doc(data.id).set({ ...data, institutionId: realId }, { merge: true });
-        await logAudit('update', 'group_activities', data.id, req, realId, `Atualização da atividade: ${data.title}`);
-        res.json({ ...data, id: data.id, institutionId: realId });
-      } else {
-        const docRef = await db.collection('group_activities').add({ ...data, institutionId: realId });
-        await logAudit('create', 'group_activities', docRef.id, req, realId, `Nova atividade em grupo: ${data.title}`);
-        res.json({ ...data, id: docRef.id, institutionId: realId });
+
+        await db.collection('group_activities').doc(data.id).set({ ...data, institutionId: realId });
+        await logAudit('create', 'group_activities', data.id, req, realId, `Nova atividade em grupo: ${data.title}`);
+        return res.json({ ...data, id: data.id, institutionId: realId });
       }
+
+      const docRef = await db.collection('group_activities').add({ ...data, institutionId: realId });
+      await logAudit('create', 'group_activities', docRef.id, req, realId, `Nova atividade em grupo: ${data.title}`);
+      return res.json({ ...data, id: docRef.id, institutionId: realId });
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao salvar atividade em grupo.' );
     }
