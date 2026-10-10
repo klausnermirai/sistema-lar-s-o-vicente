@@ -1947,47 +1947,65 @@ async function startServer() {
       }
 
       data.institutionId = targetInstId;
-      const auditEntry = {
-        action: data.id ? 'update' : 'create',
+      const payload = { ...data };
+
+      if (payload.id) {
+        const existingDoc = await db.collection('candidates').doc(payload.id).get();
+
+        if (existingDoc.exists) {
+          const existingData = existingDoc.data();
+          if (!isAuthorizedForDocument(user, existingData)) {
+            return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
+          }
+
+          // Impedir mudança de instituição sem transferência formal
+          if (existingData.institutionId) {
+            const existingCanonical = getCanonicalInstitutionId(existingData.institutionId);
+            const targetCanonical = getCanonicalInstitutionId(targetInstId);
+            if (existingCanonical !== targetCanonical) {
+              return res.status(400).json({ error: 'Transferência de instituição não permitida nesta operação.' });
+            }
+          }
+
+          payload.auditLog = admin.firestore.FieldValue.arrayUnion({
+            action: 'update',
+            timestamp: new Date().toISOString(),
+            userId: user?.id || 'unknown',
+            username: user?.username || 'unknown',
+          });
+
+          const { id, ...updateData } = payload;
+          await db.collection('candidates').doc(id).set(updateData, { merge: true });
+          await logAudit('update', 'candidates', id, req, payload.institutionId, `Atualização da triagem: ${payload.name}`);
+          invalidateCache('candidates');
+          return res.json(data);
+        }
+
+        payload.auditLog = admin.firestore.FieldValue.arrayUnion({
+          action: 'create',
+          timestamp: new Date().toISOString(),
+          userId: user?.id || 'unknown',
+          username: user?.username || 'unknown',
+        });
+
+        const { id, ...createData } = payload;
+        await db.collection('candidates').doc(id).set(createData);
+        await logAudit('create', 'candidates', id, req, payload.institutionId, `Nova triagem cadastrada: ${payload.name}`);
+        invalidateCache('candidates');
+        return res.json(data);
+      }
+
+      payload.auditLog = admin.firestore.FieldValue.arrayUnion({
+        action: 'create',
         timestamp: new Date().toISOString(),
         userId: user?.id || 'unknown',
         username: user?.username || 'unknown',
-      };
+      });
 
-      const payload = { ...data };
-      payload.auditLog = admin.firestore.FieldValue.arrayUnion(auditEntry);
-
-      if (payload.id) {
-        // Validação do documento existente no banco
-        const existingDoc = await db.collection('candidates').doc(payload.id).get();
-        if (!existingDoc.exists) {
-          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
-        }
-        const existingData = existingDoc.data();
-        if (!isAuthorizedForDocument(user, existingData)) {
-          return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
-        }
-
-        // Impedir mudança de instituição sem transferência formal
-        if (existingData.institutionId) {
-          const existingCanonical = getCanonicalInstitutionId(existingData.institutionId);
-          const targetCanonical = getCanonicalInstitutionId(targetInstId);
-          if (existingCanonical !== targetCanonical) {
-            return res.status(400).json({ error: 'Transferência de instituição não permitida nesta operação.' });
-          }
-        }
-
-        const { id, ...updateData } = payload;
-        await db.collection('candidates').doc(id).set(updateData, { merge: true });
-        await logAudit('update', 'candidates', id, req, payload.institutionId, `Atualização da triagem: ${payload.name}`);
-        invalidateCache('candidates');
-        res.json(data);
-      } else {
-        const docRef = await db.collection('candidates').add(payload);
-        await logAudit('create', 'candidates', docRef.id, req, payload.institutionId, `Nova triagem cadastrada: ${payload.name}`);
-        invalidateCache('candidates');
-        res.json({ ...data, id: docRef.id });
-      }
+      const docRef = await db.collection('candidates').add(payload);
+      await logAudit('create', 'candidates', docRef.id, req, payload.institutionId, `Nova triagem cadastrada: ${payload.name}`);
+      invalidateCache('candidates');
+      return res.json({ ...data, id: docRef.id });
     } catch (error: any) {
       console.error('Error saving candidate:', error);
       return sendDatabaseError(res, error, 'Erro ao salvar candidato.' );
