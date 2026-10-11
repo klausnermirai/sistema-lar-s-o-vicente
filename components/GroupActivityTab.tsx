@@ -1,7 +1,7 @@
 import { getProfessionalSignature } from '../lib/api';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Resident, GroupActivity, MuralMessage } from '../types';
-import { Plus, Save, ArrowLeft, Users, Calendar, CheckCircle, Edit, Search, Trash2 } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Users, Calendar, Edit, Search, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { buildGroupActivityAgendaEvent, loadGroupActivities, saveGroupActivity, deleteGroupActivity, syncGroupActivityResidents } from '../lib/groupActivityStore';
 import { saveAgendaEvent } from '../lib/agendaStore';
 
@@ -28,6 +28,45 @@ const RESULTS = [
   'Baixa adesão'
 ];
 
+const getMonthKey = (dateStr?: string, timestamp?: number): string => {
+  if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month] = dateStr.split('-');
+    const monthNumber = Number(month);
+    if (monthNumber >= 1 && monthNumber <= 12) return `${year}-${month}`;
+  }
+
+  if (timestamp) {
+    const date = new Date(timestamp);
+    if (!Number.isNaN(date.getTime())) {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    }
+  }
+
+  return 'sem-data';
+};
+
+const formatActivityDate = (dateStr?: string): string => {
+  if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('-');
+    return `${day}/${month}/${year}`;
+  }
+  return dateStr || 'Data não informada';
+};
+
+const formatMonthLabel = (monthKey: string): string => {
+  if (monthKey === 'sem-data') return 'Data não informada';
+  const [year, month] = monthKey.split('-');
+  const monthNames = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
+  return `${monthNames[Number(month) - 1] || month} de ${year}`;
+};
+
+const getCurrentMonthKey = (): string => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
 const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residents, onSaveResident, onPostToMural }) => {
   const sessionStr = localStorage.getItem('ssvp_session');
   const session = sessionStr ? JSON.parse(sessionStr) : null;
@@ -40,6 +79,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [residentSearchTerm, setResidentSearchTerm] = useState('');
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => new Set([getCurrentMonthKey()]));
   
   const [formData, setFormData] = useState<Partial<GroupActivity>>({
     status: 'agendada',
@@ -92,6 +132,51 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
       }).catch(console.error);
     }
   }, [currentUser?.institutionId, competence]);
+
+  const groupedActivities = useMemo(() => {
+    const groups = new Map<string, GroupActivity[]>();
+
+    activities.forEach(activity => {
+      const monthKey = getMonthKey(activity.date, activity.timestamp);
+      const group = groups.get(monthKey) || [];
+      group.push(activity);
+      groups.set(monthKey, group);
+    });
+
+    return Array.from(groups.entries())
+      .map(([monthKey, monthActivities]) => ({
+        monthKey,
+        label: formatMonthLabel(monthKey),
+        activities: [...monthActivities].sort((a, b) => {
+          const aDateTime = /^\d{4}-\d{2}-\d{2}$/.test(a.date || '')
+            ? `${a.date}T${a.time || '00:00'}`
+            : '';
+          const bDateTime = /^\d{4}-\d{2}-\d{2}$/.test(b.date || '')
+            ? `${b.date}T${b.time || '00:00'}`
+            : '';
+
+          if (aDateTime && bDateTime && aDateTime !== bDateTime) {
+            return bDateTime.localeCompare(aDateTime);
+          }
+
+          return (b.timestamp || 0) - (a.timestamp || 0);
+        })
+      }))
+      .sort((a, b) => {
+        if (a.monthKey === 'sem-data') return 1;
+        if (b.monthKey === 'sem-data') return -1;
+        return b.monthKey.localeCompare(a.monthKey);
+      });
+  }, [activities]);
+
+  const toggleMonth = (monthKey: string) => {
+    setExpandedMonths(prev => {
+      const next = new Set(prev);
+      if (next.has(monthKey)) next.delete(monthKey);
+      else next.add(monthKey);
+      return next;
+    });
+  };
 
   const handleAddInvolved = () => {
     if (involvedInput.trim()) {
@@ -518,7 +603,32 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
         </div>
       ) : (
         <div className="space-y-4">
-          {activities.map(activity => (
+          {groupedActivities.map(group => {
+            const isExpanded = expandedMonths.has(group.monthKey);
+            return (
+              <section key={group.monthKey} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleMonth(group.monthKey)}
+                  className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                  aria-expanded={isExpanded}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isExpanded ? (
+                      <ChevronDown size={18} className="text-[#004c99] flex-shrink-0" />
+                    ) : (
+                      <ChevronRight size={18} className="text-[#004c99] flex-shrink-0" />
+                    )}
+                    <span className="font-black text-gray-800">{group.label}</span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-blue-50 text-[#004c99] text-xs font-bold whitespace-nowrap">
+                    {group.activities.length} {group.activities.length === 1 ? 'atividade' : 'atividades'}
+                  </span>
+                </button>
+
+                {isExpanded && (
+                  <div className="p-4 space-y-4 border-t border-gray-100">
+                    {group.activities.map(activity => (
             <div key={activity.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex justify-between items-start mb-3">
                 <div>
@@ -528,7 +638,7 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
                     </span>
                     <span className="text-xs font-bold text-gray-500 flex items-center gap-1">
                       <Calendar size={12} />
-                      {new Date(activity.date).toLocaleDateString('pt-BR')} às {activity.time}
+                      {formatActivityDate(activity.date)} às {activity.time}
                     </span>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase flex items-center gap-1 ${
                       activity.status === 'realizada' ? 'bg-green-100 text-green-700' :
@@ -596,7 +706,12 @@ const GroupActivityTab: React.FC<GroupActivityTabProps> = ({ competence, residen
                 </div>
               )}
             </div>
-          ))}
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
