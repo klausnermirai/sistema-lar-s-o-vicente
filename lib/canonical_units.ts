@@ -12,7 +12,8 @@ export const MONTE_ALTO_CNPJ_CLEAN = '52853397000168';
 
 export const MONTE_ALTO_DUPLICATE_IDS = [
   'YBGwuWDIeYkDlGokWIVX',
-  'eCbHryqf5pwpPTipFFjJ'
+  'eCbHryqf5pwpPTipFFjJ',
+  'aJjdEdwW0lQqV1gC1uin'
 ] as const;
 
 export const CENTRAL_JABOTICABAL_CNPJ = '54.927.132/0001-92';
