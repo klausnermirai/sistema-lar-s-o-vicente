@@ -268,6 +268,19 @@ export const fetchResidents = async (institutionId: string, type: string = 'obra
   return response.json();
 };
 
+export const updateIncident = async (incidentId: string, payload: { description: string; conduct: string; expectedUpdatedAt?: string }) => {
+  const response = await apiFetch(`/api/incidents/${encodeURIComponent(incidentId)}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Erro ao editar intercorrência');
+  }
+  return response.json();
+};
+
 export const saveResident = async (resident: any) => {
   const response = await apiFetch('/api/residents', {
     method: 'POST',
