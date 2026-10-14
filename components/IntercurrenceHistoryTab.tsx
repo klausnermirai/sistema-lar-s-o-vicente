@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import { Resident, IncidentReport, InstitutionSettings } from '../types';
-import { AlertCircle, Clock, Plus, Save, X, MessageSquare, ChevronDown, Printer } from 'lucide-react';
+import { AlertCircle, Clock, Plus, Save, X, MessageSquare, ChevronDown, Printer, Pencil } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { addPdfHeaderAndFooter, createPdfContext } from '../lib/pdfHelpers';
-import { saveMuralMessage } from '../lib/api';
+import { saveMuralMessage, updateIncident, fetchResidentById } from '../lib/api';
 
 interface IntercurrenceHistoryTabProps {
   resident: Resident;
   settings?: InstitutionSettings | null;
   onUpdateIncidents?: (incidents: IncidentReport[]) => void;
+  onIncidentUpdated?: (resident: Resident) => void;
 }
 
-const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resident, settings, onUpdateIncidents }) => {
+const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resident, settings, onUpdateIncidents, onIncidentUpdated }) => {
   const incidents = resident.incidents || [];
   
   const [filterPeriod, setFilterPeriod] = useState<'7_dias' | 'mes' | 'tudo'>('7_dias');
@@ -19,6 +20,34 @@ const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resid
   const [annotationText, setAnnotationText] = useState('');
   const [annotationUser, setAnnotationUser] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDescription, setEditDescription] = useState('');
+  const [editConduct, setEditConduct] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const session = (() => { try { return JSON.parse(localStorage.getItem('ssvp_session') || '{}'); } catch { return {}; } })();
+  const currentUserId = String(session.id || '');
+  const canEdit = (inc: IncidentReport) =>
+    session.accessLevel === 'administrador' || session.accessLevel === 'gerencial' ||
+    (!!currentUserId && !!inc.responsavelUserId && currentUserId === String(inc.responsavelUserId));
+  const handleSaveEdit = async (inc: IncidentReport) => {
+    if (!editDescription.trim()) return;
+    setSavingEdit(true);
+    try {
+      await updateIncident(inc.id, {
+        description: editDescription.trim(),
+        conduct: editConduct.trim(),
+        expectedUpdatedAt: inc.updatedAt
+      });
+      const institutionId = session.institutionId || session.cnpj || resident.institutionId;
+      const refreshed = await fetchResidentById(resident.id, institutionId);
+      onIncidentUpdated?.(refreshed);
+      setEditingId(null);
+    } catch (error: any) {
+      alert(error?.message || 'Não foi possível salvar a alteração.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const filteredIncidents = incidents.filter(inc => {
     if (filterPeriod === 'tudo') return true;
@@ -53,6 +82,8 @@ const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resid
       );
       pdf.writeField('Relatado por', inc.reporterName || inc.professionalName);
       pdf.writeField('Descrição', inc.description);
+      if (inc.updatedAt) pdf.writeField('Última edição', new Date(inc.updatedAt).toLocaleString('pt-BR'));
+
       if (inc.conduct) pdf.writeField('Conduta', inc.conduct);
 
       (inc.actions || []).forEach((action, actionIndex) => {
@@ -212,6 +243,24 @@ const IntercurrenceHistoryTab: React.FC<IntercurrenceHistoryTabProps> = ({ resid
                   </h4>
                   
                   <div className="space-y-3">
+                    {inc.updatedAt && <p className="text-[10px] text-gray-500">Editado em {new Date(inc.updatedAt).toLocaleString('pt-BR')} {inc.updatedBy ? `por ${inc.updatedBy}` : ''}</p>}
+                    {canEdit(inc) && editingId !== inc.id && (
+                      <button type="button" onClick={() => { setEditingId(inc.id); setEditDescription(inc.description); setEditConduct(inc.conduct || ''); }} className="flex items-center gap-1 text-xs font-bold text-[#004c99]">
+                        <Pencil size={13} /> Editar
+                      </button>
+                    )}
+                    {editingId === inc.id && (
+                      <div className="p-3 border border-blue-200 bg-blue-50 rounded-xl space-y-2">
+                        <label className="text-xs font-bold block">Descrição</label>
+                        <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} rows={4} maxLength={10000} className="w-full p-2 border rounded-lg text-sm" />
+                        <label className="text-xs font-bold block">Conduta</label>
+                        <textarea value={editConduct} onChange={e => setEditConduct(e.target.value)} rows={3} maxLength={10000} className="w-full p-2 border rounded-lg text-sm" />
+                        <div className="flex gap-2">
+                          <button type="button" disabled={savingEdit || !editDescription.trim()} onClick={() => handleSaveEdit(inc)} className="bg-[#004c99] text-white px-3 py-2 rounded-lg text-xs font-bold">Salvar</button>
+                          <button type="button" disabled={savingEdit} onClick={() => setEditingId(null)} className="bg-white px-3 py-2 rounded-lg text-xs font-bold">Cancelar</button>
+                        </div>
+                      </div>
+                    )}
                     <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Descrição</p>
                       <p className="text-xs text-gray-700 font-medium">{inc.description}</p>
