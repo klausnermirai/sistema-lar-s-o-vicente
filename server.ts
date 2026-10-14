@@ -1504,6 +1504,56 @@ async function startServer() {
     }
   });
 
+  // Edição assistencial dedicada: preserva autor, histórico e cópias multi-residente.
+  app.put('/api/incidents/:id', requireRole(['enfermeira', 'cuidados', 'gerencial', 'administrador']), async (req: any, res) => {
+    const incidentId = String(req.params.id || '');
+    const description = typeof req.body?.description === 'string' ? req.body.description.trim() : '';
+    const conduct = typeof req.body?.conduct === 'string' ? req.body.conduct.trim() : '';
+    const expectedUpdatedAt = req.body?.expectedUpdatedAt;
+    if (!incidentId || !description || description.length > 10000 || conduct.length > 10000) {
+      return res.status(400).json({ error: 'Descrição obrigatória e limite de 10.000 caracteres por campo.' });
+    }
+    try {
+      const user = req.user;
+      const requesterLevel = normalizeAccessLevel(user?.accessLevel || user?.role);
+      const isAdmin = requesterLevel === 'administrador' || requesterLevel === 'gerencial';
+      const currentInst = await getRealInstitutionId(user?.institutionId || '');
+      if (!currentInst) return res.status(403).json({ error: 'Instituição não autorizada.' });
+
+      // Localiza apenas registros da própria instituição, sem confiar em IDs enviados pelo cliente.
+      const snapshots = await db.collection('residents').where('institutionId', '==', currentInst).get();
+      const matches = snapshots.docs.filter((doc: any) => (doc.data().incidents || []).some((item: any) => item.id === incidentId));
+      if (matches.length === 0) return res.status(404).json({ error: 'Intercorrência não encontrada.' });
+      const primary = matches[0].data().incidents.find((item: any) => item.id === incidentId);
+      if (!isAdmin && (!primary.responsavelUserId || String(primary.responsavelUserId) !== String(user?.id))) {
+        return res.status(403).json({ error: 'Somente o login que registrou pode editar esta intercorrência.' });
+      }
+      if ((primary.updatedAt || '') !== (expectedUpdatedAt || '')) {
+        return res.status(409).json({ error: 'A intercorrência foi atualizada. Recarregue e tente novamente.' });
+      }
+      if (primary.description === description && (primary.conduct || '') === conduct) return res.json(primary);
+      const now = new Date().toISOString();
+      const editHistory = [...(primary.editHistory || []), {
+        editedAt: now, editedBy: String(user?.fullName || user?.username || ''),
+        editedByUserId: String(user?.id || ''),
+        previousDescription: primary.description || '',
+        previousConduct: primary.conduct || ''
+      }];
+      const batch = db.batch();
+      const updated = { ...primary, description, conduct, editHistory, updatedAt: now, updatedBy: String(user?.fullName || user?.username || '') };
+      for (const doc of matches) {
+        const items = doc.data().incidents || [];
+        batch.update(doc.ref, { incidents: items.map((inc: any) => inc.id === incidentId ? updated : inc) });
+      }
+      await batch.commit();
+      invalidateCache('residents');
+      await logAudit('update', 'incidents', incidentId, req, currentInst, 'Edição de intercorrência');
+      return res.json(updated);
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao editar intercorrência.');
+    }
+  });
+
   // CRUD for Residents
   app.get('/api/residents', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'administrador', 'auxiliar_administrativo']), async (req, res) => {
     const { institutionId, type } = req.query;
@@ -1763,6 +1813,16 @@ async function startServer() {
           });
         }
 
+        // Preserva todas as intercorrências existentes durante salvamentos gerais
+        // e vincula somente as novas ao login autenticado.
+        if (data.incidents !== undefined) {
+          const oldList = Array.isArray(existingData.incidents) ? existingData.incidents : [];
+          const received = Array.isArray(data.incidents) ? data.incidents : [];
+          const oldIds = new Set(oldList.map((item: any) => String(item.id)));
+          const newlyAdded = received.filter((item: any) => !oldIds.has(String(item.id)))
+            .map((item: any) => ({ ...item, responsavelUserId: String(user?.id || '') }));
+          payload.incidents = [...newlyAdded, ...oldList];
+        }
         const { id, ...updateData } = payload;
         await db.collection('residents').doc(id).set(updateData, { merge: true });
         await logAudit('update', 'residents', id, req, payload.institutionId, `Atualização do residente ${payload.name}`);
