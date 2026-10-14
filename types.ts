@@ -1094,6 +1094,9 @@ export interface IncidentReport {
   visibilidade?: string[];
   professionalName: string;
   reporterName?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  editHistory?: { editedAt: string; editedBy: string; editedByUserId: string; previousDescription: string; previousConduct?: string }[];
   actions?: { id: string, timestamp: number, user: string, text: string }[];
 }
 
