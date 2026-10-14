@@ -1251,7 +1251,8 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
           <IntercurrenceHistoryTab 
               resident={formData} 
               settings={settings}
-              onUpdateIncidents={(newIncidents) => setFormData({...formData, incidents: newIncidents})}
+              onUpdateIncidents={(newIncidents) => setFormData(prev => ({...prev, incidents: newIncidents}))}
+              onIncidentUpdated={(updatedResident) => setFormData(updatedResident)}
           />
         )}
 
