@@ -894,6 +894,10 @@ const InternalApp: React.FC = () => {
         />
       )}
 
+      {activeRoute === AppRoute.SUPPLIERS && session && (
+        <StockModule session={session} settings={settings} supplierOnly />
+      )}
+
       {activeRoute === AppRoute.FINANCEIRO && session && (
         <FinanceiroModule 
           session={session}
