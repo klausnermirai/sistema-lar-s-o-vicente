@@ -10,7 +10,7 @@ import { ProductStockItem, StockMovement, Supplier, Donor } from '../types';
 import { 
   fetchStockProducts, saveStockProduct, deleteStockProduct, 
   bootstrapStockProducts, fetchStockMovements, registerStockMovement,
-  fetchSuppliers, saveSupplier, deleteSupplier,
+  fetchSuppliers, saveSupplier, deleteSupplier, fetchCaixinhaMovements,
   fetchDonors, saveDonor, deleteDonor,
   Session
 } from '../lib/api';
@@ -21,11 +21,12 @@ import autoTable from 'jspdf-autotable';
 interface StockModuleProps {
   session: Session;
   settings?: any;
+  supplierOnly?: boolean;
 }
 
 const STOCK_CATEGORIES = ['ALIMENTAÇÃO', 'HIGIENE', 'LIMPEZA', 'MEDICAMENTOS', 'DIALÍTICO', 'AMBULATORIAL', 'GERAL'];
 
-export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) => {
+export const StockModule: React.FC<StockModuleProps> = ({ session, settings, supplierOnly = false }) => {
   const [products, setProducts] = useState<ProductStockItem[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +37,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
   } | null>(null);
 
   // Search & Filter state
-  const [activeTab, setActiveTab] = useState<'estoque' | 'historico' | 'compras' | 'importar' | 'doacoes' | 'fornecedores' | 'doadores'>('estoque');
+  const [activeTab, setActiveTab] = useState<'estoque' | 'historico' | 'compras' | 'importar' | 'doacoes' | 'fornecedores' | 'doadores'>(supplierOnly ? 'fornecedores' : 'estoque');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
   const [selectedStatus, setSelectedStatus] = useState<string>('TODOS');
@@ -45,11 +46,18 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  const [supplierModalTarget, setSupplierModalTarget] = useState<'multi' | 'single' | null>(null);
+  const [supplierPayments, setSupplierPayments] = useState<any[]>([]);
+  const [paymentSupplier, setPaymentSupplier] = useState<Supplier | null>(null);
+  const [paymentFrom, setPaymentFrom] = useState('');
+  const [paymentTo, setPaymentTo] = useState('');
   const [supplierForm, setSupplierForm] = useState({
     name: '',
     phone: '',
     representative: '',
-    email: ''
+    email: '',
+    type: 'fornecedor' as 'fornecedor' | 'prestador' | 'ambos',
+    cpfCnpj: ''
   });
 
   // Donors management state
@@ -389,6 +397,11 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
     loadData();
     return () => { active = false; };
   }, [refetchTrigger]);
+
+  useEffect(() => {
+    if (!supplierOnly) return;
+    fetchCaixinhaMovements().then(items => setSupplierPayments(items || [])).catch(() => setSupplierPayments([]));
+  }, [supplierOnly]);
 
   // Is Admin or Manager checks (has edit permission)
   const canEdit = session?.accessLevel === 'administrador' || session?.accessLevel === 'gerencial' || session?.accessLevel === 'nutricionista' || session?.accessLevel === 'enfermeira' || session?.accessLevel === 'auxiliar_administrativo';
@@ -987,12 +1000,19 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
         representative: supplierForm.representative.trim(),
         phone: supplierForm.phone.trim(),
         email: supplierForm.email.trim(),
+        type: supplierForm.type,
+        cpfCnpj: supplierForm.cpfCnpj.trim(),
         categories: selectedSupplier ? (selectedSupplier.categories || []) : []
       };
-      await saveSupplier(payload);
+      const result = await saveSupplier(payload);
+      if (!selectedSupplier && result?.supplier?.id) {
+        if (supplierModalTarget === 'multi') setMultiMovementHeader(prev => ({ ...prev, supplierId: result.supplier.id }));
+        if (supplierModalTarget === 'single') setMovementForm(prev => ({ ...prev, supplierId: result.supplier.id }));
+      }
+      setSupplierModalTarget(null);
       setIsSupplierModalOpen(false);
       setSelectedSupplier(null);
-      setSupplierForm({ name: '', phone: '', representative: '', email: '' });
+      setSupplierForm({ name: '', phone: '', representative: '', email: '', type: 'fornecedor', cpfCnpj: '' });
       setRefetchTrigger(prev => prev + 1);
     } catch (err: any) {
       console.error(err);
@@ -1008,7 +1028,9 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
       name: supp.name || '',
       phone: supp.phone || '',
       representative: supp.representative || '',
-      email: supp.email || ''
+      email: supp.email || '',
+      type: supp.type || 'fornecedor',
+      cpfCnpj: supp.cpfCnpj || ''
     });
     setIsSupplierModalOpen(true);
   };
@@ -1163,7 +1185,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
     <div id="stock-screen-container" className="h-full bg-slate-50 flex flex-col overflow-y-auto pb-10 print:bg-white print:p-0">
       
       {/* Visual Title Header (Hide in Print Mode) */}
-      <div className="bg-white border-b px-8 py-6 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm print:hidden">
+      {!supplierOnly && <div className="bg-white border-b px-8 py-6 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm print:hidden">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <Package className="text-[#004c99]" size={28} />
@@ -1214,7 +1236,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
             </button>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Main Container Wrapper */}
       <div className="max-w-7xl mx-auto w-full px-8 flex flex-col gap-6 print:px-0 print:py-0">
@@ -1231,7 +1253,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
         )}
 
         {/* Dashboard Core Stats Panel (Hide in Print unless Shopping list Tab is Active) */}
-        <section className={`grid grid-cols-2 lg:grid-cols-4 gap-4 print:hidden ${activeTab === 'compras' ? 'print:hidden' : ''}`}>
+        {!supplierOnly && <section className={`grid grid-cols-2 lg:grid-cols-4 gap-4 print:hidden ${activeTab === 'compras' ? 'print:hidden' : ''}`}>
           
           {/* Total catalog items */}
           <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center gap-4">
@@ -1277,13 +1299,13 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
             </div>
           </div>
 
-        </section>
+        </section>}
 
         {/* Outer Panel Card containing core tabs */}
         <div className="bg-white border text-slate-800 rounded-3xl overflow-hidden shadow-sm flex flex-col mb-10 print:border-none print:shadow-none">
           
           {/* Tab Navigation header */}
-          <div className="border-b bg-slate-50 px-6 flex flex-wrap items-center justify-between gap-4 print:hidden">
+          {!supplierOnly && <div className="border-b bg-slate-50 px-6 flex flex-wrap items-center justify-between gap-4 print:hidden">
             <nav className="flex gap-4">
               <button
                 onClick={() => { setActiveTab('estoque'); setCurrentPage(1); }}
@@ -1338,17 +1360,6 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
                 Relatório de Doações
               </button>
 
-              <button
-                onClick={() => { setActiveTab('fornecedores'); }}
-                className={`flex items-center gap-2 py-4 px-3 font-semibold text-xs uppercase tracking-wider border-b-2 transition-all duration-150 ${
-                  activeTab === 'fornecedores' 
-                    ? 'border-[#004c99] text-[#004c99]' 
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Truck size={16} className="text-blue-500" />
-                Fornecedores
-              </button>
 
               <button
                 onClick={() => { setActiveTab('doadores'); }}
@@ -1380,7 +1391,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
             <span className="text-slate-400 font-mono text-[10px] uppercase font-bold">
               Modulo de Abastecimento Geral
             </span>
-          </div>
+          </div>}
 
           {/* TAB 1: STOCK INVENTORY CONTROL */}
           {activeTab === 'estoque' && (
@@ -2606,7 +2617,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
                 <div className="flex items-center gap-3">
                   <Truck className="text-[#004c99]" size={24} />
                   <div>
-                    <h3 className="text-sm font-bold text-slate-800">Cadastro de Fornecedores de Insumos</h3>
+                    <h3 className="text-sm font-bold text-slate-800">Cadastro de Fornecedores e Prestadores</h3>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       Gerencie seus parceiros comerciais, representantes e veja de forma automatizada as categorias atendidas.
                     </p>
@@ -2617,13 +2628,13 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
                   <button
                     onClick={() => {
                       setSelectedSupplier(null);
-                      setSupplierForm({ name: '', phone: '', representative: '', email: '' });
+                      setSupplierForm({ name: '', phone: '', representative: '', email: '', type: 'fornecedor', cpfCnpj: '' });
                       setIsSupplierModalOpen(true);
                     }}
                     className="flex items-center gap-1.5 px-3 py-2 bg-[#004c99] hover:bg-blue-800 text-white rounded-xl text-xs font-semibold select-none cursor-pointer duration-100"
                   >
                     <Plus size={14} />
-                    Novo Fornecedor
+                    Novo Fornecedor / Prestador
                   </button>
                 )}
               </div>
@@ -2647,7 +2658,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
                         <div className="flex flex-col gap-3">
                           <div className="flex items-start justify-between gap-2 border-b pb-2">
                             <div>
-                              <h4 className="font-bold text-slate-900 text-sm leading-tight">{supp.name}</h4>
+                              <h4 className="font-bold text-slate-900 text-sm leading-tight">{supp.name}</h4><span className="text-[10px] text-blue-700">{supp.type === 'prestador' ? 'Prestador de serviços' : supp.type === 'ambos' ? 'Fornecedor e prestador' : 'Fornecedor'}</span>
                             </div>
                             
                             {canEdit && (
@@ -2731,7 +2742,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
                   <div className="flex items-center gap-2">
                     <Truck className="text-[#004c99]" size={20} />
                     <h3 className="text-sm font-bold text-slate-800">
-                      {selectedSupplier ? 'Editar Fornecedor' : 'Cadastrar Novo Fornecedor'}
+                      {selectedSupplier ? 'Editar Fornecedor / Prestador' : 'Cadastrar Fornecedor / Prestador'}
                     </h3>
                   </div>
                   <button
@@ -2790,6 +2801,8 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
                       />
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><label className="text-xs">Tipo<select className="block w-full border rounded-lg p-2" value={supplierForm.type} onChange={e => setSupplierForm(prev => ({ ...prev, type: e.target.value as 'fornecedor' | 'prestador' | 'ambos' }))}><option value="fornecedor">Fornecedor</option><option value="prestador">Prestador de serviços</option><option value="ambos">Ambos</option></select></label><label className="text-xs">CPF/CNPJ (opcional)<input className="block w-full border rounded-lg p-2" value={supplierForm.cpfCnpj} onChange={e => setSupplierForm(prev => ({ ...prev, cpfCnpj: e.target.value }))}/></label></div>
 
                   <footer className="flex gap-3 justify-end border-t pt-5 mt-3">
                     <button
@@ -3136,7 +3149,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
 
                   {/* Supplier Input */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Fornecedor *</label>
+                    <div className="flex justify-between items-center"><label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Fornecedor *</label><button type="button" className="text-blue-700 border border-blue-200 rounded px-2" title="Cadastrar fornecedor" onClick={() => { setSupplierModalTarget('multi'); setSelectedSupplier(null); setSupplierForm({ name: '', phone: '', representative: '', email: '', type: 'fornecedor', cpfCnpj: '' }); setIsSupplierModalOpen(true); }}>+</button></div>
                     {suppliers.length === 0 ? (
                       <div className="text-[11px] text-amber-600 bg-amber-50 p-2.5 border border-amber-100 rounded-xl">
                         Nenhum fornecedor cadastrado. Cadastre primeiro na aba <b>Fornecedores</b>.
@@ -3500,7 +3513,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings }) =
                   
                   {/* Select Supplier */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Fornecedor *</label>
+                    <div className="flex justify-between items-center"><label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Fornecedor *</label><button type="button" className="text-blue-700 border border-blue-200 rounded px-2" title="Cadastrar fornecedor" onClick={() => { setSupplierModalTarget('single'); setSelectedSupplier(null); setSupplierForm({ name: '', phone: '', representative: '', email: '', type: 'fornecedor', cpfCnpj: '' }); setIsSupplierModalOpen(true); }}>+</button></div>
                     {suppliers.length === 0 ? (
                       <div className="text-[11px] text-amber-600 bg-amber-50 p-2 border border-amber-100 rounded-xl">
                         Nenhum fornecedor cadastrado. Cadastre primeiro na aba <b>Fornecedores</b>.
