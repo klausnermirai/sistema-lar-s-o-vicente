@@ -63,6 +63,10 @@ import {
   deleteCarne,
   logCarneWhatsApp,
   fetchCaixinhaMovements,
+  fetchCaixinhaCategories,
+  saveCaixinhaCategory,
+  fetchSuppliers,
+  saveSupplier,
   saveCaixinhaMovement,
   deleteCaixinhaMovement
 } from '../lib/api';
@@ -75,7 +79,8 @@ import {
   CarneWhatsAppLog,
   CaixinhaMovement,
   CaixinhaCategory,
-  CaixinhaMovementType
+  CaixinhaMovementType,
+  Supplier
 } from '../types';
 import { getHtmlPrintHeader, getHtmlPrintFooter, getHtmlPrintStyles, printHtml } from '../lib/pdfHelpers';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
@@ -97,6 +102,14 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
   const [categories, setCategories] = useState<DonationCategory[]>([]);
   const [carnes, setCarnes] = useState<Carne[]>([]);
   const [caixinhaMovements, setCaixinhaMovements] = useState<CaixinhaMovement[]>([]);
+  const [cashSuppliers, setCashSuppliers] = useState<Supplier[]>([]);
+  const [cashCategories, setCashCategories] = useState<{ id: string; name: string }[]>([]);
+  const [categoryEditorOpen, setCategoryEditorOpen] = useState(false);
+  const [categoryEditorId, setCategoryEditorId] = useState('');
+  const [categoryEditorName, setCategoryEditorName] = useState('');
+  const [quickCashSupplierOpen, setQuickCashSupplierOpen] = useState(false);
+  const [quickCashSupplierName, setQuickCashSupplierName] = useState('');
+  const [cashOperation, setCashOperation] = useState<'despesa' | 'deposito' | 'saque'>('despesa');
 
   // Search/Filters
   const [donationSearch, setDonationSearch] = useState('');
@@ -135,6 +148,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
     date: string;
     responsible: string;
     receiptNumber: string;
+    supplierId: string;
     notes: string;
   }>({
     type: 'saida',
@@ -144,6 +158,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
     date: new Date().toISOString().split('T')[0],
     responsible: '',
     receiptNumber: '',
+    supplierId: '',
     notes: ''
   });
 
@@ -372,18 +387,22 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
   const loadModuleData = async () => {
     setLoading(true);
     try {
-      const [donationsData, benefactorsData, categoriesData, carnesData, caixinhaData] = await Promise.all([
+      const [donationsData, benefactorsData, categoriesData, carnesData, caixinhaData, supplierData, cashCategoriesData] = await Promise.all([
         fetchDonations().catch(() => []),
         fetchBenefactors().catch(() => []),
         fetchDonationCategories().catch(() => []),
         fetchCarnes().catch(() => []),
-        fetchCaixinhaMovements().catch(() => [])
+        fetchCaixinhaMovements().catch(() => []),
+        fetchSuppliers().catch(() => []),
+        fetchCaixinhaCategories().catch(() => [])
       ]);
       setDonations(donationsData);
       setBenefactors(benefactorsData);
       setCategories(categoriesData);
       setCarnes(carnesData);
       setCaixinhaMovements(caixinhaData);
+      setCashSuppliers(supplierData);
+      setCashCategories(cashCategoriesData);
 
       // Sync selectedCarneForDetails if open
       if (selectedCarneForDetails) {
@@ -700,6 +719,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
   // Operations: Caixinha (Petty Cash)
   const handleOpenNewCaixinhaModal = (defaultType: CaixinhaMovementType = 'saida', defaultCat: CaixinhaCategory = 'servico_sem_nota') => {
     setEditingCaixinhaMovement(null);
+    setCashOperation(defaultCat === 'deposito_bancario' ? 'deposito' : defaultType === 'entrada' ? 'saque' : 'despesa');
     setCaixinhaForm({
       type: defaultType,
       category: defaultCat,
@@ -708,6 +728,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
       date: new Date().toISOString().split('T')[0],
       responsible: session?.name || session?.username || '',
       receiptNumber: '',
+      supplierId: '',
       notes: ''
     });
     setShowCaixinhaForm(true);
@@ -717,6 +738,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
     const original = caixinhaMovements.find(m => m.id === item.originalId || m.id === item.id);
     if (!original) return;
     setEditingCaixinhaMovement(original);
+    setCashOperation(original.category === 'deposito_bancario' ? 'deposito' : original.type === 'entrada' ? 'saque' : 'despesa');
     setCaixinhaForm({
       type: original.type,
       category: original.category,
@@ -725,6 +747,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
       date: original.date,
       responsible: original.responsible || '',
       receiptNumber: original.receiptNumber || '',
+      supplierId: original.supplierId || '',
       notes: original.notes || ''
     });
     setShowCaixinhaForm(true);
@@ -761,6 +784,9 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
       date: caixinhaForm.date,
       responsible: caixinhaForm.responsible.trim(),
       receiptNumber: caixinhaForm.receiptNumber.trim(),
+      supplierId: cashOperation === 'despesa' ? caixinhaForm.supplierId : '',
+      supplierName: cashOperation === 'despesa' ? (cashSuppliers.find(s => s.id === caixinhaForm.supplierId)?.name || '') : '',
+      categoryLabel: cashCategories.find(c => c.id === caixinhaForm.category)?.name,
       notes: caixinhaForm.notes.trim(),
       institutionId: session?.institutionId || session?.cnpj
     };
@@ -823,7 +849,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
         case 'entrada_avulsa': catLabel = 'Entrada / Reforço em Dinheiro'; break;
         case 'doacao_dinheiro': catLabel = 'Doação em Dinheiro'; break;
         case 'carne_dinheiro': catLabel = 'Carnê em Dinheiro'; break;
-        default: catLabel = 'Outras Movimentações'; break;
+        default: catLabel = cashCategories.find(c => c.id === m.category)?.name || m.categoryLabel || 'Outras Movimentações'; break;
       }
       return {
         id: m.id,
@@ -931,7 +957,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
       totalOutrasDespesasPeriodo: totalOutras,
       saldoFinalPeriodo
     };
-  }, [donations, caixinhaMovements, caixinhaStartDate, caixinhaEndDate, caixinhaTypeFilter, caixinhaCategoryFilter, caixinhaSearch]);
+  }, [donations, caixinhaMovements, cashCategories, caixinhaStartDate, caixinhaEndDate, caixinhaTypeFilter, caixinhaCategoryFilter, caixinhaSearch]);
 
   // PDF Generator for Caixinha
   const handlePrintCaixinhaPdf = async () => {
