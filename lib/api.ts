@@ -1079,6 +1079,22 @@ export const logCarneWhatsApp = async (carneId: string, payload: { messageType: 
   return response.json();
 };
 
+export const fetchCaixinhaCategories = async (): Promise<{ id: string; name: string }[]> => {
+  const response = await apiFetch('/api/caixinha-categories', { headers: getAuthHeaders() });
+  if (!response.ok) throw new Error('Erro ao buscar categorias da Caixinha');
+  return response.json();
+};
+
+export const saveCaixinhaCategory = async (category: { id?: string; name: string }) => {
+  const response = await apiFetch('/api/caixinha-categories', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(category)
+  });
+  if (!response.ok) throw new Error('Erro ao salvar categoria da Caixinha');
+  return response.json();
+};
+
 export const fetchCaixinhaMovements = async (startDate?: string, endDate?: string) => {
   let url = '/api/caixinha';
   const params = new URLSearchParams();
