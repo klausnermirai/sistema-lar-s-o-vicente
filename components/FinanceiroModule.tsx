@@ -1134,14 +1134,23 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
   };
 
   // Filters & Calculations
+  const getDonationTime = (donation: FinanceDonation) => {
+    const createdAt = (donation as FinanceDonation & { createdAt?: string }).createdAt;
+    const createdTime = createdAt ? new Date(createdAt).getTime() : NaN;
+    if (Number.isFinite(createdTime)) return createdTime;
+    const dateTime = donation.date ? new Date(`${donation.date}T12:00:00`).getTime() : NaN;
+    return Number.isFinite(dateTime) ? dateTime : 0;
+  };
+
   const filteredDonations = donations.filter(d => {
-    const matchesSearch = 
+    const matchesSearch =
       (d.benefactorName || '').toLowerCase().includes(donationSearch.toLowerCase()) ||
       (d.notes || '').toLowerCase().includes(donationSearch.toLowerCase());
     const matchesCampaign = selectedCampaignFilter === 'Todas' || d.campaign === selectedCampaignFilter;
     const matchesCategory = selectedCategoryFilter === 'Todas' || d.categoryId === selectedCategoryFilter;
     return matchesSearch && matchesCampaign && matchesCategory;
-  });
+  }).sort((a, b) => getDonationTime(b) - getDonationTime(a) || (b.id || '').localeCompare(a.id || ''));
+  const displayedDonations = filteredDonations.slice(0, 50);
 
   const filteredBenefactors = benefactors.filter(b => {
     const matchesSearch = 
@@ -1524,6 +1533,11 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
               </div>
 
               {/* Table list */}
+              {filteredDonations.length > 50 && (
+                <p className="text-xs text-gray-500 px-1">
+                  Exibindo os 50 lançamentos mais recentes de {filteredDonations.length} encontrados. Use os filtros para localizar registros anteriores.
+                </p>
+              )}
               <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
@@ -1546,7 +1560,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                           </td>
                         </tr>
                       ) : (
-                        filteredDonations.map((item, index) => (
+                        displayedDonations.map((item, index) => (
                           <tr key={item.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'} hover:bg-blue-50/30 transition-all font-medium text-xs`}>
                             <td className="p-4">
                               <span className="font-extrabold text-[#004c99]">{item.benefactorName}</span>
