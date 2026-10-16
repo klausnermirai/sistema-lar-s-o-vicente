@@ -6023,6 +6023,9 @@ async function startServer() {
         return res.status(400).json({ error: 'Nome do fornecedor é obrigatório.' });
       }
 
+      if (!isAuthorizedForDocument((req as any).user, { institutionId })) {
+        return res.status(403).json({ error: 'Acesso não autorizado à instituição.' });
+      }
       const supplierDoc = {
         name: sup.name,
         phone: sup.phone || '',
@@ -6069,6 +6072,14 @@ async function startServer() {
         return res.status(403).json({ error: 'Não autorizado.' });
       }
       
+      // Preservar fornecedores vinculados a compras ou pagamentos históricos.
+      const [stockLinks, cashLinks] = await Promise.all([
+        db.collection('stock_movements').where('supplierId', '==', id).limit(1).get(),
+        db.collection('caixinha_movements').where('supplierId', '==', id).limit(1).get()
+      ]);
+      if (!stockLinks.empty || !cashLinks.empty) {
+        return res.status(409).json({ error: 'Este fornecedor possui movimentações vinculadas e não pode ser excluído.' });
+      }
       await docRef.delete();
       res.json({ success: true });
     } catch (error: any) {
