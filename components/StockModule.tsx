@@ -1176,6 +1176,32 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
     alert('Lista de compras copiada para a área de transferência!');
   };
 
+  const matchingSupplierPayments = supplierPayments.filter(m => m.type === 'saida' && m.supplierId === paymentSupplier?.id && !!m.supplierId && (!paymentFrom || m.date >= paymentFrom) && (!paymentTo || m.date <= paymentTo));
+  const supplierPaymentTotal = matchingSupplierPayments.reduce((sum, m) => sum + (Number(m.value) || 0), 0);
+  const printSupplierPaymentReceipt = (m: any) => {
+    if (!paymentSupplier) return;
+    const pdf = new jsPDF();
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(15);
+    pdf.text('RECIBO DE PAGAMENTO EM DINHEIRO', 105, 22, { align: 'center' });
+    pdf.setFontSize(10); pdf.text(settings?.name || 'Lar São Vicente de Paulo', 105, 32, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    const lines = [
+      'Favorecido: ' + paymentSupplier.name,
+      'CPF/CNPJ: ' + (paymentSupplier.cpfCnpj || 'Não informado'),
+      'Data: ' + new Date(m.date + 'T12:00:00').toLocaleDateString('pt-BR'),
+      'Valor: ' + new Intl.NumberFormat('pt-BR', {style:'currency',currency:'BRL'}).format(Number(m.value) || 0),
+      'Descrição: ' + m.description,
+      'Referência: ' + (m.receiptNumber || m.id || '')
+    ];
+    let y=48;
+    lines.forEach(line => { const wrapped=pdf.splitTextToSize(line,174); pdf.text(wrapped,18,y); y += wrapped.length*6+3; });
+    const signatureY=Math.max(y+25,125);
+    pdf.line(35,signatureY,175,signatureY);
+    pdf.text('Assinatura do favorecido / prestador',105,signatureY+7,{align:'center'});
+    pdf.setFontSize(8);
+    pdf.text('Recibo simples de controle interno. Não substitui nota fiscal.',105,280,{align:'center'});
+    pdf.save('recibo-caixinha-'+(m.id || 'pagamento')+'.pdf');
+  };
   // Printable layout for shopping list
   const handlePrintShoppingList = () => {
     window.print();
@@ -2705,6 +2731,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                           </div>
                         </div>
 
+                        {supplierOnly && <button type="button" onClick={() => { setPaymentSupplier(supp); setPaymentFrom(''); setPaymentTo(''); }} className="mt-3 text-xs text-blue-700 underline text-left">Ver pagamentos em dinheiro</button>}
                         <div className="mt-4 pt-3 border-t">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Categorias Atendidas:</span>
                           <div className="flex flex-wrap gap-1 mt-1">
@@ -2734,9 +2761,30 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
             </div>
           )}
 
+          {supplierOnly && paymentSupplier && (
+            <div className="m-6 p-5 border rounded-2xl space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-bold text-slate-800">Pagamentos em dinheiro — {paymentSupplier.name}</h3>
+                <button type="button" className="text-xs text-blue-700 underline" onClick={() => setPaymentSupplier(null)}>Fechar</button>
+              </div>
+              <div className="flex flex-wrap gap-3 items-end">
+                <label className="text-xs">De<input type="date" value={paymentFrom} onChange={e => setPaymentFrom(e.target.value)} className="block p-2 border rounded"/></label>
+                <label className="text-xs">Até<input type="date" value={paymentTo} onChange={e => setPaymentTo(e.target.value)} className="block p-2 border rounded"/></label>
+                <strong className="text-sm ml-auto">Total: {new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(supplierPaymentTotal)}</strong>
+              </div>
+              {matchingSupplierPayments.length === 0 ? <p className="text-xs text-slate-500">Nenhum pagamento vinculado no período.</p> : matchingSupplierPayments.map(m => (
+                <div key={m.id} className="flex flex-wrap gap-3 items-center justify-between border p-3 rounded-xl text-xs">
+                  <span>{new Date(m.date+'T12:00:00').toLocaleDateString('pt-BR')} — {m.description}</span>
+                  <strong>{new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(m.value) || 0)}</strong>
+                  <button type="button" className="text-blue-700 underline" onClick={() => printSupplierPaymentReceipt(m)}>Emitir / Reimprimir recibo</button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* SUPPLIER FORM MODAL */}
           {isSupplierModalOpen && (
-            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[80] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
                 <header className="bg-slate-50 border-b px-6 py-4 flex justify-between items-center">
                   <div className="flex items-center gap-2">
