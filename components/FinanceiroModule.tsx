@@ -801,6 +801,35 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
     }
   };
 
+  const handleSaveCashCategory = async () => {
+    const name = categoryEditorName.trim();
+    if (!name) return alert('Informe o nome da categoria.');
+    try {
+      await saveCaixinhaCategory({ id: categoryEditorId || undefined, name });
+      const updated = await fetchCaixinhaCategories();
+      setCashCategories(updated);
+      setCategoryEditorId('');
+      setCategoryEditorName('');
+    } catch (error) {
+      alert('Não foi possível salvar a categoria.');
+    }
+  };
+
+  const handleQuickCashSupplier = async () => {
+    const name = quickCashSupplierName.trim();
+    if (!name) return alert('Informe o nome do fornecedor ou prestador.');
+    try {
+      const result = await saveSupplier({ name, type: 'prestador', phone: '', representative: '', email: '', categories: [] });
+      const updated = await fetchSuppliers();
+      setCashSuppliers(updated);
+      if (result?.supplier?.id) setCaixinhaForm(prev => ({ ...prev, supplierId: result.supplier.id }));
+      setQuickCashSupplierOpen(false);
+      setQuickCashSupplierName('');
+    } catch (error) {
+      alert('Não foi possível cadastrar o fornecedor ou prestador.');
+    }
+  };
+
   // Unified Caixinha Ledger Computation
   const {
     allCaixinhaItems,
@@ -860,7 +889,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
         description: m.description,
         value: Number(m.value) || 0,
         date: m.date,
-        responsible: m.responsible || '',
+        responsible: m.supplierName || m.responsible || '',
         receiptNumber: m.receiptNumber || '',
         notes: m.notes || '',
         isFromDonation: false,
@@ -2226,6 +2255,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                         <option value="carne_dinheiro">Carnês em Dinheiro</option>
                         <option value="entrada_avulsa">Entradas Avulsas / Reforço</option>
                         <option value="outro">Outras</option>
+                        {cashCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                       </select>
                     </div>
                   </div>
@@ -3815,7 +3845,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
               <div className="flex items-center gap-2 text-[#004c99]">
                 <Wallet className="w-5 h-5" />
                 <h3 className="text-base font-black uppercase tracking-tight">
-                  {editingCaixinhaMovement ? 'Editar Movimentação da Caixinha' : 'Novo Lançamento na Caixinha'}
+                  {editingCaixinhaMovement ? 'Editar Movimentação da Caixinha' : cashOperation === 'despesa' ? 'Registrar Saída em Dinheiro' : 'Transferência entre Banco e Caixinha'}
                 </h3>
               </div>
               <button
@@ -3910,6 +3940,19 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                   className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:border-[#004c99]"
                 />
               </div>
+
+              {cashOperation === 'despesa' && (
+                <div>
+                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                    <label className="text-[10px] font-black uppercase text-gray-500">Fornecedor / Prestador de serviços (opcional)</label>
+                    <button type="button" className="text-blue-700 font-bold text-xs border px-2 rounded" title="Cadastrar novo fornecedor ou prestador" onClick={() => { setQuickCashSupplierName(''); setQuickCashSupplierOpen(true); }}>+</button>
+                  </div>
+                  <select className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold" value={caixinhaForm.supplierId} onChange={e => setCaixinhaForm(prev => ({ ...prev, supplierId: e.target.value }))}>
+                    <option value="">Sem fornecedor vinculado</option>
+                    {cashSuppliers.map(sup => <option key={sup.id} value={sup.id}>{sup.name}</option>)}
+                  </select>
+                </div>
+              )}
 
               {/* Responsável / Favorecido & Nº Recibo */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
