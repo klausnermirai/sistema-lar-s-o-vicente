@@ -2029,27 +2029,8 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                   </div>
 
                   <div className="mt-5 pt-4 border-t border-white/15 flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => handleOpenNewCaixinhaModal('saida', 'servico_sem_nota')}
-                      className="flex-1 min-w-[130px] bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                    >
-                      <ArrowDownRight size={14} />
-                      Nova Saída
-                    </button>
-                    <button
-                      onClick={() => handleOpenNewCaixinhaModal('saida', 'deposito_bancario')}
-                      className="flex-1 min-w-[130px] bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                    >
-                      <Landmark size={14} />
-                      Depósito Banco
-                    </button>
-                    <button
-                      onClick={() => handleOpenNewCaixinhaModal('entrada', 'entrada_avulsa')}
-                      className="flex-1 min-w-[130px] bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                    >
-                      <ArrowUpRight size={14} />
-                      Reforço Caixa
-                    </button>
+                    <button onClick={() => handleOpenNewCaixinhaModal('saida', 'servico_sem_nota')} className="flex-1 min-w-[130px] bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2"><ArrowDownRight size={14}/> Registrar Saída</button>
+                    <button onClick={() => handleOpenNewCaixinhaModal('saida', 'deposito_bancario')} className="flex-1 min-w-[130px] bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2"><Landmark size={14}/> Transferência</button>
                   </div>
                 </div>
 
@@ -2192,8 +2173,11 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                       className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm"
                     >
                       <Plus size={15} />
-                      <span>Nova Saída / Despesa</span>
+                      <span>Registrar Saída</span>
                     </button>
+                    <button onClick={() => handleOpenNewCaixinhaModal('saida', 'deposito_bancario')} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider"><Landmark size={15}/> Transferência</button>
+                    {['administrador','gerencial'].includes(session?.accessLevel) && <button type="button" onClick={() => setCategoryEditorOpen(true)} className="text-xs font-bold border rounded-xl px-3 py-2">Categorias de despesas</button>}
+
                   </div>
                 </div>
 
@@ -3846,69 +3830,30 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
             </div>
 
             <form onSubmit={handleSaveCaixinhaSubmit} className="space-y-4 mt-5">
-              {/* Type Switcher (Entrada vs Saída) */}
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-wider text-gray-500 mb-1.5">
-                  Tipo de Movimentação *
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCaixinhaForm(prev => ({ ...prev, type: 'saida', category: 'servico_sem_nota' }))}
-                    className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 border-2 transition-all ${
-                      caixinhaForm.type === 'saida'
-                        ? 'bg-rose-50 border-rose-600 text-rose-700 shadow-xs'
-                        : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
-                    }`}
-                  >
-                    <ArrowDownRight size={16} className={caixinhaForm.type === 'saida' ? 'text-rose-600' : 'text-gray-400'} />
-                    Saída (-) / Despesa
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCaixinhaForm(prev => ({ ...prev, type: 'entrada', category: 'entrada_avulsa' }))}
-                    className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 border-2 transition-all ${
-                      caixinhaForm.type === 'entrada'
-                        ? 'bg-emerald-50 border-emerald-600 text-emerald-700 shadow-xs'
-                        : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
-                    }`}
-                  >
-                    <ArrowUpRight size={16} className={caixinhaForm.type === 'entrada' ? 'text-emerald-600' : 'text-gray-400'} />
-                    Entrada (+) / Reforço
-                  </button>
+              {cashOperation !== 'despesa' && (
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-gray-500">Tipo de transferência *</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => { setCashOperation('deposito'); setCaixinhaForm(prev => ({ ...prev, type: 'saida', category: 'deposito_bancario', supplierId: '' })); }} className={`p-3 rounded-xl border text-xs font-bold ${cashOperation === 'deposito' ? 'bg-indigo-100 border-indigo-600' : 'bg-white'}`}>Depósito no Banco (-)</button>
+                    <button type="button" onClick={() => { setCashOperation('saque'); setCaixinhaForm(prev => ({ ...prev, type: 'entrada', category: 'entrada_avulsa', supplierId: '' })); }} className={`p-3 rounded-xl border text-xs font-bold ${cashOperation === 'saque' ? 'bg-indigo-100 border-indigo-600' : 'bg-white'}`}>Saque do Banco (+)</button>
+                  </div>
+                  <p className="text-xs text-gray-500">Transferência não é receita nem despesa: apenas movimenta dinheiro físico entre banco e Caixinha.</p>
                 </div>
-              </div>
-
-              {/* Category */}
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-wider text-gray-500 mb-1.5">
-                  Categoria / Finalidade *
-                </label>
-                <select
-                  value={caixinhaForm.category}
-                  onChange={(e) => setCaixinhaForm(prev => ({ ...prev, category: e.target.value as any }))}
-                  required
-                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:border-[#004c99]"
-                >
-                  {caixinhaForm.type === 'saida' ? (
-                    <>
-                      <option value="servico_sem_nota">Serviço sem Nota Fiscal (Pedreiro, Jardineiro, Frete, Diária, etc.)</option>
-                      <option value="deposito_bancario">Depósito Bancário (Envio de dinheiro para conta corrente do banco)</option>
-                      <option value="despesa_miuda">Despesa Miúda / Suprimentos Urgentes</option>
-                      <option value="alimentacao_diaria">Alimentação / Lanche de Voluntários / Diárias</option>
-                      <option value="outro">Outra Saída em Dinheiro</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="entrada_avulsa">Reforço de Caixa / Entrada em Dinheiro</option>
-                      <option value="doacao_dinheiro">Doação Avulsa em Dinheiro</option>
-                      <option value="carne_dinheiro">Carnê / Parcela em Dinheiro</option>
-                      <option value="outro">Outra Entrada em Dinheiro</option>
-                    </>
-                  )}
-                </select>
-              </div>
+              )}
+              {cashOperation === 'despesa' ? (
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-gray-500 mb-1.5">Categoria / Finalidade *</label>
+                  <select value={caixinhaForm.category} onChange={e => setCaixinhaForm(prev => ({ ...prev, category: e.target.value }))} required className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold">
+                    <option value="servico_sem_nota">Serviço sem Nota Fiscal</option>
+                    <option value="despesa_miuda">Despesa Miúda / Suprimentos Urgentes</option>
+                    <option value="alimentacao_diaria">Alimentação / Diárias</option>
+                    <option value="outro">Outra Saída em Dinheiro</option>
+                    {cashCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-700 font-semibold">Movimento: {cashOperation === 'deposito' ? 'Depósito de dinheiro no banco (reduz Caixinha)' : 'Saque bancário para a Caixinha (aumenta Caixinha)'}</p>
+              )}
 
               {/* Valor & Data */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
