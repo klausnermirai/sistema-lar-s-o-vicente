@@ -1262,6 +1262,7 @@ export enum AppRoute {
   VISITANTES = 'visitantes',
   EMPLOYEES = 'employees',
   STOCK = 'compras',
+  SUPPLIERS = 'fornecedores-prestadores',
   FINANCEIRO = 'financeiro',
   CONTROLE_FINANCEIRO_IDOSOS = 'controle-financeiro-idosos',
   CENTRAL_INFO = 'central-info',
@@ -1547,6 +1548,8 @@ export interface Supplier {
   representative: string;
   email: string;
   categories?: string[];
+  type?: 'fornecedor' | 'prestador' | 'ambos';
+  cpfCnpj?: string;
   createdAt?: string;
 }
 
@@ -1696,7 +1699,9 @@ export interface Carne {
 }
 
 export type CaixinhaMovementType = 'entrada' | 'saida';
-export type CaixinhaCategory = 
+export type CaixinhaCategory = string; // Mantém as categorias antigas e admite categorias personalizadas.
+
+export type LegacyCaixinhaCategory = 
   | 'servico_sem_nota' 
   | 'despesa_miuda' 
   | 'deposito_bancario' 
@@ -1717,6 +1722,8 @@ export interface CaixinhaMovement {
   responsible?: string;
   receiptNumber?: string;
   originDonationId?: string;
+  supplierId?: string;
+  supplierName?: string;
   institutionId?: string;
   notes?: string;
   createdAt?: string;
