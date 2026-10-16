@@ -3989,7 +3989,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                 <div>
                   <div className="flex items-center justify-between gap-3 mb-1.5">
                     <label className="text-[10px] font-black uppercase text-gray-500">Fornecedor / Prestador de serviços (opcional)</label>
-                    <button type="button" className="text-blue-700 font-bold text-xs border px-2 rounded" title="Cadastrar novo fornecedor ou prestador" onClick={() => { setQuickCashSupplierName(''); setQuickCashSupplierOpen(true); }}>+</button>
+                    {['administrador', 'gerencial', 'auxiliar_administrativo', 'nutricionista', 'enfermeira'].includes(session?.accessLevel) && <button type="button" className="text-blue-700 font-bold text-xs border px-2 rounded" title="Cadastrar novo fornecedor ou prestador" onClick={() => { setQuickCashSupplierName(''); setQuickCashSupplierOpen(true); }}>+</button>}
                   </div>
                   <select className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold" value={caixinhaForm.supplierId} onChange={e => setCaixinhaForm(prev => ({ ...prev, supplierId: e.target.value }))}>
                     <option value="">Sem fornecedor vinculado</option>
