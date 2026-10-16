@@ -31,8 +31,9 @@ import {
   HeartHandshake,
   Globe2,
   Building,
-  UserCheck
-, Truck } from 'lucide-react';
+  UserCheck,
+  Truck
+} from 'lucide-react';
 import { AppRoute } from '../types';
 import { getLastReadTimestamp } from '../lib/muralStore';
 import { SupportChat } from './SupportChat';
