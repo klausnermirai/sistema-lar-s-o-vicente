@@ -3837,6 +3837,50 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
         </div>
       )}
 
+      {categoryEditorOpen && (
+        <div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center">
+              <h3 className="font-black text-sm">Categorias de Despesas da Caixinha</h3>
+              <button type="button" onClick={() => { setCategoryEditorOpen(false); setCategoryEditorName(''); setCategoryEditorId(''); }}><X size={18}/></button>
+            </div>
+            <p className="text-xs text-gray-500">As categorias padrão permanecem disponíveis. Aqui você cadastra e edita categorias adicionais.</p>
+            <div className="flex gap-2">
+              <input type="text" value={categoryEditorName} onChange={e => setCategoryEditorName(e.target.value)} placeholder="Nome da categoria" className="flex-1 min-w-0 border rounded-xl p-2 text-xs" maxLength={90}/>
+              <button type="button" onClick={handleSaveCashCategory} className="bg-blue-800 text-white rounded-xl px-3 text-xs font-bold">Salvar</button>
+            </div>
+            {categoryEditorId && <button type="button" className="text-xs text-gray-600 underline" onClick={() => { setCategoryEditorId(''); setCategoryEditorName(''); }}>Cancelar edição</button>}
+            <div className="space-y-2">
+              {cashCategories.map(cat => (
+                <div key={cat.id} className="border rounded-xl px-3 py-2 flex justify-between gap-2 items-center text-xs">
+                  <span>{cat.name}</span>
+                  <button type="button" onClick={() => { setCategoryEditorId(cat.id); setCategoryEditorName(cat.name); }} className="text-blue-700 font-semibold">Editar</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {quickCashSupplierOpen && (
+        <div className="fixed inset-0 z-[210] bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-sm">Novo Fornecedor / Prestador</h3>
+              <button type="button" onClick={() => setQuickCashSupplierOpen(false)}><X size={18}/></button>
+            </div>
+            <label className="block text-xs font-semibold">Nome / Razão Social *
+              <input type="text" autoFocus value={quickCashSupplierName} onChange={e => setQuickCashSupplierName(e.target.value)} className="mt-1 w-full border rounded-xl p-3 text-xs" placeholder="Nome do favorecido"/>
+            </label>
+            <p className="text-xs text-gray-500">Cadastro rápido como prestador de serviços. Outros dados podem ser complementados em Fornecedores e Prestadores.</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setQuickCashSupplierOpen(false)} className="border rounded-xl px-3 py-2 text-xs">Cancelar</button>
+              <button type="button" onClick={handleQuickCashSupplier} className="bg-blue-800 text-white rounded-xl px-4 py-2 text-xs font-bold">Cadastrar e selecionar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: CAIXINHA MOVEMENT FORM */}
       {showCaixinhaForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
