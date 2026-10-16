@@ -32,7 +32,7 @@ import {
   Globe2,
   Building,
   UserCheck
-} from 'lucide-react';
+, Truck } from 'lucide-react';
 import { AppRoute } from '../types';
 import { getLastReadTimestamp } from '../lib/muralStore';
 import { SupportChat } from './SupportChat';
@@ -190,6 +190,7 @@ const Layout: React.FC<LayoutProps> = ({
       AppRoute.SETTINGS,
       AppRoute.EMPLOYEES,
       AppRoute.STOCK,
+      AppRoute.SUPPLIERS,
       AppRoute.FINANCEIRO,
       AppRoute.CONTROLE_FINANCEIRO_IDOSOS
     ];
@@ -316,6 +317,7 @@ const Layout: React.FC<LayoutProps> = ({
     { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     { id: AppRoute.EMPLOYEES, label: 'Funcionários (RH)', icon: Users },
     { id: AppRoute.STOCK, label: 'Estoque e Compras', icon: Package },
+    { id: AppRoute.SUPPLIERS, label: 'Fornecedores e Prestadores', icon: Truck },
     { id: AppRoute.FINANCEIRO, label: 'Gestão Financeira', icon: DollarSign },
   ];
 
@@ -327,6 +329,7 @@ const Layout: React.FC<LayoutProps> = ({
     gestaoItems = [
       { id: AppRoute.EMPLOYEES, label: 'Funcionários (RH)', icon: Users },
       { id: AppRoute.STOCK, label: 'Estoque e Compras', icon: Package },
+    { id: AppRoute.SUPPLIERS, label: 'Fornecedores e Prestadores', icon: Truck },
       { id: AppRoute.FINANCEIRO, label: 'Gestão Financeira', icon: DollarSign },
       { id: AppRoute.SETTINGS, label: 'Configurações', icon: Settings },
     ];
@@ -340,7 +343,8 @@ const Layout: React.FC<LayoutProps> = ({
     }
   } else if (isNutricionista) {
     gestaoItems = [
-      { id: AppRoute.STOCK, label: 'Estoque e Compras', icon: Package }
+      { id: AppRoute.STOCK, label: 'Estoque e Compras', icon: Package },
+      { id: AppRoute.SUPPLIERS, label: 'Fornecedores e Prestadores', icon: Truck }
     ];
   }
 
@@ -688,6 +692,7 @@ const Layout: React.FC<LayoutProps> = ({
                activeRoute === AppRoute.CONSULTAS_MEDICAS ? 'Consulta Médica' :
                activeRoute === AppRoute.AGENDA ? 'Agenda Multidisciplinar' :
                activeRoute === AppRoute.STOCK ? 'Estoque e Compras' :
+                activeRoute === AppRoute.SUPPLIERS ? 'Fornecedores e Prestadores' :
                activeRoute === AppRoute.AMENDMENTS ? 'Planejamento de Emendas' :
                activeRoute === AppRoute.EMPLOYEES ? 'Gestão de Funcionários' :
                activeRoute === AppRoute.FINANCEIRO ? 'Gestão Financeira' :
