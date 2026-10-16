@@ -5484,12 +5484,50 @@ async function startServer() {
     }
   });
 
+  // Categorias configuráveis da Caixinha, separadas das categorias de doações.
+  app.get('/api/caixinha-categories', async (req: any, res) => {
+    try {
+      const rawId = req.headers['x-institution-id'] as string;
+      if (!rawId) return res.status(400).json({ error: 'Instituição obrigatória.' });
+      const institutionId = await getRealInstitutionId(rawId);
+      if (!isAuthorizedForDocument(req.user, { institutionId })) return res.status(403).json({ error: 'Acesso não autorizado.' });
+      const snapshot = await db.collection('caixinha_categories').where('institutionId', '==', institutionId).get();
+      res.json(snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })).filter((item: any) => !item.archived));
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao buscar categorias da Caixinha.');
+    }
+  });
+
+  app.post('/api/caixinha-categories', requireRole(['administrador', 'gerencial']), async (req: any, res) => {
+    try {
+      const rawId = req.headers['x-institution-id'] as string;
+      if (!rawId) return res.status(400).json({ error: 'Instituição obrigatória.' });
+      const institutionId = await getRealInstitutionId(rawId);
+      if (!isAuthorizedForDocument(req.user, { institutionId })) return res.status(403).json({ error: 'Acesso não autorizado.' });
+      const name = String(req.body?.name || '').trim();
+      if (!name || name.length > 90) return res.status(400).json({ error: 'Informe uma categoria válida (até 90 caracteres).' });
+      const id = typeof req.body?.id === 'string' ? req.body.id : '';
+      const collection = db.collection('caixinha_categories');
+      if (id) {
+        const doc = await collection.doc(id).get();
+        if (!doc.exists || !isAuthorizedForDocument(req.user, doc.data())) return res.status(404).json({ error: 'Categoria não encontrada.' });
+        await doc.ref.update({ name, updatedAt: new Date().toISOString() });
+        return res.json({ id, name, institutionId });
+      }
+      const newDoc = await collection.add({ name, institutionId, archived: false, createdAt: new Date().toISOString() });
+      return res.json({ id: newDoc.id, name, institutionId });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar categoria da Caixinha.');
+    }
+  });
+
   // --- CONTROLE DA CAIXINHA (FUNDO FIXO / DINHEIRO) API ---
   app.get('/api/caixinha', async (req: any, res) => {
     try {
       const institutionId = req.headers['x-institution-id'] as string || req.query.institutionId as string;
       if (!institutionId) return res.json([]);
       const realId = await getRealInstitutionId(institutionId as string);
+      if (!isAuthorizedForDocument(req.user, { institutionId: realId })) return res.status(403).json({ error: 'Acesso não autorizado.' });
       let queryRef: any = db.collection('caixinha_movements').where('institutionId', '==', realId);
 
       const { startDate, endDate } = req.query;
@@ -5515,8 +5553,27 @@ async function startServer() {
     try {
       const institutionId = req.headers['x-institution-id'] as string || req.body.institutionId;
       const realId = await getRealInstitutionId(institutionId);
+      if (!isAuthorizedForDocument(req.user, { institutionId: realId })) return res.status(403).json({ error: 'Acesso não autorizado.' });
+      if (!['entrada', 'saida'].includes(data.type) || !Number.isFinite(Number(data.value)) || Number(data.value) <= 0 || !data.date || !data.category || !String(data.description || '').trim()) {
+        return res.status(400).json({ error: 'Movimentação inválida.' });
+      }
+      if (data.supplierId) {
+        const supplier = await db.collection('suppliers').doc(String(data.supplierId)).get();
+        if (!supplier.exists || !isAuthorizedForDocument(req.user, supplier.data()) || supplier.data()?.institutionId !== realId) {
+          return res.status(400).json({ error: 'Fornecedor ou prestador inválido para esta instituição.' });
+        }
+        data.supplierName = supplier.data()?.name || '';
+      } else {
+        data.supplierId = '';
+        data.supplierName = '';
+      }
       if (id && id.length > 10) {
-        await db.collection('caixinha_movements').doc(id).set({ ...data, institutionId: realId, updatedAt: new Date().toISOString() }, { merge: true });
+        const docRef = db.collection('caixinha_movements').doc(id);
+        const existing = await docRef.get();
+        if (!existing.exists || !isAuthorizedForDocument(req.user, existing.data()) || existing.data()?.institutionId !== realId) {
+          return res.status(404).json({ error: 'Movimentação não encontrada ou não autorizada.' });
+        }
+        await docRef.set({ ...data, institutionId: realId, updatedAt: new Date().toISOString() }, { merge: true });
         res.json({ ...data, id, institutionId: realId });
       } else {
         const docRef = await db.collection('caixinha_movements').add({
@@ -5972,12 +6029,18 @@ async function startServer() {
         representative: sup.representative || '',
         email: sup.email || '',
         categories: sup.categories || [],
+        type: ['fornecedor', 'prestador', 'ambos'].includes(sup.type) ? sup.type : 'fornecedor',
+        cpfCnpj: String(sup.cpfCnpj || '').trim(),
         institutionId,
         updatedAt: new Date().toISOString()
       };
 
       if (sup.id) {
         const docRef = db.collection('suppliers').doc(sup.id);
+        const existing = await docRef.get();
+        if (!existing.exists || existing.data()?.institutionId !== institutionId || !isAuthorizedForDocument((req as any).user, existing.data())) {
+          return res.status(404).json({ error: 'Fornecedor não encontrado ou não autorizado.' });
+        }
         await docRef.set(supplierDoc, { merge: true });
         res.json({ success: true, supplier: { id: sup.id, ...supplierDoc } });
       } else {
