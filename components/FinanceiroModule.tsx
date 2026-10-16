@@ -786,7 +786,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
       receiptNumber: caixinhaForm.receiptNumber.trim(),
       supplierId: cashOperation === 'despesa' ? caixinhaForm.supplierId : '',
       supplierName: cashOperation === 'despesa' ? (cashSuppliers.find(s => s.id === caixinhaForm.supplierId)?.name || '') : '',
-      categoryLabel: cashCategories.find(c => c.id === caixinhaForm.category)?.name,
+      categoryLabel: cashCategories.find(c => c.id === caixinhaForm.category)?.name || '',
       notes: caixinhaForm.notes.trim(),
       institutionId: session?.institutionId || session?.cnpj
     };
