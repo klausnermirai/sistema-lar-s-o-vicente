@@ -394,7 +394,6 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               setMatchedVisitor(matchResult.visitor);
               setSelectedMatchedResidentId('');
               setMatchConfidence(averageSimilarity);
-              speak(`Visitante identificado: ${matchResult.visitor.name}`);
               return;
             }
           } else {
@@ -622,6 +621,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
 
   // Captura antes do formulário, reutilizando o stream da câmera.
   const handleOpenQuickNewModal = () => {
+    setQuickName('');
+    setQuickPhone('');
+    setQuickKinship('');
+    setQuickResidentId('');
     setManualCapturedThumb(null);
     setManualCapturedDescriptor(null);
     setShowQuickNewModal(true);
@@ -756,7 +759,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     } catch (err) {
       entryInProgressRef.current = false;
       console.error(err);
-      alert('O cadastro ou o registro da entrada não foi concluído. Verifique a conexão e tente novamente.');
+      alert('Não foi possível concluir o cadastro biométrico. Verifique a conexão e tente novamente.');
     }
   };
 
