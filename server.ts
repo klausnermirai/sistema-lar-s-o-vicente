@@ -5498,7 +5498,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/caixinha-categories', requireRole(['administrador', 'gerencial']), async (req: any, res) => {
+  app.post('/api/caixinha-categories', async (req: any, res) => {
     try {
       const rawId = req.headers['x-institution-id'] as string;
       if (!rawId) return res.status(400).json({ error: 'Instituição obrigatória.' });
