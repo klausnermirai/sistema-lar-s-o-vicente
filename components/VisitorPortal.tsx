@@ -255,8 +255,9 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
         ? v.linkedResidents.map(link => link.residentId)
         : (v.residentId ? [v.residentId] : []);
       const hasActiveResidentLink = linkedIds.some(id => residents.some(resident => resident.id === id));
-      const hasValidBiometry = isFaceDescriptorValid(v.faceDescriptor);
-      return v.type === 'residente' && v.sourceType !== 'global' && hasActiveResidentLink && hasValidBiometry;
+      // Exibe também cadastros legados sem descritor compatível para permitir recadastramento.
+      // O reconhecimento automático filtra descritores válidos na câmera.
+      return v.type === 'residente' && v.sourceType !== 'global' && hasActiveResidentLink;
     }),
     [unifiedVisitorsList, residents]
   );
