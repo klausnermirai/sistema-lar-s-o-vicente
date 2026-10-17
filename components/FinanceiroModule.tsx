@@ -805,9 +805,13 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
     const name = categoryEditorName.trim();
     if (!name) return alert('Informe o nome da categoria.');
     try {
-      await saveCaixinhaCategory({ id: categoryEditorId || undefined, name });
+      const saved = await saveCaixinhaCategory({ id: categoryEditorId || undefined, name });
       const updated = await fetchCaixinhaCategories();
       setCashCategories(updated);
+      if (!categoryEditorId && saved?.id && showCaixinhaForm && cashOperation === 'despesa') {
+        setCaixinhaForm(prev => ({ ...prev, category: saved.id }));
+        setCategoryEditorOpen(false);
+      }
       setCategoryEditorId('');
       setCategoryEditorName('');
     } catch (error) {
@@ -2205,7 +2209,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                       <span>Registrar Saída</span>
                     </button>
                     <button onClick={() => handleOpenNewCaixinhaModal('saida', 'deposito_bancario')} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider"><Landmark size={15}/> Transferência</button>
-                    {['administrador','gerencial'].includes(session?.accessLevel) && <button type="button" onClick={() => setCategoryEditorOpen(true)} className="text-xs font-bold border rounded-xl px-3 py-2">Categorias de despesas</button>}
+                    <button type="button" onClick={() => setCategoryEditorOpen(true)} className="text-xs font-bold border rounded-xl px-3 py-2">Categorias de despesas</button>
 
                   </div>
                 </div>
@@ -3916,7 +3920,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
               )}
               {cashOperation === 'despesa' ? (
                 <div>
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-gray-500 mb-1.5">Categoria / Finalidade *</label>
+                  <div className="flex items-center justify-between gap-2 mb-1.5"><label className="block text-[10px] font-black uppercase tracking-wider text-gray-500">Categoria / Finalidade *</label><button type="button" title="Cadastrar ou editar categoria" aria-label="Cadastrar ou editar categoria da Caixinha" onClick={() => { setCategoryEditorId(''); setCategoryEditorName(''); setCategoryEditorOpen(true); }} className="text-blue-700 font-bold text-xs border rounded px-2">+</button></div>
                   <select value={caixinhaForm.category} onChange={e => setCaixinhaForm(prev => ({ ...prev, category: e.target.value }))} required className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold">
                     <option value="servico_sem_nota">Serviço sem Nota Fiscal</option>
                     <option value="despesa_miuda">Despesa Miúda / Suprimentos Urgentes</option>
