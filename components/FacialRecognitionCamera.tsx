@@ -108,6 +108,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   const [matchedVisitor, setMatchedVisitor] = useState<UnifiedVisitor | null>(null);
   const [matchConfidence, setMatchConfidence] = useState<number>(0);
   const [confirmedSuccess, setConfirmedSuccess] = useState<string | null>(null);
+  const [successIsEnrollment, setSuccessIsEnrollment] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
   const [selectedThreshold, setSelectedThreshold] = useState<number>(75);
   const [bestCandidatePreview, setBestCandidatePreview] = useState<{ name: string; similarity: number } | null>(null);
@@ -542,8 +543,9 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       });
 
       const visitorName = matchedVisitor.name;
-      setConfirmedSuccess(`Entrada liberada para ${visitorName} visitar ${chosenResident.residentName}!`);
-      speak(`Entrada liberada para ${visitorName}. Seja bem-vindo.`);
+      setSuccessIsEnrollment(false);
+      setConfirmedSuccess(`${visitorName}, seja bem-vindo(a)! Entrada autorizada.`);
+      speak(`${visitorName}, seja bem-vindo(a)! Entrada autorizada.`);
 
       setMatchedVisitor(null);
       setSelectedMatchedResidentId('');
@@ -602,16 +604,14 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
         enrollment.descriptor
       );
 
-      setMatchedVisitor({
-        ...selectedVisitorToLink,
-        photoUrl: enrollment.thumbnailDataUrl,
-        faceDescriptor: enrollment.descriptor
-      });
-      setMatchConfidence(98);
+      setMatchedVisitor(null);
       setUnrecognizedFace(null);
       setShowQuickLinkModal(false);
       setSelectedVisitorToLink(null);
-      speak(`Rosto cadastrado com sucesso para ${selectedVisitorToLink.name}!`);
+      setSuccessIsEnrollment(true);
+      setConfirmedSuccess(`Biometria de ${selectedVisitorToLink.name} atualizada com sucesso.`);
+      speak(`Biometria cadastrada com sucesso para ${selectedVisitorToLink.name}.`);
+      window.setTimeout(() => { setConfirmedSuccess(null); onEntryCompleted?.(); }, 2000);
     } catch (err) {
       console.error(err);
       alert('Erro ao salvar biometria facial.');
@@ -620,17 +620,32 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     }
   };
 
-  // O cadastro abre primeiro; a captura é iniciada pelo visitante.
+  // Captura antes do formulário, reutilizando o stream da câmera.
   const handleOpenQuickNewModal = () => {
-    setShowQuickNewModal(true);
     setManualCapturedThumb(null);
     setManualCapturedDescriptor(null);
+    setShowQuickNewModal(true);
+    setCaptureError(null);
+    setShowCaptureModal(true);
   };
 
   const handleOpenCaptureModal = () => {
     setCaptureError(null);
     setShowCaptureModal(true);
   };
+
+  // Inicia captura automaticamente ao ficar disponível a prévia do vídeo.
+  useEffect(() => {
+    if (!showCaptureModal || !streamActive) return;
+    const timer = window.setInterval(() => {
+      const video = captureVideoRef.current;
+      if (video && video.readyState >= 2 && !isCapturingInModal) {
+        window.clearInterval(timer);
+        void handleCaptureManualPhotoInModal();
+      }
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [showCaptureModal, streamActive]);
 
   // Captura no vídeo visível do modal, usando o mesmo stream.
   const handleCaptureManualPhotoInModal = async () => {
@@ -665,12 +680,12 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       alert('Por favor, informe o nome do visitante.');
       return;
     }
-    if (!quickPhone.trim()) {
-      alert('Por favor, informe o telefone do visitante.');
-      return;
-    }
     if (!quickResidentId) {
       alert('Por favor, selecione qual residente o visitante veio visitar.');
+      return;
+    }
+    if (!quickKinship.trim()) {
+      alert('Informe o grau de parentesco ou vínculo.');
       return;
     }
     if (entryInProgressRef.current) return;
@@ -699,6 +714,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       id: 'vis_' + Date.now().toString(),
       name: quickName.trim(),
       phone: quickPhone.trim(),
+      kinship: quickKinship.trim(),
       type: 'residente',
       residentId: selectedRes.id,
       residentName: selectedRes.name,
@@ -709,20 +725,8 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     };
 
     try {
-      // Persistências sequenciais: primeiro cadastro/vínculo, depois Livro de Portaria.
+      // Cadastro biométrico e registro de entrada são operações independentes.
       await onRegisterQuickVisitor(newVisitor);
-
-      await onConfirmEntry({
-        visitorName: newVisitor.name,
-        type: 'residente',
-        residentId: selectedRes.id,
-        residentName: selectedRes.name,
-        photoUrl: undefined,
-        faceDescriptor: undefined,
-        matchedVia: 'facial',
-        facialConfidence: 99,
-        comments: 'Primeiro cadastro facial e entrada direta na portaria'
-      });
 
       setShowQuickNewModal(false);
       setUnrecognizedFace(null);
@@ -731,11 +735,13 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       setMatchConfidence(0);
       setBestCandidatePreview(null);
       setLastDetection(null);
-      setConfirmedSuccess(`Visitante ${newVisitor.name} cadastrado e entrada liberada!`);
-      speak(`Cadastro concluído e entrada liberada para ${newVisitor.name}.`);
+      setSuccessIsEnrollment(true);
+      setConfirmedSuccess(`Biometria de ${newVisitor.name} cadastrada com sucesso.`);
+      speak(`Biometria cadastrada com sucesso para ${newVisitor.name}.`);
 
       setQuickName('');
       setQuickPhone('');
+      setQuickKinship('');
       setQuickResidentId('');
       setManualCapturedThumb(null);
       setManualCapturedDescriptor(null);
@@ -898,12 +904,12 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
 
               {/* Moldura Guia de Enquadramento Facial (HUD) */}
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
-                <div className={`relative w-44 h-56 sm:w-56 sm:h-70 rounded-[48%] border-2 transition-all duration-300 ${
+                <div className={`relative w-44 h-56 sm:w-56 sm:h-70 rounded-[48%] border transition-all duration-300 ${
                   matchedVisitor
                     ? 'border-emerald-400 shadow-[0_0_30px_rgba(52,211,153,0.5)] scale-105'
                     : lastDetection?.detected
                     ? 'border-blue-400 shadow-[0_0_20px_rgba(96,165,250,0.4)]'
-                    : 'border-white/30 border-dashed'
+                    : 'border-white/15 border-dashed'
                 }`}>
                   {/* Cantoneiras HUD */}
                   <div className="absolute -top-2 -left-2 w-5 h-5 border-t-4 border-l-4 border-blue-400 rounded-tl-lg"></div>
@@ -949,7 +955,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                       )}
                     </div>
                   ) : (
-                    <span className="text-gray-300">Posicione o rosto dentro da moldura</span>
+                    <span className="text-gray-300">Olhe para a câmera</span>
                   )}
                 </div>
               </div>
@@ -978,11 +984,11 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               <div className="w-14 h-14 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-200">
                 <CheckCircle2 size={32} />
               </div>
-              <h3 className="text-lg sm:text-xl font-black text-emerald-900 uppercase tracking-tight">Entrada Liberada!</h3>
+              <h3 className="text-lg sm:text-xl font-black text-emerald-900 uppercase tracking-tight">{successIsEnrollment ? "Biometria Cadastrada!" : "Entrada Autorizada!"}</h3>
               <p className="text-xs font-bold text-emerald-700">{confirmedSuccess}</p>
-              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
+              {!successIsEnrollment && <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
                 Registro gravado no Livro de Portaria às {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-              </p>
+              </p>}
             </div>
           ) : matchedVisitor ? (
             /* Card do Visitante Reconhecido */
@@ -1465,10 +1471,9 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               </div>
 
               <div>
-                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Telefone / WhatsApp *</label>
+                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Telefone / WhatsApp (opcional)</label>
                 <input
                   type="tel"
-                  required
                   value={quickPhone}
                   onChange={(e) => setQuickPhone(e.target.value)}
                   placeholder="(00) 00000-0000"
@@ -1490,6 +1495,10 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block mb-1">Grau de parentesco / vínculo *</label>
+                <input type="text" required value={quickKinship} onChange={(e) => setQuickKinship(e.target.value)} placeholder="Ex.: Filha, irmão, amigo" className="w-full p-3.5 bg-gray-50 border rounded-2xl text-sm font-bold" />
+              </div>
             </div>
 
             <div className="flex gap-3 pt-4 border-t">
@@ -1509,7 +1518,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                 disabled={isCapturingInModal}
                 className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5"
               >
-                <CheckCircle2 size={16} /> {isCapturingInModal ? 'Capturando biometria...' : 'Cadastrar e Registrar Entrada'}
+                <CheckCircle2 size={16} /> {isCapturingInModal ? 'Capturando biometria...' : 'Finalizar Cadastro'}
               </button>
             </div>
           </div>
@@ -1530,7 +1539,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               )}
             </div>
             <p className="text-sm text-gray-700" role="status">
-              {isCapturingInModal ? 'Capturando biometria... Mantenha o rosto visível por aproximadamente 3 segundos.' : 'Posicione o rosto no centro da câmera e inicie a captura.'}
+              {isCapturingInModal ? 'Capturando biometria... Mantenha o rosto visível por aproximadamente 3 segundos.' : 'Olhe para a câmera. A captura será iniciada automaticamente.'}
             </p>
             {captureError && <p role="alert" className="text-sm font-bold text-rose-700">{captureError}</p>}
             <div className="flex gap-3">
