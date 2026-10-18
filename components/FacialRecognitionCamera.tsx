@@ -90,6 +90,9 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraRequestRef = useRef(0);
   const captureVideoRef = useRef<HTMLVideoElement | null>(null);
+  const captureInFlightRef = useRef(false);
+  const captureAbortRef = useRef<AbortController | null>(null);
+  const captureAutoAttemptedRef = useRef(false);
   const [camerasListed, setCamerasListed] = useState(false);
 
   const [streamActive, setStreamActive] = useState<boolean>(false);
@@ -621,6 +624,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
 
   // Captura antes do formulário, reutilizando o stream da câmera.
   const handleOpenQuickNewModal = () => {
+    captureAutoAttemptedRef.current = false;
     setQuickName('');
     setQuickPhone('');
     setQuickKinship('');
@@ -633,16 +637,18 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   };
 
   const handleOpenCaptureModal = () => {
+    captureAutoAttemptedRef.current = false;
     setCaptureError(null);
     setShowCaptureModal(true);
   };
 
-  // Inicia captura automaticamente ao ficar disponível a prévia do vídeo.
+  // A captura automática ocorre uma única vez por abertura; falhas exigem nova tentativa explícita.
   useEffect(() => {
     if (!showCaptureModal || !streamActive) return;
     const timer = window.setInterval(() => {
       const video = captureVideoRef.current;
-      if (video && video.readyState >= 2 && !isCapturingInModal) {
+      if (video && video.readyState >= 2 && !captureInFlightRef.current && !captureAutoAttemptedRef.current) {
+        captureAutoAttemptedRef.current = true;
         window.clearInterval(timer);
         void handleCaptureManualPhotoInModal();
       }
@@ -650,30 +656,53 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     return () => window.clearInterval(timer);
   }, [showCaptureModal, streamActive]);
 
+  useEffect(() => () => { captureAbortRef.current?.abort(); }, []);
+
+  const cancelModalCapture = () => {
+    captureAbortRef.current?.abort();
+    setShowCaptureModal(false);
+  };
+
   // Captura no vídeo visível do modal, usando o mesmo stream.
   const handleCaptureManualPhotoInModal = async () => {
     const video = captureVideoRef.current;
-    if (!streamActive || !video || video.readyState < 2 || isCapturingInModal) {
+    if (captureInFlightRef.current) return;
+    if (!streamActive || !video || video.readyState < 2) {
       setCaptureError('Aguarde a câmera ficar pronta e tente novamente.');
       return;
     }
+    captureInFlightRef.current = true;
+    const controller = new AbortController();
+    captureAbortRef.current = controller;
     setCaptureError(null);
     setIsCapturingInModal(true);
     setManualCapturedDescriptor(null);
     try {
-      const enrollment = await captureFaceEnrollment(video);
+      const enrollment = await captureFaceEnrollment(video, { durationMs: 6000, signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (enrollment.thumbnailDataUrl) setManualCapturedThumb(enrollment.thumbnailDataUrl);
       if (enrollment.detected && enrollment.descriptor) {
         setManualCapturedDescriptor(enrollment.descriptor);
         setShowCaptureModal(false);
       } else {
-        setCaptureError('Não houve leituras faciais suficientes. Mantenha o rosto visível e tente novamente.');
+        const messages: Record<string, string> = {
+          NO_FACE_DETECTED: 'Nenhum rosto foi detectado. Olhe para a câmera com boa iluminação.',
+          INVALID_DESCRIPTOR: 'O rosto apareceu, mas a leitura biométrica não foi válida. Tente novamente.',
+          INSUFFICIENT_SAMPLES: 'Não foi possível obter leituras suficientes em até 6 segundos. Tente novamente.',
+          INCONSISTENT_READINGS: 'As leituras variaram muito. Mantenha o rosto visível e relativamente imóvel.',
+        };
+        setCaptureError(messages[enrollment.failureReason || ''] || 'Não foi possível concluir a captura. Tente novamente.');
+        console.info('Captura facial não concluída:', enrollment.failureReason, 'amostras válidas:', enrollment.samplesCollected);
       }
     } catch (err) {
-      console.warn('Erro ao capturar biometria no modal:', err);
-      setCaptureError('Não foi possível capturar a biometria. Tente novamente.');
+      if (!controller.signal.aborted) {
+        console.warn('Erro ao capturar biometria no modal:', err);
+        setCaptureError('Não foi possível capturar a biometria. Tente novamente.');
+      }
     } finally {
-      setIsCapturingInModal(false);
+      captureInFlightRef.current = false;
+      if (captureAbortRef.current === controller) captureAbortRef.current = null;
+      if (!controller.signal.aborted) setIsCapturingInModal(false);
     }
   };
 
@@ -1542,11 +1571,11 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               )}
             </div>
             <p className="text-sm text-gray-700" role="status">
-              {isCapturingInModal ? 'Capturando biometria... Mantenha o rosto visível por aproximadamente 3 segundos.' : 'Olhe para a câmera. A captura será iniciada automaticamente.'}
+              {isCapturingInModal ? 'Capturando biometria... Mantenha o rosto visível por até 6 segundos.' : 'Olhe para a câmera. A captura será iniciada automaticamente.'}
             </p>
             {captureError && <p role="alert" className="text-sm font-bold text-rose-700">{captureError}</p>}
             <div className="flex gap-3">
-              <button type="button" disabled={isCapturingInModal} onClick={() => setShowCaptureModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold disabled:opacity-40">
+              <button type="button" disabled={isCapturingInModal} onClick={cancelModalCapture} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold disabled:opacity-40">
                 Voltar ao cadastro
               </button>
               <button type="button" disabled={!streamActive || isCapturingInModal} onClick={handleCaptureManualPhotoInModal} className="flex-1 py-3 bg-[#004c99] text-white rounded-xl font-bold disabled:opacity-40">
