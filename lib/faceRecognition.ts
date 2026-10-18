@@ -13,6 +13,7 @@ export const DEFAULT_FACE_MATCH_THRESHOLD = 75;
 
 export interface FaceDetectionResult {
   detected: boolean;
+  facePresent?: boolean;
   box?: {
     x: number;
     y: number;
@@ -187,8 +188,8 @@ export const captureFaceEnrollment = async (
   while (!cancelled() && Date.now() - startedAt < durationMs && descriptors.length < Math.min(minSamples, maxSamples)) {
     const detection = await extractFaceFromCanvasOrVideo(source);
     if (cancelled()) break;
-    if (detection.detected) facesSeen += 1;
-    if (detection.detected && !isFaceDescriptorValid(detection.descriptor)) invalidDescriptors += 1;
+    if (detection.facePresent || detection.detected) facesSeen += 1;
+    if (detection.facePresent && !isFaceDescriptorValid(detection.descriptor)) invalidDescriptors += 1;
 
     if (detection.detected && isFaceDescriptorValid(detection.descriptor)) {
       const candidate = detection.descriptor;
@@ -301,6 +302,7 @@ export const extractFaceFromCanvasOrVideo = async (
     if (!face || !isFaceDescriptorValid(face.embedding)) {
       return {
         detected: false,
+        facePresent: !!face,
         score: face?.score || 0
       };
     }
@@ -310,6 +312,7 @@ export const extractFaceFromCanvasOrVideo = async (
 
     return {
       detected: true,
+      facePresent: true,
       score: face.score || face.boxScore || 0,
       box: {
         x: Math.round(x),
