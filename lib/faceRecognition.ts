@@ -115,6 +115,7 @@ export interface FaceEnrollmentResult {
   descriptor?: number[];
   thumbnailDataUrl?: string;
   samplesCollected: number;
+  failureReason?: 'NO_FACE_DETECTED' | 'INVALID_DESCRIPTOR' | 'INSUFFICIENT_SAMPLES' | 'INCONSISTENT_READINGS' | 'CANCELLED';
 }
 
 /**
@@ -151,8 +152,8 @@ export const averageFaceDescriptors = (descriptors: number[][]): number[] | null
 const wait = (ms: number) => new Promise<void>(resolve => window.setTimeout(resolve, ms));
 
 /**
- * Cadastro facial robusto: coleta várias leituras válidas por ~3 segundos
- * e salva somente o descritor médio normalizado.
+ * Coleta leituras faciais consistentes para cadastro, até 6 segundos.
+ * Não altera o limiar do reconhecimento em portaria.
  */
 export const captureFaceEnrollment = async (
   source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
@@ -162,11 +163,15 @@ export const captureFaceEnrollment = async (
     minSamples?: number;
     maxSamples?: number;
     minimumConsistency?: number;
+    signal?: AbortSignal;
   }
 ): Promise<FaceEnrollmentResult> => {
+  const cancelled = (): boolean => options?.signal?.aborted === true;
+  if (cancelled()) return { detected: false, samplesCollected: 0, failureReason: 'CANCELLED' };
   await initializeFaceRecognition();
+  if (cancelled()) return { detected: false, samplesCollected: 0, failureReason: 'CANCELLED' };
 
-  const durationMs = options?.durationMs ?? 3000;
+  const durationMs = options?.durationMs ?? 6000;
   const intervalMs = options?.intervalMs ?? 300;
   const minSamples = options?.minSamples ?? 4;
   const maxSamples = options?.maxSamples ?? 8;
@@ -174,45 +179,43 @@ export const captureFaceEnrollment = async (
 
   const descriptors: number[][] = [];
   let thumbnailDataUrl: string | undefined;
+  let facesSeen = 0;
+  let invalidDescriptors = 0;
+  let inconsistentReadings = 0;
   const startedAt = Date.now();
 
-  while (Date.now() - startedAt < durationMs && descriptors.length < maxSamples) {
+  while (!cancelled() && Date.now() - startedAt < durationMs && descriptors.length < Math.min(minSamples, maxSamples)) {
     const detection = await extractFaceFromCanvasOrVideo(source);
+    if (cancelled()) break;
+    if (detection.detected) facesSeen += 1;
+    if (detection.detected && !isFaceDescriptorValid(detection.descriptor)) invalidDescriptors += 1;
 
     if (detection.detected && isFaceDescriptorValid(detection.descriptor)) {
       const candidate = detection.descriptor;
       const isConsistent = descriptors.length === 0
         || calculateFaceSimilarity(descriptors[0], candidate) >= minimumConsistency;
-
       if (isConsistent) {
         descriptors.push(candidate);
         if (detection.thumbnailDataUrl) thumbnailDataUrl = detection.thumbnailDataUrl;
+      } else {
+        inconsistentReadings += 1;
       }
     }
 
-    if (Date.now() - startedAt < durationMs && descriptors.length < maxSamples) {
+    if (!cancelled() && Date.now() - startedAt < durationMs && descriptors.length < Math.min(minSamples, maxSamples)) {
       await wait(intervalMs);
     }
   }
 
-  const descriptor = descriptors.length >= minSamples
-    ? averageFaceDescriptors(descriptors)
-    : null;
-
+  if (cancelled()) return { detected: false, samplesCollected: descriptors.length, failureReason: 'CANCELLED' };
+  const descriptor = descriptors.length >= minSamples ? averageFaceDescriptors(descriptors) : null;
   if (!descriptor) {
-    return {
-      detected: false,
-      thumbnailDataUrl,
-      samplesCollected: descriptors.length
-    };
+    const failureReason = facesSeen === 0 ? 'NO_FACE_DETECTED'
+      : invalidDescriptors > 0 && descriptors.length === 0 ? 'INVALID_DESCRIPTOR'
+      : inconsistentReadings > 0 ? 'INCONSISTENT_READINGS' : 'INSUFFICIENT_SAMPLES';
+    return { detected: false, thumbnailDataUrl, samplesCollected: descriptors.length, failureReason };
   }
-
-  return {
-    detected: true,
-    descriptor,
-    thumbnailDataUrl,
-    samplesCollected: descriptors.length
-  };
+  return { detected: true, descriptor, thumbnailDataUrl, samplesCollected: descriptors.length };
 };
 
 const getSourceDimensions = (
