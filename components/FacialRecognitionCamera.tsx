@@ -660,6 +660,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
 
   const cancelModalCapture = () => {
     captureAbortRef.current?.abort();
+    setIsCapturingInModal(false);
     setShowCaptureModal(false);
   };
 
@@ -702,7 +703,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     } finally {
       captureInFlightRef.current = false;
       if (captureAbortRef.current === controller) captureAbortRef.current = null;
-      if (!controller.signal.aborted) setIsCapturingInModal(false);
+      setIsCapturingInModal(false);
     }
   };
 
@@ -1575,7 +1576,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             </p>
             {captureError && <p role="alert" className="text-sm font-bold text-rose-700">{captureError}</p>}
             <div className="flex gap-3">
-              <button type="button" disabled={isCapturingInModal} onClick={cancelModalCapture} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold disabled:opacity-40">
+              <button type="button" onClick={cancelModalCapture} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold">
                 Voltar ao cadastro
               </button>
               <button type="button" disabled={!streamActive || isCapturingInModal} onClick={handleCaptureManualPhotoInModal} className="flex-1 py-3 bg-[#004c99] text-white rounded-xl font-bold disabled:opacity-40">
