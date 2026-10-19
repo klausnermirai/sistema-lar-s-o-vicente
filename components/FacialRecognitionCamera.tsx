@@ -789,7 +789,9 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     } catch (err) {
       entryInProgressRef.current = false;
       console.error(err);
-      alert('Não foi possível concluir o cadastro biométrico. Verifique a conexão e tente novamente.');
+      alert(err instanceof Error && err.message
+        ? `Não foi possível concluir o cadastro biométrico: ${err.message}`
+        : 'Não foi possível concluir o cadastro biométrico. Tente novamente.');
     }
   };
 
