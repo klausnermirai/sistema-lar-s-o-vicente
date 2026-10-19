@@ -120,7 +120,7 @@ export interface FaceEnrollmentResult {
 }
 
 /**
- * Calcula o centróide L2-normalizado de múltiplos embeddings válidos.
+ * Calcula o centróide na escala nativa dos embeddings FaceRes.
  * Mantém um único faceDescriptor no schema existente.
  */
 export const averageFaceDescriptors = (descriptors: number[][]): number[] | null => {
@@ -134,19 +134,13 @@ export const averageFaceDescriptors = (descriptors: number[][]): number[] | null
     }
   }
 
-  let norm = 0;
+  let squaredNorm = 0;
   for (let i = 0; i < FACE_DESCRIPTOR_LENGTH; i++) {
     average[i] /= valid.length;
-    norm += average[i] * average[i];
+    squaredNorm += average[i] * average[i];
   }
 
-  norm = Math.sqrt(norm);
-  if (!Number.isFinite(norm) || norm <= 0) return null;
-
-  for (let i = 0; i < FACE_DESCRIPTOR_LENGTH; i++) {
-    average[i] /= norm;
-  }
-
+  if (!Number.isFinite(squaredNorm) || squaredNorm <= 0) return null;
   return average;
 };
 
