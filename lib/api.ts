@@ -707,7 +707,12 @@ export const saveRegisteredVisitor = async (institutionId: string, visitor: any)
     headers: getAuthHeaders(),
     body: JSON.stringify({ institutionId, ...visitor })
   });
-  if (!response.ok) throw new Error('Erro ao salvar visitante cadastrado');
+  if (!response.ok) {
+    const details = await response.json().catch(() => null);
+    throw new Error(typeof details?.error === 'string' && details.error.trim()
+      ? details.error
+      : 'Erro ao salvar visitante cadastrado');
+  }
   return response.json();
 };
 
