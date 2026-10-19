@@ -4018,7 +4018,9 @@ async function startServer() {
       const effectiveFaceDescriptor = data.faceDescriptor ?? existingData.faceDescriptor;
       const hasBiometry = Array.isArray(effectiveFaceDescriptor) && effectiveFaceDescriptor.length > 0;
       if (hasBiometry) {
-        if (effectiveFaceDescriptor.length !== 128) {
+        const validLength = effectiveFaceDescriptor.length === 1024 || effectiveFaceDescriptor.length === 128;
+        const validValues = effectiveFaceDescriptor.every((value: unknown) => typeof value === 'number' && Number.isFinite(value));
+        if (!validLength || !validValues) {
           return res.status(400).json({ error: 'Descritor facial inválido.' });
         }
         const effectiveType = data.type || existingData.type;
