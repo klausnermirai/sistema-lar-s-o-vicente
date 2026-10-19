@@ -118,12 +118,12 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
   const [isResettingBiometrics, setIsResettingBiometrics] = useState<boolean>(false);
 
   // Controle de Ciclo de Varredura e Estado de Não Reconhecido
-  const RECOGNITION_WINDOW_MS = 3000;
+  const RECOGNITION_WINDOW_MS = 7000;
   const MIN_RECOGNITION_MS = 2000;
   const REQUIRED_STABLE_MATCHES = 3;
   const scanStartTimeRef = useRef<number | null>(null);
   const [scanProgress, setScanProgress] = useState<number>(0);
-  const [scanSecondsLeft, setScanSecondsLeft] = useState<number>(3.0);
+  const [scanSecondsLeft, setScanSecondsLeft] = useState<number>(RECOGNITION_WINDOW_MS / 1000);
   const stableMatchVisitorIdRef = useRef<string | null>(null);
   const stableMatchCountRef = useRef<number>(0);
   const stableMatchSimilaritiesRef = useRef<number[]>([]);
@@ -265,7 +265,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
     setMatchConfidence(0);
     setBestCandidatePreview(null);
     setScanProgress(0);
-    setScanSecondsLeft(3.0);
+    setScanSecondsLeft(RECOGNITION_WINDOW_MS / 1000);
     lastSeenFaceTimestampRef.current = null;
     scanStartTimeRef.current = null;
     stableMatchVisitorIdRef.current = null;
@@ -392,7 +392,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
               stableMatchCountRef.current = 0;
               stableMatchSimilaritiesRef.current = [];
               setScanProgress(0);
-              setScanSecondsLeft(3.0);
+              setScanSecondsLeft(RECOGNITION_WINDOW_MS / 1000);
               setUnrecognizedFace(null);
               setMatchedVisitor(matchResult.visitor);
               setSelectedMatchedResidentId('');
@@ -433,7 +433,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
             stableMatchCountRef.current = 0;
             stableMatchSimilaritiesRef.current = [];
             setScanProgress(0);
-            setScanSecondsLeft(3.0);
+            setScanSecondsLeft(RECOGNITION_WINDOW_MS / 1000);
             setBestCandidatePreview(null);
             setMatchedVisitor(null);
             setSelectedMatchedResidentId('');
@@ -560,7 +560,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
         entryInProgressRef.current = false;
         setConfirmedSuccess(null);
         setEntryObservation('');
-        setScanSecondsLeft(3.0);
+        setScanSecondsLeft(RECOGNITION_WINDOW_MS / 1000);
         setScanProgress(0);
         onEntryCompleted?.();
       }, 2000);
@@ -782,7 +782,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
       setTimeout(() => {
         entryInProgressRef.current = false;
         setConfirmedSuccess(null);
-        setScanSecondsLeft(3.0);
+        setScanSecondsLeft(RECOGNITION_WINDOW_MS / 1000);
         setScanProgress(0);
         onEntryCompleted?.();
       }, 2000);
@@ -1233,7 +1233,7 @@ export const FacialRecognitionCamera: React.FC<FacialRecognitionCameraProps> = (
                   </div>
                 ) : (
                   <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-                    Ao olhar para a câmera, a identificação ocorrerá automaticamente em cerca de 3 segundos.
+                    Ao olhar para a câmera, a identificação será tentada automaticamente por até 7 segundos, podendo concluir antes.
                   </p>
                 )}
 
