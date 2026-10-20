@@ -22,13 +22,15 @@ import {
   LogOut,
   Keyboard,
   X,
+  Pencil,
+  Trash2,
   Monitor,
   Smartphone,
   Maximize2,
   Minimize2
 } from 'lucide-react';
 import { Resident, GlobalVisitRecord, Relative } from '../types';
-import { saveGlobalVisit, fetchGlobalVisits, clearAllBiometrics, saveRegisteredVisitor, fetchRegisteredVisitors, appendResidentVisit } from '../lib/api';
+import { saveGlobalVisit, fetchGlobalVisits, clearAllBiometrics, saveRegisteredVisitor, fetchRegisteredVisitors, appendResidentVisit, editRegisteredVisitor, archiveRegisteredVisitor, updateVisitorRelative } from '../lib/api';
 import { FacialRecognitionCamera, UnifiedVisitor } from './FacialRecognitionCamera';
 import { captureFaceEnrollment, isFaceDescriptorValid } from '../lib/faceRecognition';
 
@@ -52,12 +54,15 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
   accessLevel
 }) => {
   const normalizedAccessLevel = String(accessLevel || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  const isAdministrative = ['administrador', 'gerencial', 'auxiliar_administrativo'].includes(normalizedAccessLevel);
+  const isAdministrative = ['administrador', 'gerencial', 'auxiliar_administrativo', 'assistente_social'].includes(normalizedAccessLevel);
   const canManageBiometrics = ['administrador', 'gerencial'].includes(normalizedAccessLevel);
   const [activeTab, setActiveTab] = useState<MainTab>('portaria');
   const [entryMode, setEntryMode] = useState<EntryMode>('choice');
   const [globalVisits, setGlobalVisits] = useState<GlobalVisitRecord[]>([]);
   const [registeredVisitorsList, setRegisteredVisitorsList] = useState<any[]>([]);
+  const [editingVisitor, setEditingVisitor] = useState<UnifiedVisitor | null>(null);
+  const [editFields, setEditFields] = useState({ name: '', document: '', phone: '', kinship: '', type: 'residente', linkedResidentIds: [] as string[] });
+  const [savingDirectory, setSavingDirectory] = useState(false);
   const [isLoadingVisits, setIsLoadingVisits] = useState<boolean>(false);
 
   // Modo Manual State
@@ -164,90 +169,48 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
     loadVisits();
   }, [loadVisits]);
 
-  // Unifica todos os visitantes conhecidos da instituição (registered_visitors + Parentes de residentes + Visitas já registradas)
+  useEffect(() => {
+    if (!isAdministrative && activeTab !== 'portaria') setActiveTab('portaria');
+  }, [isAdministrative, activeTab]);
+
+  // Apenas cadastros permanentes e familiares ativos compõem o diretório.
+  // Registros históricos pertencem exclusivamente ao Livro de Portaria.
   const unifiedVisitorsList = useMemo<UnifiedVisitor[]>(() => {
     const map = new Map<string, UnifiedVisitor>();
+    const registeredRelativeIds = new Set<string>();
 
-    // 1. Visitantes da base permanente de cadastrados (registered_visitors)
     registeredVisitorsList.forEach(v => {
-      if (v.name) {
-        const key = `reg_${(v.type || 'geral')}_${v.name.toLowerCase().trim()}_${v.residentId || ''}`;
-        map.set(key, {
-          id: v.id || key,
-          name: v.name,
-          document: v.document,
-          phone: v.phone,
-          type: v.type || 'residente',
-          residentId: v.residentId,
-          residentName: v.residentName,
-          linkedResidents: Array.isArray(v.linkedResidents) && v.linkedResidents.length > 0
-            ? v.linkedResidents
-            : (v.residentId ? [{ residentId: v.residentId, residentName: v.residentName || '' }] : []),
-          kinship: v.kinship,
-          agencyName: v.agencyName,
-          conferenceName: v.conferenceName,
-          photoUrl: v.photoUrl,
-          faceDescriptor: v.faceDescriptor,
-          sourceType: 'custom'
-        });
-      }
+      if (!v.name || v.archived) return;
+      const links = Array.isArray(v.linkedResidents) && v.linkedResidents.length
+        ? v.linkedResidents : v.residentId ? [{ residentId: v.residentId, residentName: v.residentName || '' }] : [];
+      map.set(`registered:${v.id}`, {
+        id: v.id, name: v.name, document: v.document, phone: v.phone,
+        type: v.type || 'residente', residentId: v.residentId, residentName: v.residentName,
+        linkedResidents: links, kinship: v.kinship, agencyName: v.agencyName,
+        conferenceName: v.conferenceName, photoUrl: v.photoUrl, faceDescriptor: v.faceDescriptor,
+        sourceType: 'custom'
+      });
+      // Mescla somente vínculos por ID explícito, nunca por semelhança de nome.
+      links.forEach((link: any) => {
+        const resident = residents.find(r => r.id === link.residentId);
+        if (resident?.relatives?.some(rel => rel.id === v.id)) registeredRelativeIds.add(`${resident.id}:${v.id}`);
+      });
     });
 
-    // 2. Parentes / Familiares de todos os residentes
     residents.forEach(res => {
-      (res.relatives || []).filter(rel => !rel.deceased).forEach(rel => {
-        const key = `rel_${res.id}_${rel.name.toLowerCase().trim()}`;
-        const existing = map.get(key);
-        map.set(key, {
-          id: rel.id || existing?.id || key,
-          name: rel.name,
-          document: rel.document || existing?.document,
-          phone: rel.phone || existing?.phone,
-          type: 'residente',
-          residentId: res.id,
-          residentName: res.name,
+      (res.relatives || []).filter(rel => !rel.deceased && !(rel as any).hiddenFromVisitorPortal).forEach(rel => {
+        if (registeredRelativeIds.has(`${res.id}:${rel.id}`)) return;
+        map.set(`relative:${res.id}:${rel.id}`, {
+          id: rel.id, name: rel.name, document: rel.document, phone: rel.phone,
+          type: 'residente', residentId: res.id, residentName: res.name,
           linkedResidents: [{ residentId: res.id, residentName: res.name }],
-          kinship: rel.kinship || existing?.kinship,
-          photoUrl: rel.photoUrl || existing?.photoUrl,
-          faceDescriptor: rel.faceDescriptor || existing?.faceDescriptor,
+          kinship: rel.kinship, photoUrl: rel.photoUrl, faceDescriptor: rel.faceDescriptor,
           sourceType: 'relative'
         });
       });
     });
-
-    // 3. Visitantes de visitas passadas (se não já existirem)
-    globalVisits.forEach(v => {
-      if (v.visitorName) {
-        const key = `global_${v.type}_${v.visitorName.toLowerCase().trim()}_${v.residentId || ''}`;
-        const existing = map.get(key);
-        const res = residents.find(r => r.id === v.residentId);
-        if (!existing) {
-          map.set(key, {
-            id: v.id || key,
-            name: v.visitorName,
-            document: v.visitorDoc,
-            phone: v.phone,
-            type: v.type,
-            residentId: v.residentId,
-            residentName: res ? res.name : v.residentName,
-            linkedResidents: v.residentId ? [{ residentId: v.residentId, residentName: res ? res.name : (v.residentName || '') }] : [],
-            kinship: v.kinship,
-            agencyName: v.agencyName,
-            conferenceName: v.conferenceName,
-            photoUrl: v.photoUrl,
-            faceDescriptor: v.faceDescriptor,
-            sourceType: 'global'
-          });
-        } else {
-          // Preserva a foto / descritor caso o visitante ainda não possuísse
-          if (!existing.photoUrl && v.photoUrl) existing.photoUrl = v.photoUrl;
-          if (!existing.faceDescriptor && v.faceDescriptor) existing.faceDescriptor = v.faceDescriptor;
-        }
-      }
-    });
-
     return Array.from(map.values());
-  }, [residents, globalVisits, registeredVisitorsList]);
+  }, [residents, registeredVisitorsList]);
 
   const facialVisitorsList = useMemo(
     () => unifiedVisitorsList.filter(v => {
@@ -629,6 +592,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
     const matchesSearch = 
       v.name.toLowerCase().includes(visitorSearch.toLowerCase()) ||
       (v.residentName && v.residentName.toLowerCase().includes(visitorSearch.toLowerCase())) ||
+      (v.linkedResidents || []).some(link => link.residentName.toLowerCase().includes(visitorSearch.toLowerCase())) ||
       (v.document && v.document.includes(visitorSearch)) ||
       (v.phone && v.phone.includes(visitorSearch));
 
@@ -637,6 +601,61 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
     if (filterBiometricOnly === 'without_face') return !v.faceDescriptor;
     return true;
   });
+
+  const openVisitorEdit = (visitor: UnifiedVisitor) => {
+    const links = visitor.linkedResidents?.map(link => link.residentId) || (visitor.residentId ? [visitor.residentId] : []);
+    setEditFields({
+      name: visitor.name, document: visitor.document || '', phone: visitor.phone || '',
+      kinship: visitor.kinship || '', type: visitor.type, linkedResidentIds: links
+    });
+    setEditingVisitor(visitor);
+  };
+
+  const saveVisitorEdit = async () => {
+    if (!editingVisitor || !isAdministrative || !editFields.name.trim() || savingDirectory) return;
+    setSavingDirectory(true);
+    try {
+      if (editingVisitor.sourceType === 'relative') {
+        if (!editingVisitor.residentId) throw new Error('Residente vinculado não encontrado');
+        await updateVisitorRelative(institutionId, editingVisitor.residentId, editingVisitor.id, 'edit', {
+          name: editFields.name.trim(), document: editFields.document, phone: editFields.phone, kinship: editFields.kinship
+        });
+      } else if (editingVisitor.sourceType === 'custom') {
+        await editRegisteredVisitor(institutionId, editingVisitor.id, {
+          name: editFields.name.trim(), document: editFields.document, phone: editFields.phone,
+          kinship: editFields.kinship, type: editFields.type,
+          linkedResidents: editFields.linkedResidentIds.map(id => ({ residentId: id }))
+        });
+      }
+      setEditingVisitor(null);
+      await loadVisits();
+      onVisitSaved();
+    } catch (error: any) {
+      alert(error?.message || 'Não foi possível editar o visitante');
+    } finally { setSavingDirectory(false); }
+  };
+
+  const archiveVisitor = async (visitor: UnifiedVisitor) => {
+    if (!isAdministrative || !window.confirm('Retirar este cadastro do Banco de Visitantes? O histórico de visitas e o prontuário social serão preservados.')) return;
+    setSavingDirectory(true);
+    try {
+      if (visitor.sourceType === 'custom') {
+        await archiveRegisteredVisitor(institutionId, visitor.id);
+        // Cadastros vinculados pelo mesmo ID também não podem reaparecer como familiar.
+        for (const res of residents) {
+          if (res.relatives?.some(rel => rel.id === visitor.id)) {
+            await updateVisitorRelative(institutionId, res.id, visitor.id, 'archive');
+          }
+        }
+      } else if (visitor.sourceType === 'relative' && visitor.residentId) {
+        await updateVisitorRelative(institutionId, visitor.residentId, visitor.id, 'archive');
+      }
+      await loadVisits();
+      onVisitSaved();
+    } catch (error: any) {
+      alert((error?.message || 'Erro ao arquivar visitante') + '. Atualize a tela para conferir o resultado.');
+    } finally { setSavingDirectory(false); }
+  };
 
   const selectedResident = residents.find(r => r.id === residentId);
 
@@ -681,7 +700,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
               Registro de Entrada
             </button>
 
-            <button
+            {isAdministrative && <button
               type="button"
               onClick={() => setActiveTab('cadastrados')}
               className={`px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap ${
@@ -692,9 +711,9 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
             >
               <Users size={15} />
               Banco de Visitantes ({unifiedVisitorsList.length})
-            </button>
+            </button>}
 
-            <button
+            {isAdministrative && <button
               type="button"
               onClick={() => setActiveTab('historico')}
               className={`px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap ${
@@ -705,7 +724,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
             >
               <BookOpen size={15} />
               Livro de Portaria ({globalVisits.length})
-            </button>
+            </button>}
           </div>
         </div>
       </div>
@@ -1096,7 +1115,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
         )}
 
         {/* ABA 2: BANCO DE VISITANTES CADASTRADOS COM STATUS BIOMÉTRICO */}
-        {activeTab === 'cadastrados' && (
+        {isAdministrative && activeTab === 'cadastrados' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="relative flex-1 max-w-md">
@@ -1139,7 +1158,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                   Pendente de Foto
                 </button>
 
-                <button
+                {canManageBiometrics && <button
                   type="button"
                   onClick={async () => {
                     if (window.confirm('Deseja realmente apagar e zerar todas as fotos e cadastros de reconhecimento facial? Isso removerá todas as fotos e registros de teste do Livro de Portaria e do Banco de Visitantes.')) {
@@ -1155,7 +1174,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                   title="Apaga todas as fotos e cadastros biométricos da instituição"
                 >
                   <X size={12} /> Apagar Fotos & Biometrias
-                </button>
+                </button>}
               </div>
             </div>
 
@@ -1179,7 +1198,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                     <div className="flex-1 min-w-0">
                       <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight truncate">{v.name}</h4>
                       <p className="text-[10px] font-bold text-[#004c99] uppercase tracking-wider mt-0.5">
-                        {v.type === 'residente' && `Familiar de: ${v.residentName || 'Residente'} (${v.kinship || 'Parentesco'})`}
+                        {v.type === 'residente' && `Familiar de: ${v.linkedResidents?.map(link => link.residentName).join(', ') || v.residentName || 'Residente'} (${v.kinship || 'Parentesco'})`}
                         {v.type === 'ssvp' && `SSVP: ${v.conferenceName || 'Conferência'}`}
                         {v.type === 'orgao_fiscalizador' && `Órgão: ${v.agencyName || 'Fiscal'}`}
                         {v.type === 'instituicao' && 'Visita Institucional'}
@@ -1199,6 +1218,15 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                       {v.faceDescriptor ? 'Biometria Cadastrada' : 'Sem Biometria Facial'}
                     </span>
 
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button type="button" onClick={() => openVisitorEdit(v)}
+                        className="px-3 py-1.5 bg-gray-100 rounded-xl text-[10px] font-black uppercase flex items-center gap-1">
+                        <Pencil size={12} /> Editar
+                      </button>
+                      <button type="button" disabled={savingDirectory} onClick={() => archiveVisitor(v)}
+                        className="px-3 py-1.5 bg-rose-50 text-rose-700 rounded-xl text-[10px] font-black uppercase flex items-center gap-1">
+                        <Trash2 size={12} /> Excluir
+                      </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -1209,7 +1237,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
                     >
                       <Camera size={12} />
                       {v.faceDescriptor ? 'Atualizar Foto' : 'Capturar Face'}
-                    </button>
+                    </button></div>
                   </div>
                 </div>
               ))}
@@ -1218,7 +1246,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
         )}
 
         {/* ABA 3: LIVRO DE PORTARIA / HISTÓRICO */}
-        {activeTab === 'historico' && (
+        {isAdministrative && activeTab === 'historico' && (
           <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <div>
@@ -1309,6 +1337,57 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
         )}
 
       </div>
+
+      {editingVisitor && isAdministrative && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg space-y-4 max-h-[90vh] overflow-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black">Editar visitante</h3>
+              <button type="button" onClick={() => setEditingVisitor(null)} aria-label="Fechar"><X size={20}/></button>
+            </div>
+            {(['name', 'document', 'phone', 'kinship'] as const).map(field => (
+              <label key={field} className="block text-xs font-bold uppercase">
+                {field === 'name' ? 'Nome' : field === 'document' ? 'Documento' : field === 'phone' ? 'Telefone' : 'Parentesco'}
+                <input className="block w-full border rounded-xl p-3 mt-1 normal-case font-medium"
+                  value={editFields[field]} onChange={e => setEditFields(prev => ({ ...prev, [field]: e.target.value }))}/>
+              </label>
+            ))}
+            {editingVisitor.sourceType === 'custom' && (
+              <>
+                <label className="block text-xs font-bold uppercase">Tipo de visitante
+                  <select className="block w-full border rounded-xl p-3 mt-1" value={editFields.type}
+                    onChange={e => setEditFields(prev => ({ ...prev, type: e.target.value }))}>
+                    <option value="residente">Familiar / Residente</option>
+                    <option value="instituicao">Institucional</option>
+                    <option value="ssvp">SSVP</option>
+                    <option value="orgao_fiscalizador">Órgão fiscalizador</option>
+                  </select>
+                </label>
+                <fieldset className="space-y-2">
+                  <legend className="text-xs font-bold uppercase">Residentes vinculados</legend>
+                  {residents.map(res => (
+                    <label key={res.id} className="flex gap-2 items-center text-sm">
+                      <input type="checkbox" checked={editFields.linkedResidentIds.includes(res.id)}
+                        onChange={e => setEditFields(prev => ({
+                          ...prev, linkedResidentIds: e.target.checked
+                            ? [...prev.linkedResidentIds, res.id]
+                            : prev.linkedResidentIds.filter(id => id !== res.id)
+                        }))}/>
+                      {res.name}
+                    </label>
+                  ))}
+                </fieldset>
+              </>
+            )}
+            {editingVisitor.sourceType === 'relative' && <p className="text-xs text-gray-500">Os vínculos familiares são preservados no prontuário; esta edição altera apenas dados básicos.</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEditingVisitor(null)} className="border rounded-xl p-3">Cancelar</button>
+              <button type="button" disabled={savingDirectory || !editFields.name.trim()} onClick={saveVisitorEdit}
+                className="bg-blue-700 text-white rounded-xl p-3 font-bold">Salvar alterações</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Captura Facial Avulsa */}
       {captureModalVisitor && (
