@@ -29,6 +29,10 @@ const STOCK_CATEGORIES = ['ALIMENTAÇÃO', 'HIGIENE', 'LIMPEZA', 'MEDICAMENTOS',
 export const StockModule: React.FC<StockModuleProps> = ({ session, settings, supplierOnly = false }) => {
   const [products, setProducts] = useState<ProductStockItem[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [reportMovements, setReportMovements] = useState<StockMovement[] | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState<{
@@ -448,8 +452,28 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
     currentPage * itemsPerPage
   );
 
+  // Somente relatórios consultam histórico completo; estoque operacional mantém 200 registros.
+  useEffect(() => {
+    if (supplierOnly || (activeTab !== 'historico' && activeTab !== 'doacoes')) return;
+    let active = true;
+    setReportMovements(null);
+    setReportLoading(true);
+    setReportError('');
+    const params = activeTab === 'doacoes'
+      ? { report: true, startDate: donationStartDate, endDate: donationEndDate, reason: 'doacao' }
+      : { report: true, startDate: historyStartDate, endDate: historyEndDate };
+    fetchStockMovements(params).then(data => {
+      if (active) { setReportMovements(data || []); setReportLoading(false); }
+    }).catch(() => {
+      if (active) { setReportError('Não foi possível carregar o histórico completo. Verifique a conexão e tente novamente.'); setReportLoading(false); }
+    });
+    return () => { active = false; };
+  }, [activeTab, supplierOnly, donationStartDate, donationEndDate, historyStartDate, historyEndDate, refetchTrigger]);
+
+  useEffect(() => { setHistoryPage(1); }, [historySearchQuery, historyCategoryFilter, historyTypeFilter, historyReasonFilter, historyStartDate, historyEndDate]);
+
   // Filtered History movements
-  const filteredHistoryMovements = movements.filter(mv => {
+  const filteredHistoryMovements = (reportMovements || []).filter(mv => {
     if (historySearchQuery.trim()) {
       const q = historySearchQuery.toLowerCase();
       const matchProduct = (mv.productName || '').toLowerCase().includes(q);
@@ -1921,6 +1945,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                       {/* Botão de PDF */}
                       <button
                         onClick={exportHistoryPDF}
+                        disabled={reportLoading || !!reportError || reportMovements === null}
                         className="flex items-center gap-2 px-4 py-2 bg-[#004c99] hover:bg-blue-850 text-white font-bold transition-all shadow rounded-xl text-xs hover:cursor-pointer"
                       >
                         <FileText size={15} />
@@ -1929,6 +1954,9 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                     </div>
                   </div>
 
+                  {reportLoading && <p className="p-3 text-sm text-blue-700">Consultando histórico completo…</p>}
+                  {reportError && <p role="alert" className="p-3 text-sm text-red-700">{reportError}</p>}
+                  {!reportLoading && !reportError && <p className="text-xs text-slate-500">{filteredHistoryMovements.length} movimentações encontradas no histórico.</p>}
                   {/* Renderizacao da Tabela de Movimentações */}
                   {filteredHistoryMovements.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-2xl border border-slate-100 text-center px-4">
@@ -1952,7 +1980,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {filteredHistoryMovements.map((mv, idx) => {
+                          {filteredHistoryMovements.slice((historyPage - 1) * 50, historyPage * 50).map((mv, idx) => {
                             const isEntrada = mv.type === 'entrada';
                             return (
                               <tr key={mv.id || idx} className="hover:bg-slate-50 transition-colors">
@@ -2044,9 +2072,16 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
             </div>
           )}
 
+          {activeTab === 'historico' && !reportLoading && !reportError && filteredHistoryMovements.length > 50 && (
+            <div className="flex items-center justify-center gap-3 px-6 pb-5">
+              <button className="border px-3 py-1 rounded-lg" disabled={historyPage === 1} onClick={() => setHistoryPage(p => Math.max(1, p - 1))}>Anterior</button>
+              <span className="text-xs">Página {historyPage} de {Math.ceil(filteredHistoryMovements.length / 50)}</span>
+              <button className="border px-3 py-1 rounded-lg" disabled={historyPage >= Math.ceil(filteredHistoryMovements.length / 50)} onClick={() => setHistoryPage(p => p + 1)}>Próxima</button>
+            </div>
+          )}
           {/* TAB: DONATIONS PERIODIC REPORT */}
           {activeTab === 'doacoes' && (() => {
-            const filteredDonations = movements.filter(mv => {
+            const filteredDonations = (reportMovements || []).filter(mv => {
               if (mv.reason !== 'doacao') return false;
 
               if (donationTypeFilter === 'entrada' && mv.type !== 'entrada') return false;
@@ -2060,9 +2095,9 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
 
               if (donationSearchQuery.trim()) {
                 const query = donationSearchQuery.toLowerCase();
-                const matchName = mv.productName.toLowerCase().includes(query);
+                const matchName = (mv.productName || '').toLowerCase().includes(query);
                 const matchNotes = mv.notes?.toLowerCase().includes(query) || false;
-                const matchUser = mv.userName.toLowerCase().includes(query);
+                const matchUser = (mv.userName || '').toLowerCase().includes(query);
                 const matchDonor = mv.donorName?.toLowerCase().includes(query) || false;
                 if (!matchName && !matchNotes && !matchUser && !matchDonor) return false;
               }
@@ -2073,14 +2108,14 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
               return true;
             });
 
-            const sortedDonations = [...filteredDonations].sort((a, b) => b.date.localeCompare(a.date));
+            const sortedDonations = [...filteredDonations].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
             const totalDonationsCount = filteredDonations.length;
-            const totalItemsVolume = filteredDonations.reduce((acc, curr) => acc + curr.quantity, 0);
+            const totalItemsVolume = filteredDonations.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0);
             const totalDonationCostValuation = filteredDonations.reduce((acc, curr) => {
               const prod = products.find(p => p.id === curr.productId);
-              const unitPrice = curr.price || prod?.estimatedCost || 0;
-              return acc + (unitPrice * curr.quantity);
+              const unitPrice = Number(curr.price || prod?.estimatedCost) || 0;
+              return acc + (unitPrice * (Number(curr.quantity) || 0));
             }, 0);
 
             // Group by category to see most donated categories
@@ -2115,168 +2150,57 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
               .sort((a, b) => b[1].quantity - a[1].quantity)
               .slice(0, 3);
 
-            const handleExportDonationPDF = async () => {
-              const { getHtmlPrintHeader, getHtmlPrintFooter, getHtmlPrintStyles, printHtml } = await import('../lib/pdfHelpers');
-              
-              const formattedStartDate = donationStartDate.split('-').reverse().join('/');
-              const formattedEndDate = donationEndDate.split('-').reverse().join('/');
-              const title = `Relatório Consolidado de Doações`;
-              
-              const headerHtml = await getHtmlPrintHeader(settings, title);
-              const footerHtml = getHtmlPrintFooter();
-              const styles = getHtmlPrintStyles();
-
-              let tableRowsHtml = '';
-              sortedDonations.forEach((mv) => {
-                const prod = products.find(p => p.id === mv.productId);
-                const cat = prod ? prod.category : 'GERAL';
-                const formattedDate = mv.date.split('-').reverse().join('/');
-                const donorValue = mv.donorName ? `${mv.donorName} ${mv.donorPhone ? `(${mv.donorPhone})` : ''}` : (mv.reason === 'doacao' ? 'Anônimo' : '—');
-                
-                const unitPrice = mv.price || prod?.estimatedCost || 0;
-                const totalPrice = unitPrice * mv.quantity;
-                const priceValue = totalPrice > 0 
-                  ? `R$ ${totalPrice.toFixed(2)}<br/><span style="font-size: 9px; color: #64748b; font-weight: normal;">(R$ ${unitPrice.toFixed(2)}/un)</span>` 
-                  : '—';
-                tableRowsHtml += `
-                  <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
-                    <td style="padding: 10px; color: #1e293b; font-weight: 500;">${formattedDate}</td>
-                    <td style="padding: 10px; color: #0f172a; font-weight: 600;">${mv.productName}</td>
-                    <td style="padding: 10px; color: #334155;">${donorValue}</td>
-                    <td style="padding: 10px; color: #475569;">${cat}</td>
-                    <td style="padding: 10px; color: #0f172a; font-weight: 700; text-align: right;">${mv.quantity} ${prod?.unit || ''}</td>
-                    <td style="padding: 10px; color: #0f172a; font-weight: 700; text-align: right;">${priceValue}</td>
-                    <td style="padding: 10px; color: ${mv.type === 'entrada' ? '#15803d' : '#b91c1c'}; font-weight: bold; text-align: center;">
-                      ${mv.type === 'entrada' ? 'RECEBIDA (ENTRADA)' : 'CONCEDIDA (SAÍDA)'}
-                    </td>
-                    <td style="padding: 10px; color: #475569;">${mv.userName}</td>
-                    <td style="padding: 10px; color: #64748b; font-style: italic;">${mv.notes || '-'}</td>
-                  </tr>
-                `;
+            const handleExportDonationPDF = () => {
+              if (reportLoading || reportError || reportMovements === null) return;
+              const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+              const money = (value: number) => 'R$ ' + value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              const format = (value: string) => value ? value.split('-').reverse().join('/') : 'Sem data';
+              const kind = donationTypeFilter === 'entrada' ? 'Recebidas' : donationTypeFilter === 'saida' ? 'Concedidas' : 'Todas';
+              pdf.setFont('helvetica', 'bold'); pdf.setFontSize(17);
+              pdf.text('RELATÓRIO DE DOAÇÕES DE INSUMOS', 14, 17);
+              pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
+              pdf.text(String(settings?.name || 'Instituição'), 14, 25);
+              pdf.text('Período operacional: ' + format(donationStartDate) + ' a ' + format(donationEndDate), 14, 32);
+              pdf.text('Fluxo: ' + kind + ' | Categoria: ' + donationCategoryFilter, 14, 38);
+              pdf.text('Lançamentos: ' + totalDonationsCount + ' | Volume: ' + totalItemsVolume.toLocaleString('pt-BR') + ' | Valor estimado: ' + money(totalDonationCostValuation), 14, 46);
+              const breakdown = Object.entries(categorySummary).map(([cat, info]) => [cat, String(info.count), String(info.quantity)]);
+              autoTable(pdf, {
+                head: [['Categoria', 'Lançamentos', 'Quantidade']],
+                body: breakdown.length ? breakdown : [['Sem registros', '0', '0']],
+                startY: 52, theme: 'grid',
+                margin: {left:14,right:14},
+                styles: {fontSize:8,cellPadding:2},
+                headStyles: {fillColor:[0,76,153]}
               });
-
-              if (sortedDonations.length === 0) {
-                tableRowsHtml = `
-                  <tr>
-                    <td colspan="9" style="padding: 30px; text-align: center; color: #64748b; font-style: italic;">
-                      Nenhuma doação registrada no período selecionado ou com os filtros ativos.
-                    </td>
-                  </tr>
-                `;
-              }
-
-              let categoriesHtml = '';
-              Object.entries(categorySummary).forEach(([catName, stats]) => {
-                categoriesHtml += `
-                  <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; flex: 1; min-width: 130px; margin-right: 8px; margin-bottom: 8px;">
-                    <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">${catName}</div>
-                    <div style="font-size: 14px; color: #1e3a8a; font-weight: 800; margin-top: 4px;">${stats.quantity} itens</div>
-                    <div style="font-size: 9px; color: #94a3b8; margin-top: 2px;">${stats.count} registros</div>
-                  </div>
-                `;
+              const topY = (pdf as any).lastAutoTable?.finalY || 70;
+              pdf.setFont('helvetica','bold'); pdf.setFontSize(10);
+              const topText = topDonatedItems.map(([name, info]) => name + ': ' + info.quantity + ' ' + info.unit).join(' | ');
+              const wrapped = pdf.splitTextToSize('Principais itens: ' + (topText || 'Sem registros'), 265);
+              pdf.text(wrapped,14,topY+9);
+              const listY = topY + 13 + wrapped.length * 4;
+              autoTable(pdf, {
+                head: [['Data','Produto','Doador','Categoria','Qtd','Custo estimado','Fluxo','Operador','Observações']],
+                body: sortedDonations.map(mv => {
+                  const prod = products.find(p=>p.id===mv.productId);
+                  const unitPrice = Number(mv.price || prod?.estimatedCost) || 0;
+                  return [
+                    format(mv.date || ''), mv.productName || 'Não informado', mv.donorName || 'Anônimo',
+                    prod?.category || 'GERAL', (Number(mv.quantity) || 0) + ' ' + (prod?.unit || ''),
+                    money(unitPrice * (Number(mv.quantity) || 0)), mv.type === 'entrada' ? 'Recebida' : 'Concedida',
+                    mv.userName || '', mv.notes || ''
+                  ];
+                }),
+                startY: listY, theme:'striped',
+                margin: {left:14,right:14,top:17,bottom:18},
+                styles: {fontSize:7,cellPadding:2,overflow:'linebreak'},
+                headStyles: {fillColor:[0,76,153]},
+                didDrawPage: (hook:any) => {
+                  pdf.setFont('helvetica','normal'); pdf.setFontSize(8);
+                  pdf.text('SSVP — Relatório de doações | Emissão: ' + new Date().toLocaleDateString('pt-BR'),14,200);
+                  pdf.text('Página ' + hook.pageNumber,283,200,{align:'right'});
+                }
               });
-
-              if (categoriesHtml === '') {
-                categoriesHtml = `<div style="color: #64748b; font-style: italic; font-size: 11px;">Sem doações registradas neste período</div>`;
-              }
-
-              let topProductsHtml = '';
-              topDonatedItems.forEach(([prodName, stats]) => {
-                topProductsHtml += `
-                  <li style="font-size: 11px; margin-bottom: 4px; color: #1e293b;">
-                    <strong>${prodName}</strong>: ${stats.quantity} ${stats.unit}
-                  </li>
-                `;
-              });
-
-              if (topProductsHtml === '') {
-                topProductsHtml = `<div style="color: #64748b; font-style: italic; font-size: 11px;">Sem doações registradas</div>`;
-              }
-
-              const html = `
-                <html>
-                  <head>
-                    <title>${title}</title>
-                    <style>
-                      ${styles}
-                      body { font-family: system-ui, -apple-system, sans-serif; background-color: #ffffff; color: #1e293b; margin: 0; padding: 0; }
-                      .report-card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; background: #ffffff; }
-                      .report-title { font-size: 12px; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 12px; }
-                    </style>
-                  </head>
-                  <body>
-                    <div class="print-wrapper" style="padding: 24px;">
-                      ${headerHtml}
-                      
-                      <!-- Filtros -->
-                      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 20px; font-size: 11px;">
-                        <div>
-                          <strong>Período:</strong> ${formattedStartDate} a ${formattedEndDate} <br/>
-                          <strong>Filtros adicionais:</strong> Categoria: ${donationCategoryFilter} | Tipo: ${donationTypeFilter === 'entrada' ? 'Apenas Doações Recebidas' : donationTypeFilter === 'saida' ? 'Apenas Doações Concedidas' : 'Todas'}
-                        </div>
-                        <div style="text-align: right;">
-                          <strong>Lançamentos de Doação:</strong> ${totalDonationsCount} <br/>
-                          <strong>Volume Total:</strong> ${totalItemsVolume} unidades <br/>
-                          <strong>Valuation de Custo total:</strong> R$ ${totalDonationCostValuation.toFixed(2)}
-                        </div>
-                      </div>
-
-                      <!-- Resumo de Estatísticas -->
-                      <div style="display: flex; gap: 16px; margin-bottom: 24px;">
-                        <div class="report-card" style="flex: 2;">
-                          <h4 class="report-title">Volume de Doações por Categoria</h4>
-                          <div style="display: flex; flex-wrap: wrap;">
-                            ${categoriesHtml}
-                          </div>
-                        </div>
-
-                        <div class="report-card" style="flex: 1;">
-                          <h4 class="report-title">Principais Itens Doados</h4>
-                          <ul style="margin: 0; padding-left: 16px; list-style-type: square;">
-                            ${topProductsHtml}
-                          </ul>
-                        </div>
-                      </div>
-
-                      <h4 class="report-title">Relação Cronológica de Doações</h4>
-                      <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
-                        <thead>
-                          <tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1; font-size: 10px; font-weight: bold; text-transform: uppercase; text-align: left; color: #475569;">
-                            <th style="padding: 10px;">Data</th>
-                            <th style="padding: 10px;">Item / Mantimento</th>
-                            <th style="padding: 10px;">Doador</th>
-                            <th style="padding: 10px;">Categoria</th>
-                            <th style="padding: 10px; text-align: right;">Qtd</th>
-                            <th style="padding: 10px; text-align: right;">Custo</th>
-                            <th style="padding: 10px; text-align: center;">Movimentação</th>
-                            <th style="padding: 10px;">Registrado Por</th>
-                            <th style="padding: 10px;">Observações</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${tableRowsHtml}
-                        </tbody>
-                      </table>
-
-                      <!-- Assinatura -->
-                      <div style="margin-top: 50px; display: flex; justify-content: space-around; font-family: sans-serif; font-size: 10px; page-break-inside: avoid;">
-                        <div style="text-align: center; border-top: 1px solid #94a3b8; width: 220px; padding-top: 6px; color: #475569;">
-                          <strong>Assinatura do Responsável</strong><br/>
-                          Controle de Almoxarifado / Estoque
-                        </div>
-                        <div style="text-align: center; border-top: 1px solid #94a3b8; width: 220px; padding-top: 6px; color: #475569;">
-                          <strong>Responsável de Suprimentos</strong><br/>
-                          Visto do Almoxarifado / Conferente
-                        </div>
-                      </div>
-
-                      ${footerHtml}
-                    </div>
-                  </body>
-                </html>
-              `;
-
-              printHtml(html);
+              pdf.save('Relatorio_Doacoes_' + donationStartDate + '_a_' + donationEndDate + '.pdf');
             };
 
             return (
@@ -2300,6 +2224,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
 
                   <button
                     onClick={handleExportDonationPDF}
+                    disabled={reportLoading || !!reportError || reportMovements === null}
                     className="flex items-center justify-center gap-2 px-4 py-3 bg-[#004c99] hover:bg-blue-800 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
                   >
                     <Printer size={14} />
@@ -2394,6 +2319,8 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
 
                 </div>
 
+                {reportLoading && <p className="p-3 rounded-lg text-blue-700 bg-blue-50">Carregando todas as doações do período…</p>}
+                {reportError && <p role="alert" className="p-3 rounded-lg text-red-700 bg-red-50">{reportError}</p>}
                 {/* Dashboard Metrics Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                   
