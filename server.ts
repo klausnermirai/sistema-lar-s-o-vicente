@@ -6183,28 +6183,49 @@ async function startServer() {
   app.get('/api/stock-movements', requireRole(['administrador', 'gerencial', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'auxiliar_administrativo']), async (req, res) => {
     try {
       const institutionId = req.headers['x-institution-id'] as string;
-      if (!institutionId) return res.status(400).json({ error: 'x-institution-id is required' });
-      
-      // Attempt ordered fetch; if index missing, retry without ordering and sort in memory
-      try {
-        const snapshot = await db.collection('stock_movements')
-          .where('institutionId', '==', institutionId)
-          .orderBy('date', 'desc')
-          .limit(200)
-          .get();
-        const movements = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-        return res.json(movements);
-      } catch (idxError) {
-        const snapshot = await db.collection('stock_movements')
-          .where('institutionId', '==', institutionId)
-          .get();
-        const movements = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-        movements.sort((a: any, b: any) => b.date.localeCompare(a.date));
-        res.json(movements.slice(0, 200));
+      if (!institutionId || !isUserAuthorizedForInstitution(req.user, institutionId)) {
+        return res.status(403).json({ error: 'Instituição não autorizada.' });
       }
+      const { report, startDate, endDate, reason, type } = req.query;
+      const detailed = report === 'true';
+      const validDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+      if ((startDate && !validDate(startDate)) || (endDate && !validDate(endDate)) ||
+          (startDate && endDate && String(startDate) > String(endDate)) ||
+          (reason && !['compra', 'doacao', 'consumo', 'descarte'].includes(String(reason))) ||
+          (type && !['entrada', 'saida'].includes(String(type)))) {
+        return res.status(400).json({ error: 'Filtros de movimentação inválidos.' });
+      }
+
+      if (!detailed) {
+        // Mantém consulta operacional leve e compatível para os demais consumidores.
+        try {
+          const snapshot = await db.collection('stock_movements')
+            .where('institutionId', '==', institutionId)
+            .orderBy('date', 'desc').limit(200).get();
+          return res.json(snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })));
+        } catch (_indexError) {
+          const snapshot = await db.collection('stock_movements').where('institutionId', '==', institutionId).get();
+          return res.json(snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }))
+            .sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')) ||
+              String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || String(a.id).localeCompare(String(b.id)))
+            .slice(0, 200));
+        }
+      }
+
+      // Acesso histórico intencional: filtros ANTES do corte e sem truncamento silencioso.
+      // A leitura institucional simples evita exigir novos índices compostos.
+      const snapshot = await db.collection('stock_movements').where('institutionId', '==', institutionId).get();
+      const matching = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }))
+        .filter((mv: any) => (!startDate || String(mv.date || '') >= startDate) &&
+          (!endDate || String(mv.date || '') <= endDate) &&
+          (!reason || mv.reason === reason) && (!type || mv.type === type))
+        .sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')) ||
+          String(b.createdAt || '').localeCompare(String(a.createdAt || '')) ||
+          String(a.id).localeCompare(String(b.id)));
+      return res.json(matching);
     } catch (error: any) {
       console.error('Error fetching stock movements:', error);
-      return sendDatabaseError(res, error, 'Erro ao buscar movimentações de estoque.' );
+      return sendDatabaseError(res, error, 'Erro ao buscar movimentações de estoque.');
     }
   });
 
