@@ -730,6 +730,39 @@ export const saveRegisteredVisitor = async (institutionId: string, visitor: any)
   return response.json();
 };
 
+export const editRegisteredVisitor = async (institutionId: string, id: string, changes: any) => {
+  const response = await apiFetch(`/api/registered-visitors/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ institutionId, ...changes })
+  });
+  if (!response.ok) {
+    const details = await response.json().catch(() => ({}));
+    throw new Error(details.error || 'Erro ao editar visitante');
+  }
+  return response.json();
+};
+
+export const archiveRegisteredVisitor = async (institutionId: string, id: string) => {
+  const response = await apiFetch(`/api/registered-visitors/${encodeURIComponent(id)}?institutionId=${encodeURIComponent(institutionId)}`, {
+    method: 'DELETE', headers: getAuthHeaders()
+  });
+  if (!response.ok) {
+    const details = await response.json().catch(() => ({}));
+    throw new Error(details.error || 'Erro ao arquivar visitante');
+  }
+  return response.json();
+};
+
+export const updateVisitorRelative = async (institutionId: string, residentId: string, relativeId: string, action: 'edit' | 'archive', changes?: any) => {
+  const response = await apiFetch('/api/visitor-directory/relative', {
+    method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ institutionId, residentId, relativeId, action, changes })
+  });
+  if (!response.ok) {
+    const details = await response.json().catch(() => ({}));
+    throw new Error(details.error || 'Erro ao atualizar familiar');
+  }
+  return response.json();
+};
+
 export const clearAllBiometrics = async (institutionId: string, clearFaces = true) => {
   const response = await apiFetch('/api/clear-biometrics', {
     method: 'POST',
