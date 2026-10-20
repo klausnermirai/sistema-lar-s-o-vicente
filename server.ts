@@ -4117,6 +4117,19 @@ async function startServer() {
         if (getCanonicalInstitutionId(existingData.institutionId) !== getCanonicalInstitutionId(realId)) {
           return res.status(403).json({ error: 'Visitante cadastrado pertence a outra instituição.' });
         }
+        if (existingData.archived) {
+          return res.status(404).json({ error: 'Visitante arquivado não pode ser atualizado pela Portaria.' });
+        }
+        // A conta operacional pode renovar a biometria, mas não editar dados cadastrais.
+        if (normalizeAccessLevel(req.user?.accessLevel || req.user?.role) === 'visitante') {
+          for (const key of ['name', 'document', 'phone', 'type', 'kinship', 'agencyName', 'conferenceName', 'residentId', 'residentName', 'linkedResidents']) {
+            if (Object.prototype.hasOwnProperty.call(existingData, key)) {
+              data[key] = existingData[key];
+            } else {
+              delete data[key];
+            }
+          }
+        }
       }
 
       const rawLinks = Array.isArray(data.linkedResidents)
