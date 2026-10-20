@@ -2140,10 +2140,10 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
             filteredDonations.forEach(mv => {
               const prod = products.find(p => p.id === mv.productId);
               const unit = prod ? prod.unit : 'Unid';
-              if (!productSummary[mv.productName]) {
-                productSummary[mv.productName] = { quantity: 0, unit };
+              if (!productSummary[mv.productName || 'Não informado']) {
+                productSummary[mv.productName || 'Não informado'] = { quantity: 0, unit };
               }
-              productSummary[mv.productName].quantity += mv.quantity;
+              productSummary[mv.productName || 'Não informado'].quantity += mv.quantity;
             });
 
             const topDonatedItems = Object.entries(productSummary)
@@ -2497,7 +2497,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                             return (
                               <tr key={mv.id || idx} className="hover:bg-slate-50/50 bg-white transition-colors">
                                 <td className="p-4 text-xs font-semibold text-slate-500">
-                                  {mv.date.split('-').reverse().join('/')}
+                                  {(mv.date || '').split('-').reverse().join('/')}
                                 </td>
                                 <td className="p-4 text-xs font-black text-slate-800">
                                   {mv.productName}
