@@ -291,6 +291,20 @@ export const saveResident = async (resident: any) => {
   return response.json();
 };
 
+// Grava apenas as visitas complementares da Portaria, sem reenviar a ficha completa.
+export const appendResidentVisit = async (residentId: string, institutionId: string, visitRecord: any) => {
+  const response = await apiFetch('/api/residents', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ id: residentId, institutionId, visitRecords: [visitRecord] })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Erro ao atualizar o histórico de visitas do residente');
+  }
+  return response.json();
+};
+
 export const fetchResidentById = async (id: string, institutionId: string) => {
   const response = await apiFetch(`/api/residents/${id}?institutionId=${institutionId}`, {
     headers: getAuthHeaders()
