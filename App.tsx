@@ -14,6 +14,7 @@ import MuralModule from './components/MuralModule';
 import MedicalModule from './components/MedicalModule';
 import MedicationModule from './components/MedicationModule';
 import AgendaModule from './components/AgendaModule';
+import { InstitutionalActivitiesReport } from './components/InstitutionalActivitiesReport';
 import { VisitorPortal } from './components/VisitorPortal';
 import LoginScreen from './components/LoginScreen';
 import SetupScreen from './components/SetupScreen';
@@ -845,6 +846,10 @@ const InternalApp: React.FC = () => {
           settings={settings}
           onPostToMural={handlePostToMural}
         />
+      )}
+
+      {activeRoute === AppRoute.INSTITUTIONAL_REPORT && session && (
+        <InstitutionalActivitiesReport institutionId={session.institutionId || session.cnpj || ''} accessLevel={session.accessLevel} settings={settings} />
       )}
 
       {activeRoute === AppRoute.GUIAS && (
