@@ -28,7 +28,7 @@ import {
   Minimize2
 } from 'lucide-react';
 import { Resident, GlobalVisitRecord, Relative } from '../types';
-import { saveGlobalVisit, fetchGlobalVisits, clearAllBiometrics, saveRegisteredVisitor, fetchRegisteredVisitors } from '../lib/api';
+import { saveGlobalVisit, fetchGlobalVisits, clearAllBiometrics, saveRegisteredVisitor, fetchRegisteredVisitors, appendResidentVisit } from '../lib/api';
 import { FacialRecognitionCamera, UnifiedVisitor } from './FacialRecognitionCamera';
 import { captureFaceEnrollment, isFaceDescriptorValid } from '../lib/faceRecognition';
 
@@ -315,8 +315,8 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
 
     await saveGlobalVisit(payload as any);
 
-    // Se a visita for a um residente específico, adiciona também na ficha clínica do residente (sem salvar foto de passagem)
-    if (visitData.residentId && onSaveResident) {
+    // A entrada já foi gravada: falha complementar não deve gerar uma nova entrada.
+    if (visitData.residentId) {
       const resident = residents.find(r => r.id === visitData.residentId);
       if (resident) {
         const newVisitRecord = {
@@ -327,25 +327,15 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
           timeIn,
           timeOut: '',
           observation: visitData.comments || 'Entrada via Portaria',
-          photoUrl: undefined,
-          faceDescriptor: undefined,
           matchedVia: visitData.matchedVia,
           facialConfidence: visitData.facialConfidence
         };
-
-        const currentVisitRecords = Array.isArray(resident.visitRecords) ? [...resident.visitRecords] : [];
-        const existingIndex = currentVisitRecords.findIndex((visit: any) => visit?.id === visitId);
-        if (existingIndex >= 0) {
-          currentVisitRecords[existingIndex] = newVisitRecord;
-        } else {
-          currentVisitRecords.push(newVisitRecord);
+        try {
+          await appendResidentVisit(resident.id, institutionId, newVisitRecord);
+        } catch (error) {
+          console.error('Entrada salva na Portaria; falha no histórico do residente:', error);
+          alert('Entrada registrada na Portaria, mas não foi possível atualizar o histórico do residente. Não registre outra entrada; comunique a administração.');
         }
-
-        const updatedResident = {
-          ...resident,
-          visitRecords: currentVisitRecords
-        };
-        await onSaveResident(updatedResident);
       }
     }
 
