@@ -4930,6 +4930,163 @@ async function startServer() {
     }
   });
 
+  // Relatório institucional de atividades: somente leitura, sem narrativas clínicas.
+  app.get('/api/reports/institutional-activities', requireRole(['gerencial', 'auxiliar_administrativo', 'assistente_social']), async (req: any, res) => {
+    try {
+      const { institutionId, dateFrom, dateTo, mode } = req.query;
+      if (typeof institutionId !== 'string' || typeof dateFrom !== 'string' || typeof dateTo !== 'string' ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo) || dateFrom > dateTo ||
+          !['institutional', 'internal'].includes(String(mode || 'institutional'))) {
+        return res.status(400).json({ error: 'Instituição, período ou modalidade inválidos.' });
+      }
+      const realId = await getRealInstitutionId(institutionId);
+      if (!realId || !isUserAuthorizedForInstitution(req.user, realId)) {
+        return res.status(403).json({ error: 'Instituição não autorizada.' });
+      }
+      const userLevel = normalizeAccessLevel(req.user?.accessLevel || req.user?.role);
+      const internal = mode === 'internal';
+      if (internal && !['administrador', 'gerencial'].includes(userLevel)) {
+        return res.status(403).json({ error: 'Relatório nominal restrito à gestão.' });
+      }
+      // Não modifica o middleware compartilhado ou os filtros das APIs assistenciais.
+      const queryIds = isMonteAltoUnit(realId) ? getMonteAltoQueryIds() : [realId];
+      const [residentSnapshot, candidateSnapshot, activitySnapshot] = await Promise.all([
+        db.collection('residents').where('institutionId', 'in', queryIds).get(),
+        db.collection('candidates').where('institutionId', 'in', queryIds).get(),
+        db.collection('group_activities').where('institutionId', 'in', queryIds).get()
+      ]);
+      const residents = residentSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as any[];
+      const candidates = candidateSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as any[];
+      const activities = activitySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as any[];
+      const dateKey = (value: any): string | null => {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+          }).formatToParts(new Date(value));
+          const part = (name: string) => parts.find(p => p.type === name)?.value || '';
+          return `${part('year')}-${part('month')}-${part('day')}`;
+        }
+        if (typeof value !== 'string') return null;
+        const raw = value.trim();
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+          const [d, m, y] = raw.split('/');
+          const date = new Date(`${y}-${m}-${d}T12:00:00Z`);
+          return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === `${y}-${m}-${d}` ? `${y}-${m}-${d}` : null;
+        }
+        if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+          if (/T.*(?:Z|[+-]\d{2}:?\d{2})$/.test(raw)) return dateKey(Date.parse(raw));
+          return raw.slice(0, 10);
+        }
+        return null;
+      };
+      const within = (value: any): boolean => {
+        const key = dateKey(value);
+        return !!key && key >= dateFrom && key <= dateTo;
+      };
+      const countBy = (items: any[], field: string) => {
+        const result: Record<string, number> = {};
+        for (const item of items) {
+          const key = String(item?.[field] || 'Não informado');
+          result[key] = (result[key] || 0) + 1;
+        }
+        return result;
+      };
+      const professional: Record<string, any> = {};
+      for (const [area, key] of [
+        ['Psicologia', 'psychology'], ['Terapia Ocupacional', 'occupationalTherapy'],
+        ['Fisioterapia', 'physiotherapy'], ['Nutrição', 'nutrition']
+      ] as const) {
+        const entries = new Map<string, any>();
+        const evolutions = new Set<string>();
+        const assessments = new Set<string>();
+        for (const resident of residents) {
+          const section = resident[key] || {};
+          const source = key === 'physiotherapy'
+            ? [...(Array.isArray(section.sessions) ? section.sessions : []), ...(Array.isArray(section.attendances) ? section.attendances : [])]
+            : (Array.isArray(section.attendances) ? section.attendances : []);
+          for (const entry of source) {
+            if (!within(entry?.dateTime)) continue;
+            const id = String(entry?.id || '');
+            if (!id) continue;
+            entries.set(`${resident.id}:${id}`, entry);
+          }
+          for (const entry of Array.isArray(section.evolutions) ? section.evolutions : []) {
+            if (within(entry?.dataEvolucao || entry?.date)) evolutions.add(`${resident.id}:${entry.id}`);
+          }
+          const initial = section.initialAssessment || section.anamnese;
+          if (initial && within(initial.date)) assessments.add(resident.id);
+        }
+        const performed: any[] = [], other: any[] = [];
+        for (const entry of entries.values()) {
+          const category = String(entry.attendanceType || entry.interventionType || entry.reason || '').toLowerCase();
+          if (/recusa|cancelad|faltou|ausente|não realizado|nao realizado/.test(category)) other.push(entry);
+          else performed.push(entry);
+        }
+        professional[area] = {
+          registered: entries.size, recordedPerformances: performed.length,
+          notPerformed: other.length, evolutions: evolutions.size, initialAssessments: assessments.size,
+          warning: 'Quantidade documental; modalidades não padronizadas podem exigir conferência.'
+        };
+      }
+      const groupEvents = activities.filter(a => !a.archived && a.status === 'realizada' && within(a.date));
+      const uniqueGroups = [...new Map(groupEvents.map(a => [a.id, a])).values()];
+      const knownParticipations = uniqueGroups.reduce((sum: number, a: any) => sum + (Array.isArray(a.selectedResidents) ? new Set(a.selectedResidents).size : 0), 0);
+      const withoutParticipants = uniqueGroups.filter(a => a.participationType === 'Todos os residentes' && (!Array.isArray(a.selectedResidents) || !a.selectedResidents.length)).length;
+      const social = new Map<string, any>();
+      for (const resident of residents) {
+        for (const entry of resident.socialWork?.evolutions || []) {
+          if (entry?.id && within(entry.date)) social.set(`${resident.id}:${entry.id}`, { type: entry.type, visibility: entry.visibility || 'não informada' });
+        }
+      }
+      const socialEntries = [...social.values()];
+      const admissions = residents.filter(r => within(r.admissionDate)).length;
+      const departures = residents.filter(r => (r.isArchived || r.archived) && within(r.archivingDate || r.archiveDate || r.archivedAt));
+      const allIncidents = new Map<string, any>();
+      const residentEventIds = new Map<string, Set<string>>();
+      for (const resident of residents) {
+        for (const incident of resident.incidents || []) {
+          if (!incident?.id || !within(incident.timestamp)) continue;
+          allIncidents.set(incident.id, incident);
+          const ids = residentEventIds.get(resident.id) || new Set<string>();
+          ids.add(incident.id);
+          residentEventIds.set(resident.id, ids);
+        }
+      }
+      const incidents = [...allIncidents.values()];
+      const topFive = [...residentEventIds.entries()].map(([id, ids]) => ({
+        id, name: residents.find(r => r.id === id)?.name || 'Residente não identificado', count: ids.size
+      })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'pt-BR')).slice(0, 5);
+      const candidateContacts = candidates.filter(c => within(c.createdAt || c.scheduledDate)).length;
+      const socialVisits = candidates.filter(c => within(c.visitaSocialData || c.socialVisitDate)).length;
+      return res.json({
+        period: { dateFrom, dateTo },
+        professional,
+        groupActivities: {
+          total: uniqueGroups.length, byArea: countBy(uniqueGroups, 'competence'),
+          knownParticipations, eventsWithoutParticipantList: withoutParticipants,
+          highlights: uniqueGroups.map(a => ({
+            date: dateKey(a.date), type: String(a.type || ''), competence: String(a.competence || ''),
+            professional: String(a.responsibleProfessional || '')
+          })).slice(0, 25)
+        },
+        socialWork: { total: social.size, byType: countBy(socialEntries, 'type'), byVisibility: countBy(socialEntries, 'visibility') },
+        screening: { newContacts: candidateContacts, socialVisits, completedScreenings: null },
+        residentMovement: {
+          admissions, recordedClosures: departures.length,
+          closureReasons: countBy(departures.map(r => ({ reason: r.archivingReason || r.archiveReason || 'Não informado' })), 'reason'),
+          description: 'Encerramentos por data de arquivamento; não necessariamente data efetiva do desacolhimento.'
+        },
+        incidents: { total: incidents.length, byType: countBy(incidents, 'type'), topFive: internal ? topFive.map(({name,count})=>({name,count})) : topFive.map(({count}, index)=>({label: `Posição ${index+1}`,count})) },
+        methodology: ['Atendimentos agrupados por residente e ID, com recusas excluídas da produção.',
+          'Atividades realizadas pelo cadastro principal, sem somar cópias em residentes.',
+          'Intercorrências por ID único; ranking por residente e ID.',
+          'Triagens concluídas não apuráveis de modo confiável na base atual.']
+      });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao gerar relatório institucional.');
+    }
+  });
+
   // --- Group Activities API ---
   app.get('/api/groupActivities', rejectVisitor, async (req, res) => {
     const { institutionId } = req.query;
