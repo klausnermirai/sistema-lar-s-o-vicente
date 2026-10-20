@@ -6180,7 +6180,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/stock-movements', requireRole(['administrador', 'gerencial', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'auxiliar_administrativo']), async (req, res) => {
+  app.get('/api/stock-movements', requireRole(['administrador', 'gerencial', 'enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'medico', 'auxiliar_administrativo']), async (req: any, res) => {
     try {
       const institutionId = req.headers['x-institution-id'] as string;
       if (!institutionId || !isUserAuthorizedForInstitution(req.user, institutionId)) {
