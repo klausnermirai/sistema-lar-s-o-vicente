@@ -193,7 +193,8 @@ const Layout: React.FC<LayoutProps> = ({
       AppRoute.STOCK,
       AppRoute.SUPPLIERS,
       AppRoute.FINANCEIRO,
-      AppRoute.CONTROLE_FINANCEIRO_IDOSOS
+      AppRoute.CONTROLE_FINANCEIRO_IDOSOS,
+      AppRoute.INSTITUTIONAL_REPORT
     ];
     const atendimentoRoutes = [
       AppRoute.HOME,
@@ -347,6 +348,13 @@ const Layout: React.FC<LayoutProps> = ({
       { id: AppRoute.STOCK, label: 'Estoque e Compras', icon: Package },
       { id: AppRoute.SUPPLIERS, label: 'Fornecedores e Prestadores', icon: Truck }
     ];
+  }
+
+  const canUseInstitutionalReport = ['administrador', 'gerencial', 'auxiliar_administrativo', 'assistente_social'].includes(
+    (accessLevel || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  );
+  if (canUseInstitutionalReport && !gestaoItems.some(item => item.id === AppRoute.INSTITUTIONAL_REPORT)) {
+    gestaoItems.push({ id: AppRoute.INSTITUTIONAL_REPORT, label: 'Relatório Institucional', icon: FileText });
   }
 
   const isAdminUser = normalizedLevel.includes('admin') || accessLevel === 'administrador';
