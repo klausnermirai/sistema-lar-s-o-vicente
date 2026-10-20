@@ -149,7 +149,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
     setIsLoadingVisits(true);
     try {
       const [visitsData, regVisitorsData] = await Promise.all([
-        fetchGlobalVisits(institutionId).catch(() => []),
+        isAdministrative ? fetchGlobalVisits(institutionId).catch(() => []) : Promise.resolve([]),
         fetchRegisteredVisitors(institutionId).catch(() => [])
       ]);
       if (Array.isArray(visitsData)) {
@@ -163,7 +163,7 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
     } finally {
       setIsLoadingVisits(false);
     }
-  }, [institutionId]);
+  }, [institutionId, isAdministrative]);
 
   useEffect(() => {
     loadVisits();
@@ -626,6 +626,15 @@ export const VisitorPortal: React.FC<VisitorPortalProps> = ({
           kinship: editFields.kinship, type: editFields.type,
           linkedResidents: editFields.linkedResidentIds.map(id => ({ residentId: id }))
         });
+        // Mantém os dados sociais coerentes apenas quando há vínculo explícito pelo mesmo ID.
+        for (const res of residents) {
+          if (res.relatives?.some(rel => rel.id === editingVisitor.id)) {
+            await updateVisitorRelative(institutionId, res.id, editingVisitor.id, 'edit', {
+              name: editFields.name.trim(), document: editFields.document,
+              phone: editFields.phone, kinship: editFields.kinship
+            });
+          }
+        }
       }
       setEditingVisitor(null);
       await loadVisits();
