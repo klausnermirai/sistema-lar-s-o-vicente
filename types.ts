@@ -1259,6 +1259,7 @@ export enum AppRoute {
   AGENDA = 'agenda',
   MEDICAMENTOS = 'medicamentos',
   GUIAS = 'guias',
+  INSTITUTIONAL_REPORT = 'relatorio-institucional',
   VISITANTES = 'visitantes',
   EMPLOYEES = 'employees',
   STOCK = 'compras',
