@@ -1747,6 +1747,35 @@ async function startServer() {
           }
         }
 
+        // Na Portaria, uma visita complementar não deve regravar familiares.
+        // A transação impede perda de visitas concorrentes e garante idempotência por ID.
+        if (requesterLevel === 'visitante' && !Array.isArray(data.relatives) && Array.isArray(data.visitRecords)) {
+          const incomingVisits = JSON.parse(JSON.stringify(data.visitRecords));
+          const residentRef = db.collection('residents').doc(payload.id);
+          const updatedVisitRecords = await db.runTransaction(async (transaction) => {
+            const snapshot = await transaction.get(residentRef);
+            if (!snapshot.exists || !isAuthorizedForDocument(user, snapshot.data())) {
+              throw new Error('Residente não encontrado ou acesso não autorizado.');
+            }
+            const currentVisits = Array.isArray(snapshot.data()?.visitRecords) ? snapshot.data()!.visitRecords : [];
+            const existingIds = new Set(currentVisits.map((visit: any) => String(visit?.id || '')).filter(Boolean));
+            const additions = incomingVisits.filter((visit: any) => {
+              if (!visit?.id || typeof visit.id !== 'string' || existingIds.has(visit.id)) return false;
+              existingIds.add(visit.id);
+              return true;
+            });
+            if (additions.length > 0) {
+              transaction.update(residentRef, {
+                visitRecords: [...currentVisits, ...additions],
+                auditLog: admin.firestore.FieldValue.arrayUnion(auditEntry)
+              });
+            }
+            return [...currentVisits, ...additions];
+          });
+          invalidateCache('residents');
+          return res.json({ id: payload.id, visitRecords: updatedVisitRecords });
+        }
+
         if (requesterLevel === 'visitante') {
           const existingRelatives = Array.isArray(existingData.relatives) ? existingData.relatives : [];
           const incomingRelatives = Array.isArray(data.relatives) ? data.relatives : [];
@@ -1801,6 +1830,9 @@ async function startServer() {
             auditLog: admin.firestore.FieldValue.arrayUnion(auditEntry)
           };
 
+          // Remove propriedades opcionais undefined sem alterar a configuração global do Firestore.
+          safePortariaUpdate.relatives = JSON.parse(JSON.stringify(safePortariaUpdate.relatives));
+          safePortariaUpdate.visitRecords = JSON.parse(JSON.stringify(safePortariaUpdate.visitRecords));
           await db.collection('residents').doc(payload.id).set(safePortariaUpdate, { merge: true });
           await logAudit('update', 'residents', payload.id, req, safePortariaUpdate.institutionId, `Atualização operacional de portaria do residente ${existingData.name || ''}`);
           invalidateCache('residents');
