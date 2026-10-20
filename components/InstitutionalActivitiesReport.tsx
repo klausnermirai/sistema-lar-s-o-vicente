@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FileText, Printer, RefreshCcw } from 'lucide-react';
-import { getAuthHeaders } from '../lib/api';
+import { apiFetch, getAuthHeaders } from '../lib/api';
 import { getHtmlPrintHeader, getHtmlPrintFooter, getHtmlPrintStyles, printHtml } from '../lib/pdfHelpers';
 import type { InstitutionSettings } from '../types';
 
@@ -29,7 +29,7 @@ export const InstitutionalActivitiesReport: React.FC<Props> = ({ institutionId, 
     setLoading(true); setError(''); setData(null);
     try {
       const query = new URLSearchParams({ institutionId, dateFrom, dateTo, mode });
-      const response = await fetch(`/api/reports/institutional-activities?${query}`, { headers: getAuthHeaders() });
+      const response = await apiFetch(`/api/reports/institutional-activities?${query}`, { headers: getAuthHeaders() });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Não foi possível consultar os indicadores.');
       setData(body);
@@ -73,7 +73,7 @@ export const InstitutionalActivitiesReport: React.FC<Props> = ({ institutionId, 
       <p><strong>Registros de ações:</strong> ${data.socialWork?.total || 0}. Informações sigilosas e textos de prontuário não são exibidos.</p>
       <table><tr><th>Tipo de ação</th><th>Quantidade</th></tr>${rows(data.socialWork?.byType)}</table>
       <h2>4. Triagem e movimentação institucional</h2>
-      <p>Primeiros contatos de candidatos registrados no período: <strong>${data.screening?.newContacts || 0}</strong>.
+      <p>Cadastros/agendamentos de candidatos datados no período: <strong>${data.screening?.newContacts || 0}</strong>.
       Visitas sociais datadas: <strong>${data.screening?.socialVisits || 0}</strong>.
       Triagens concluídas: <strong>não disponível para apuração confiável</strong>.</p>
       <p>Novos acolhimentos por data de admissão: <strong>${data.residentMovement?.admissions || 0}</strong>.
