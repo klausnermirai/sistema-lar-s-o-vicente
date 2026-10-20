@@ -923,8 +923,17 @@ export const bootstrapStockProducts = async (items: any[]) => {
   return response.json();
 };
 
-export const fetchStockMovements = async () => {
-  const response = await apiFetch('/api/stock-movements', {
+export const fetchStockMovements = async (filters?: {
+  report?: boolean; startDate?: string; endDate?: string; reason?: string; type?: string;
+}) => {
+  const query = new URLSearchParams();
+  if (filters?.report) query.set('report', 'true');
+  if (filters?.startDate) query.set('startDate', filters.startDate);
+  if (filters?.endDate) query.set('endDate', filters.endDate);
+  if (filters?.reason) query.set('reason', filters.reason);
+  if (filters?.type) query.set('type', filters.type);
+  const url = '/api/stock-movements' + (query.size ? '?' + query.toString() : '');
+  const response = await apiFetch(url, {
     headers: getAuthHeaders()
   });
   if (!response.ok) throw new Error('Erro ao buscar histórico de movimentações');
