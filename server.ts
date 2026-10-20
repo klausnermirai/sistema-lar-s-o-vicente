@@ -3881,7 +3881,7 @@ async function startServer() {
     };
   };
 
-  app.get('/api/global-visits', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo', 'assistente_social']), async (req: any, res) => {
+  app.get('/api/global-visits', requireRole(['gerencial', 'auxiliar_administrativo', 'assistente_social']), async (req: any, res) => {
     const { institutionId } = req.query;
     if (!institutionId || typeof institutionId !== 'string') {
       return res.status(400).json({ error: 'institutionId é obrigatório.' });
@@ -4120,14 +4120,10 @@ async function startServer() {
         if (existingData.archived) {
           return res.status(404).json({ error: 'Visitante arquivado não pode ser atualizado pela Portaria.' });
         }
-        // A conta operacional pode renovar a biometria, mas não editar dados cadastrais.
+        // Somente foto e descritor podem ser atualizados em cadastro existente pela Portaria.
         if (normalizeAccessLevel(req.user?.accessLevel || req.user?.role) === 'visitante') {
-          for (const key of ['name', 'document', 'phone', 'type', 'kinship', 'agencyName', 'conferenceName', 'residentId', 'residentName', 'linkedResidents']) {
-            if (Object.prototype.hasOwnProperty.call(existingData, key)) {
-              data[key] = existingData[key];
-            } else {
-              delete data[key];
-            }
+          for (const key of Object.keys(data)) {
+            if (key !== 'photoUrl' && key !== 'faceDescriptor') delete data[key];
           }
         }
       }
