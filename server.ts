@@ -3881,7 +3881,7 @@ async function startServer() {
     };
   };
 
-  app.get('/api/global-visits', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+  app.get('/api/global-visits', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo', 'assistente_social']), async (req: any, res) => {
     const { institutionId } = req.query;
     if (!institutionId || typeof institutionId !== 'string') {
       return res.status(400).json({ error: 'institutionId é obrigatório.' });
@@ -3908,7 +3908,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/global-visits', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+  app.post('/api/global-visits', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo', 'assistente_social']), async (req: any, res) => {
     const { institutionId, ...data } = req.body || {};
     if (!institutionId || typeof institutionId !== 'string') {
       return res.status(400).json({ error: 'institutionId é obrigatório.' });
@@ -3973,7 +3973,104 @@ async function startServer() {
     }
   });
 
-  app.get('/api/registered-visitors', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+  // Gestão administrativa de cadastros permanentes: edição e arquivamento lógico.
+  app.patch('/api/registered-visitors/:id', requireRole(['gerencial', 'auxiliar_administrativo', 'assistente_social']), async (req: any, res) => {
+    try {
+      const { institutionId, ...changes } = req.body || {};
+      const realId = await getRealInstitutionId(institutionId);
+      if (!realId || !(await isVisitorPortalInstitution(realId)) || !isUserAuthorizedForInstitution(req.user, realId)) {
+        return res.status(403).json({ error: 'Instituição não autorizada.' });
+      }
+      const ref = db.collection('registered_visitors').doc(req.params.id);
+      const snapshot = await ref.get();
+      if (!snapshot.exists || snapshot.data()?.archived || getCanonicalInstitutionId(snapshot.data()?.institutionId) !== getCanonicalInstitutionId(realId)) {
+        return res.status(404).json({ error: 'Visitante não encontrado.' });
+      }
+      const allowed = ['name', 'document', 'phone', 'kinship', 'agencyName', 'conferenceName', 'type', 'linkedResidents'];
+      const update: any = {};
+      for (const key of allowed) if (Object.prototype.hasOwnProperty.call(changes, key)) update[key] = changes[key];
+      if (typeof update.name !== 'undefined' && (typeof update.name !== 'string' || !update.name.trim())) {
+        return res.status(400).json({ error: 'Nome inválido.' });
+      }
+      if (update.linkedResidents !== undefined && !Array.isArray(update.linkedResidents)) return res.status(400).json({ error: 'Vínculos inválidos.' });
+      const base = snapshot.data() || {};
+      const links = update.linkedResidents ?? base.linkedResidents ?? [];
+      const normalized: any[] = [];
+      const unique = new Set<string>();
+      for (const link of links) {
+        if (!link?.residentId || unique.has(link.residentId)) continue;
+        const resident = await resolvePortalResident(link.residentId, realId);
+        if (!resident) return res.status(400).json({ error: 'Residente vinculado inválido.' });
+        unique.add(link.residentId);
+        normalized.push({ residentId: resident.id, residentName: resident.name });
+      }
+      const nextType = update.type ?? base.type;
+      const descriptor = base.faceDescriptor;
+      if (Array.isArray(descriptor) && descriptor.length > 0 && (nextType !== 'residente' || !normalized.length)) {
+        return res.status(400).json({ error: 'Visitante com biometria deve manter vínculo com residente.' });
+      }
+      update.linkedResidents = normalized;
+      update.residentId = normalized[0]?.residentId ?? null;
+      update.residentName = normalized[0]?.residentName ?? null;
+      update.updatedAt = new Date().toISOString();
+      await ref.update(update);
+      await logAudit('update', 'registered_visitors', ref.id, req, realId, 'Edição administrativa do visitante');
+      res.json({ ...base, ...update, id: ref.id });
+    } catch (error: any) { return sendDatabaseError(res, error, 'Erro ao editar visitante.'); }
+  });
+
+  app.delete('/api/registered-visitors/:id', requireRole(['gerencial', 'auxiliar_administrativo', 'assistente_social']), async (req: any, res) => {
+    try {
+      const realId = await getRealInstitutionId(req.query.institutionId);
+      if (!realId || !(await isVisitorPortalInstitution(realId)) || !isUserAuthorizedForInstitution(req.user, realId)) {
+        return res.status(403).json({ error: 'Instituição não autorizada.' });
+      }
+      const ref = db.collection('registered_visitors').doc(req.params.id);
+      const snapshot = await ref.get();
+      if (!snapshot.exists || getCanonicalInstitutionId(snapshot.data()?.institutionId) !== getCanonicalInstitutionId(realId)) {
+        return res.status(404).json({ error: 'Visitante não encontrado.' });
+      }
+      await ref.update({ archived: true, archivedAt: new Date().toISOString(), archivedBy: req.user?.id || '' });
+      await logAudit('update', 'registered_visitors', ref.id, req, realId, 'Arquivamento administrativo de visitante');
+      res.json({ success: true });
+    } catch (error: any) { return sendDatabaseError(res, error, 'Erro ao arquivar visitante.'); }
+  });
+
+  // Familiares: retirar apenas da operação da Portaria, preservando o prontuário social.
+  app.post('/api/visitor-directory/relative', requireRole(['gerencial', 'auxiliar_administrativo', 'assistente_social']), async (req: any, res) => {
+    try {
+      const { institutionId, residentId, relativeId, action, changes } = req.body || {};
+      const realId = await getRealInstitutionId(institutionId);
+      if (!realId || !isUserAuthorizedForInstitution(req.user, realId) || !residentId || !relativeId || !['archive', 'edit'].includes(action)) {
+        return res.status(403).json({ error: 'Operação não autorizada.' });
+      }
+      const ref = db.collection('residents').doc(residentId);
+      await db.runTransaction(async (transaction) => {
+        const doc = await transaction.get(ref);
+        if (!doc.exists || !isAuthorizedForDocument(req.user, doc.data()) || getCanonicalInstitutionId(doc.data()?.institutionId) !== getCanonicalInstitutionId(realId)) {
+          throw new Error('Residente não encontrado ou acesso não autorizado.');
+        }
+        let found = false;
+        const relatives = (Array.isArray(doc.data()?.relatives) ? doc.data()!.relatives : []).map((rel: any) => {
+          if (String(rel.id) !== String(relativeId)) return rel;
+          found = true;
+          if (action === 'archive') return { ...rel, hiddenFromVisitorPortal: true };
+          const updated = { ...rel };
+          for (const key of ['name', 'document', 'phone', 'kinship']) {
+            if (changes && Object.prototype.hasOwnProperty.call(changes, key)) updated[key] = changes[key];
+          }
+          return updated;
+        });
+        if (!found) throw new Error('Familiar não encontrado.');
+        transaction.update(ref, { relatives, auditLog: admin.firestore.FieldValue.arrayUnion({ action: 'update', timestamp: new Date().toISOString(), userId: req.user?.id || '' }) });
+      });
+      invalidateCache('residents');
+      await logAudit('update', 'residents', residentId, req, realId, 'Gestão administrativa de familiar no Banco de Visitantes');
+      res.json({ success: true });
+    } catch (error: any) { return sendDatabaseError(res, error, 'Erro ao atualizar familiar.'); }
+  });
+
+  app.get('/api/registered-visitors', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo', 'assistente_social']), async (req: any, res) => {
     const { institutionId } = req.query;
     if (!institutionId || typeof institutionId !== 'string') {
       return res.status(400).json({ error: 'institutionId é obrigatório.' });
@@ -3997,7 +4094,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/registered-visitors', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo']), async (req: any, res) => {
+  app.post('/api/registered-visitors', requireRole(['visitante', 'gerencial', 'auxiliar_administrativo', 'assistente_social']), async (req: any, res) => {
     const { institutionId, id, ...data } = req.body || {};
     if (!institutionId || typeof institutionId !== 'string') {
       return res.status(400).json({ error: 'institutionId é obrigatório.' });
