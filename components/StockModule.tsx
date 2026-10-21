@@ -26,6 +26,19 @@ interface StockModuleProps {
 
 const STOCK_CATEGORIES = ['ALIMENTAÇÃO', 'HIGIENE', 'LIMPEZA', 'MEDICAMENTOS', 'DIALÍTICO', 'AMBULATORIAL', 'GERAL'];
 
+type Group={key:string;name:string;unit:string;flow:string;qty:number;count:number;value:number;registered:number;estimated:number;missing:number};
+const group=(items:StockMovement[],products:ProductStockItem[],reason:'doacao'|'compra'):Group[]=>{
+ const map=new Map<string,Group>(); const catalog=new Map(products.map(p=>[p.id,p]));
+ for(const m of items){if(m.reason!==reason||(reason==='compra'&&m.type!=='entrada'))continue;
+ const p=catalog.get(m.productId),name=String(p?.name||m.productName||'Produto não identificado'),unit=String(p?.unit||'UNIDADE NÃO INFORMADA'),flow=m.type==='entrada'?'Recebida':'Concedida';
+ const key=JSON.stringify([m.productId||'SEM_ID:'+name,unit,flow]),g=map.get(key)||{key,name,unit,flow,qty:0,count:0,value:0,registered:0,estimated:0,missing:0};
+ const q=Number(m.quantity)||0,c=Number(m.price),e=Number(p?.estimatedCost);g.qty+=q;g.count++;
+ if(c>0&&Number.isFinite(c)){g.value+=Math.round(q*c*100)/100;g.registered++}
+ else if(reason==='doacao'&&e>0&&Number.isFinite(e)){g.value+=Math.round(q*e*100)/100;g.estimated++}else g.missing++;
+ map.set(key,g)}
+ return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+};
+const money=(n:number)=>'R$ '+n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 export const StockModule: React.FC<StockModuleProps> = ({ session, settings, supplierOnly = false }) => {
   const [products, setProducts] = useState<ProductStockItem[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
@@ -85,12 +98,14 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
   const [donationTypeFilter, setDonationTypeFilter] = useState<'entrada' | 'saida' | 'todas'>('entrada');
   const [donationCategoryFilter, setDonationCategoryFilter] = useState<string>('TODAS');
   const [donationSearchQuery, setDonationSearchQuery] = useState('');
+  const [donationMode, setDonationMode] = useState<'detalhado'|'agrupado'>('detalhado');
 
   // History Report filtering state variables
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [historyCategoryFilter, setHistoryCategoryFilter] = useState('TODAS');
   const [historyTypeFilter, setHistoryTypeFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
   const [historyReasonFilter, setHistoryReasonFilter] = useState('TODOS');
+  const [historyMode, setHistoryMode] = useState<'detalhado'|'agrupado'>('detalhado');
   const [historyStartDate, setHistoryStartDate] = useState('');
   const [historyEndDate, setHistoryEndDate] = useState('');
   
@@ -631,8 +646,22 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
     doc.save(filename);
   };
 
+  const purchasesGrouped=group(filteredHistoryMovements,products,'compra');
   // Export Movements History PDF
   const exportHistoryPDF = () => {
+    if(historyMode==='agrupado'){
+      if(reportLoading||reportError||reportMovements===null)return;
+      const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+      pdf.setFontSize(15);pdf.text('COMPRAS AGRUPADAS',14,17);
+      pdf.setFontSize(10);pdf.text(String(settings?.name||'Instituição'),14,25);
+      pdf.text('Período: '+(historyStartDate||'Início')+' a '+(historyEndDate||'Atual'),14,32);
+      autoTable(pdf,{startY:40,head:[['Produto','Quantidade','Unidade','Lançamentos','Valor registrado','Sem preço']],
+      body:purchasesGrouped.map(g=>[g.name,String(g.qty),g.unit,String(g.count),money(g.value),String(g.missing)]),theme:'striped',headStyles:{fillColor:[0,76,153]}});
+      let y=(pdf as any).lastAutoTable?.finalY||40;if(y>185){pdf.addPage();y=12;}
+      pdf.text('Total valorizado: '+money(purchasesGrouped.reduce((a,g)=>a+g.value,0)),14,y+8);
+      pdf.text('Lançamentos sem preço: '+purchasesGrouped.reduce((a,g)=>a+g.missing,0),14,y+15);
+      pdf.save('Compras_Agrupadas.pdf');return;
+    }
     const doc = new jsPDF({
       orientation: 'landscape',
       unit: 'mm',
@@ -1942,7 +1971,8 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
 
                       </div>
 
-                      {/* Botão de PDF */}
+                      <label className="text-xs font-semibold">Modo <select value={historyMode} onChange={e=>setHistoryMode(e.target.value as 'detalhado'|'agrupado')} className="border p-2 rounded-lg"><option value="detalhado">Detalhado</option><option value="agrupado">Compras agrupadas</option></select></label>
+                  {/* Botão de PDF */}
                       <button
                         onClick={exportHistoryPDF}
                         disabled={reportLoading || !!reportError || reportMovements === null}
@@ -1957,6 +1987,12 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                   {reportLoading && <p className="p-3 text-sm text-blue-700">Consultando histórico completo…</p>}
                   {reportError && <p role="alert" className="p-3 text-sm text-red-700">{reportError}</p>}
                   {!reportLoading && !reportError && <p className="text-xs text-slate-500">{filteredHistoryMovements.length} movimentações encontradas no histórico.</p>}
+                  {historyMode==='agrupado'&&<div className="overflow-x-auto border rounded-xl">
+                  <p className="p-3 text-xs">Somente compras recebidas, respeitando os filtros aplicados.</p>
+                  <table className="w-full text-xs text-left"><thead><tr><th className="p-3">Produto</th><th>Quantidade</th><th>Unidade</th><th>Lançamentos</th><th>Valor registrado</th><th>Sem preço</th></tr></thead><tbody>
+                  {purchasesGrouped.map(g=><tr className="border-t" key={g.key}><td className="p-3">{g.name}</td><td>{g.qty}</td><td>{g.unit}</td><td>{g.count}</td><td>{money(g.value)}</td><td>{g.missing}</td></tr>)}</tbody></table>
+                  <p className="p-3 font-bold">Total: {money(purchasesGrouped.reduce((a,g)=>a+g.value,0))}</p></div>}
+                  {historyMode==='detalhado'&&<>
                   {/* Renderizacao da Tabela de Movimentações */}
                   {filteredHistoryMovements.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-2xl border border-slate-100 text-center px-4">
@@ -2066,13 +2102,14 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                       </table>
                     </div>
                   )}
+                  </>}
                 </>
               )}
 
             </div>
           )}
 
-          {activeTab === 'historico' && !reportLoading && !reportError && filteredHistoryMovements.length > 50 && (
+          {activeTab === 'historico' && historyMode==='detalhado' && !reportLoading && !reportError && filteredHistoryMovements.length > 50 && (
             <div className="flex items-center justify-center gap-3 px-6 pb-5">
               <button className="border px-3 py-1 rounded-lg" disabled={historyPage === 1} onClick={() => setHistoryPage(p => Math.max(1, p - 1))}>Anterior</button>
               <span className="text-xs">Página {historyPage} de {Math.ceil(filteredHistoryMovements.length / 50)}</span>
@@ -2109,6 +2146,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
             });
 
             const sortedDonations = [...filteredDonations].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            const donationsGrouped=group(filteredDonations,products,'doacao');
 
             const totalDonationsCount = filteredDonations.length;
             const totalItemsVolume = filteredDonations.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0);
@@ -2153,6 +2191,18 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
             const handleExportDonationPDF = () => {
               if (reportLoading || reportError || reportMovements === null) return;
               const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+              if(donationMode==='agrupado'){
+                pdf.setFontSize(15);pdf.text('DOAÇÕES AGRUPADAS',14,17);
+                pdf.setFontSize(10);pdf.text(String(settings?.name||'Instituição'),14,25);
+                pdf.text('Período: '+donationStartDate+' a '+donationEndDate+' | Fluxo: '+donationTypeFilter,14,32);
+                autoTable(pdf,{startY:40,head:[['Produto','Fluxo','Quantidade','Unidade','Lançamentos','Valor estimado','Sem valor']],
+                body:donationsGrouped.map(g=>[g.name,g.flow,String(g.qty),g.unit,String(g.count),money(g.value),String(g.missing)]),theme:'striped',headStyles:{fillColor:[0,76,153]}});
+                let y=(pdf as any).lastAutoTable?.finalY||40;if(y>175){pdf.addPage();y=12;}
+                pdf.text('Total estimado valorizado: '+money(donationsGrouped.reduce((a,g)=>a+g.value,0)),14,y+8);
+                pdf.text('Preço registrado: '+donationsGrouped.reduce((a,g)=>a+g.registered,0)+' | Custo cadastral: '+donationsGrouped.reduce((a,g)=>a+g.estimated,0)+' | Sem valor: '+donationsGrouped.reduce((a,g)=>a+g.missing,0),14,y+15);
+                pdf.text('Valor cadastral é estimativa atual; sem preço não significa valor zero.',14,y+22);
+                pdf.save('Doacoes_Agrupadas.pdf');return;
+              }
               const money = (value: number) => 'R$ ' + value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
               const format = (value: string) => value ? value.split('-').reverse().join('/') : 'Sem data';
               const kind = donationTypeFilter === 'entrada' ? 'Recebidas' : donationTypeFilter === 'saida' ? 'Concedidas' : 'Todas';
@@ -2222,6 +2272,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                     </div>
                   </div>
 
+                  <label className="text-xs font-semibold">Modo <select value={donationMode} onChange={e=>setDonationMode(e.target.value as 'detalhado'|'agrupado')} className="border p-2 rounded-lg"><option value="detalhado">Detalhado</option><option value="agrupado">Agrupado por produto</option></select></label>
                   <button
                     onClick={handleExportDonationPDF}
                     disabled={reportLoading || !!reportError || reportMovements === null}
@@ -2461,6 +2512,13 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
 
                 </div>
 
+                {donationMode==='agrupado'&&<div className="overflow-x-auto border rounded-xl">
+                <table className="w-full text-xs text-left"><thead><tr><th className="p-3">Produto</th><th>Fluxo</th><th>Quantidade</th><th>Unidade</th><th>Lançamentos</th><th>Valor estimado</th><th>Sem valor</th></tr></thead><tbody>
+                {donationsGrouped.map(g=><tr className="border-t" key={g.key}><td className="p-3">{g.name}</td><td>{g.flow}</td><td>{g.qty}</td><td>{g.unit}</td><td>{g.count}</td><td>{money(g.value)}</td><td>{g.missing}</td></tr>)}</tbody></table>
+                <p className="p-3 font-bold">Total estimado: {money(donationsGrouped.reduce((a,g)=>a+g.value,0))} | Sem valor: {donationsGrouped.reduce((a,g)=>a+g.missing,0)}</p>
+                <p className="px-3 pb-3 text-xs">Custos cadastrais são estimativas atuais, sem conversão entre unidades.</p>
+                </div>}
+                {donationMode==='detalhado'&&<>
                 {/* Table list of movements */}
                 <div className="border rounded-2xl overflow-hidden shadow-xs">
                   <div className="overflow-x-auto">
@@ -2556,7 +2614,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                     </table>
                   </div>
                 </div>
-
+                </>}
               </div>
             );
           })()}
