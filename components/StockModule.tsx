@@ -2203,7 +2203,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                 pdf.text('Valor cadastral é estimativa atual; sem preço não significa valor zero.',14,y+22);
                 pdf.save('Doacoes_Agrupadas.pdf');return;
               }
-              const money = (value: number) => 'R$ ' + value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
               const format = (value: string) => value ? value.split('-').reverse().join('/') : 'Sem data';
               const kind = donationTypeFilter === 'entrada' ? 'Recebidas' : donationTypeFilter === 'saida' ? 'Concedidas' : 'Todas';
               pdf.setFont('helvetica', 'bold'); pdf.setFontSize(17);
