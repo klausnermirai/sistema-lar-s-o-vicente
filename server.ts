@@ -4975,10 +4975,13 @@ async function startServer() {
       }
       // Não modifica o middleware compartilhado ou os filtros das APIs assistenciais.
       const queryIds = isMonteAltoUnit(realId) ? getMonteAltoQueryIds() : [realId];
-      const [residentSnapshot, candidateSnapshot, activitySnapshot] = await Promise.all([
+      const [residentSnapshot, candidateSnapshot, activitySnapshot, stockSnapshot, productSnapshot, donationsSnapshot] = await Promise.all([
         db.collection('residents').where('institutionId', 'in', queryIds).get(),
         db.collection('candidates').where('institutionId', 'in', queryIds).get(),
-        db.collection('group_activities').where('institutionId', 'in', queryIds).get()
+        db.collection('group_activities').where('institutionId', 'in', queryIds).get(),
+        db.collection('stock_movements').where('institutionId', 'in', queryIds).get(),
+        db.collection('product_stock').where('institutionId', 'in', queryIds).get(),
+        db.collection('finance_donations').where('institutionId', 'in', queryIds).get()
       ]);
       const residents = residentSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as any[];
       const candidates = candidateSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as any[];
@@ -5081,10 +5084,66 @@ async function startServer() {
       const topFive = [...residentEventIds.entries()].map(([id, ids]) => ({
         id, name: residents.find(r => r.id === id)?.name || 'Residente não identificado', count: ids.size
       })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'pt-BR')).slice(0, 5);
+      // Agregados anônimos para seções opcionais do relatório institucional.
+      const stockProducts = new Map<string, any>(productSnapshot.docs.map((doc: any) => [doc.id, doc.data()]));
+      const materialGroups = new Map<string, any>();
+      let materialValuedFromMovement = 0;
+      let materialValuedFromCatalog = 0;
+      let materialUnvalued = 0;
+      let materialTotalCents = 0;
+      let materialMovementCount = 0;
+      for (const doc of stockSnapshot.docs) {
+        const mv: any = doc.data();
+        if (mv.reason !== 'doacao' || mv.type !== 'entrada' || !within(mv.date)) continue;
+        materialMovementCount++;
+        const prod = stockProducts.get(String(mv.productId || ''));
+        const unit = String(prod?.unit || 'UNIDADE NÃO INFORMADA').trim().toUpperCase();
+        const productId = String(mv.productId || '');
+        const name = String(prod?.name || mv.productName || 'Produto não identificado');
+        const key = JSON.stringify([productId || ('SEM_ID:' + name), unit]);
+        const group = materialGroups.get(key) || {
+          productId, name, unit, quantity: 0, movements: 0,
+          estimatedValue: 0, unvaluedMovements: 0, fromMovement: 0, fromCatalog: 0
+        };
+        const quantity = Number(mv.quantity) || 0;
+        group.quantity += quantity;
+        group.movements++;
+        const recorded = Number(mv.price);
+        const catalog = Number(prod?.estimatedCost);
+        const unitPrice = Number.isFinite(recorded) && recorded > 0 ? recorded :
+          (Number.isFinite(catalog) && catalog > 0 ? catalog : null);
+        if (unitPrice === null) { group.unvaluedMovements++; materialUnvalued++; }
+        else {
+          const cents = Math.round(quantity * unitPrice * 100);
+          group.estimatedValue += cents / 100;
+          materialTotalCents += cents;
+          if (recorded > 0) { group.fromMovement++; materialValuedFromMovement++; }
+          else { group.fromCatalog++; materialValuedFromCatalog++; }
+        }
+        materialGroups.set(key, group);
+      }
+      const materialItems = [...materialGroups.values()].sort((a: any, b: any) =>
+        a.name.localeCompare(b.name, 'pt-BR') || a.unit.localeCompare(b.unit));
+      let financialCount = 0;
+      let financialCents = 0;
+      for (const doc of donationsSnapshot.docs) {
+        const donation: any = doc.data();
+        if (donation.archived || !within(donation.date)) continue;
+        const amount = Number(donation.value);
+        if (!Number.isFinite(amount) || amount <= 0) continue;
+        financialCount++;
+        financialCents += Math.round(amount * 100);
+      }
       const candidateContacts = candidates.filter(c => within(c.createdAt || c.scheduledDate)).length;
       const socialVisits = candidates.filter(c => within(c.visitaSocialData || c.socialVisitDate)).length;
       return res.json({
         period: { dateFrom, dateTo },
+        materialDonations: {
+          items: materialItems, totalEstimatedValue: materialTotalCents / 100,
+          movementCount: materialMovementCount, fromMovement: materialValuedFromMovement,
+          fromCatalog: materialValuedFromCatalog, unvaluedMovements: materialUnvalued
+        },
+        financialDonations: { totalAmount: financialCents / 100, totalCount: financialCount },
         professional,
         groupActivities: {
           total: uniqueGroups.length, byArea: countBy(uniqueGroups, 'competence'),
