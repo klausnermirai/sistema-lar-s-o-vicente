@@ -17,6 +17,8 @@ export const InstitutionalActivitiesReport: React.FC<Props> = ({ institutionId, 
   const [dateTo, setDateTo] = useState(localDate(current));
   const canInternal = ['administrador','gerencial'].includes(String(accessLevel || '').trim().toLowerCase().replace(/[\s-]+/g,'_'));
   const [mode, setMode] = useState<'institutional'|'internal'>('institutional');
+  const [includeMaterials, setIncludeMaterials] = useState(false);
+  const [includeFinancial, setIncludeFinancial] = useState(false);
   const [results, setResults] = useState('');
   const [challenges, setChallenges] = useState('');
   const [conclusion, setConclusion] = useState('');
@@ -51,6 +53,23 @@ export const InstitutionalActivitiesReport: React.FC<Props> = ({ institutionId, 
       `<tr><td>${esc(formatDate(activity.date || ''))}</td><td>${esc(activity.competence)}</td><td>${esc(activity.type)}</td><td>${esc(activity.professional)}</td></tr>`).join('');
     const ranking = (data.incidents?.topFive || []).map((item:any,i:number) =>
       `<tr><td>${i+1}º</td><td>${esc(mode === 'internal' ? item.name : 'Identificação reservada')}</td><td>${item.count}</td></tr>`).join('');
+    const currency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0);
+    const material = data.materialDonations || {};
+    const materialRows = (material.items || []).map((item: any) =>
+      `<tr><td>${esc(item.name)}</td><td>${esc(String(item.quantity))}</td><td>${esc(item.unit)}</td><td>${currency(item.estimatedValue)}${item.unvaluedMovements ? ' *' : ''}</td></tr>`).join('');
+    const materialsHtml = includeMaterials ? `
+      <h2>Doações de materiais recebidas</h2>
+      <table><tr><th>Produto</th><th>Quantidade</th><th>Unidade</th><th>Valor estimado</th></tr>
+      ${materialRows || '<tr><td colspan="4">Sem doações de materiais no período</td></tr>'}</table>
+      <p><strong>Total valorizado:</strong> ${currency(material.totalEstimatedValue)}.</p>
+      <p class="methodology">Lançamentos: ${material.movementCount || 0}. Valores unitários dos lançamentos: ${material.fromMovement || 0};
+      estimativa pelo custo cadastral atual: ${material.fromCatalog || 0}; sem base de valor: ${material.unvaluedMovements || 0}.
+      Itens sem base de valor permanecem nas quantidades; o total estimado não representa valor zero para esses itens. Produtos não são convertidos entre unidades.</p>` : '';
+    const financialHtml = includeFinancial ? `
+      <h2>Doações financeiras recebidas</h2>
+      <p><strong>Total registrado no período:</strong> ${currency(data.financialDonations?.totalAmount || 0)}.</p>
+      <p class="methodology">Registros ativos de recebimento: ${data.financialDonations?.totalCount || 0}. Inclui carnês quitados registrados como doação;
+      não soma novamente parcelas nem movimentações da caixinha.</p>` : '';
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${getHtmlPrintStyles()}
       body{font-family:Arial,sans-serif;color:#172033;padding:18px;font-size:12px}
       h2{color:#004c99;border-bottom:1px solid #ccc;padding-bottom:5px;margin-top:22px}
@@ -86,6 +105,8 @@ export const InstitutionalActivitiesReport: React.FC<Props> = ({ institutionId, 
       <h3>Residentes com maior número de intercorrências — Top 5</h3>
       <table><tr><th>Posição</th><th>Residente</th><th>Ocorrências</th></tr>${ranking}</table>
       <p class="methodology">${mode === 'internal' ? 'Documento nominal de uso restrito à gestão.' : 'Identidades omitidas nesta modalidade. Ranking detalhado disponível apenas no relatório interno.'}</p>
+      ${materialsHtml}
+      ${financialHtml}
       <h2>6. Análise institucional do período</h2>
       ${narrative || '<p>Nenhuma consideração qualitativa informada.</p>'}
       <h2>Metodologia</h2><div class="methodology">${(data.methodology || []).map((line:string)=>`<p>${esc(line)}</p>`).join('')}</div>
@@ -103,6 +124,10 @@ export const InstitutionalActivitiesReport: React.FC<Props> = ({ institutionId, 
       </select></label>
       <button type="button" disabled={loading} onClick={fetchReport} className="flex items-center gap-2 rounded-lg px-4 py-2 bg-[#004c99] text-white font-bold disabled:opacity-50"><RefreshCcw size={16}/> {loading ? 'Consultando…' : 'Gerar indicadores'}</button>
     </div>
+    <div className="flex flex-wrap gap-4 text-sm">
+      <label className="flex items-center gap-2"><input type="checkbox" checked={includeMaterials} onChange={e=>setIncludeMaterials(e.target.checked)}/> Incluir doações de materiais agrupadas</label>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={includeFinancial} onChange={e=>setIncludeFinancial(e.target.checked)}/> Incluir total de doações financeiras</label>
+    </div>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {data && <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -119,6 +144,19 @@ export const InstitutionalActivitiesReport: React.FC<Props> = ({ institutionId, 
       <p className="text-xs text-slate-600">*Os indicadores descrevem lançamentos documentais, não certificam a realização de todas as modalidades. A classificação de recusas depende dos campos preenchidos.</p>
       <p className="text-sm text-slate-600">Triagens concluídas: não disponível para apuração confiável. Encerramentos: contados pela data registrada de arquivamento.</p>
       {mode === 'internal' && <div className="text-sm"><h2 className="font-bold">Top 5 — Intercorrências</h2>{data.incidents.topFive.map((v:any,i:number)=><p key={i}>{i+1}º {v.name}: {v.count}</p>)}</div>}
+      {includeMaterials && <div className="space-y-2">
+        <h2 className="font-bold">Doações de materiais recebidas</h2>
+        <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th>Produto</th><th>Quantidade</th><th>Unidade</th><th>Valor estimado</th></tr></thead><tbody>
+          {(data.materialDonations?.items || []).map((item:any) => <tr key={item.productId + ':' + item.unit} className="border-b"><td>{item.name}</td><td>{item.quantity}</td><td>{item.unit}</td><td>{new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(item.estimatedValue)}{item.unvaluedMovements ? ' *' : ''}</td></tr>)}
+        </tbody></table></div>
+        <p className="text-sm font-bold">Total estimado valorizado: {new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(data.materialDonations?.totalEstimatedValue || 0)}</p>
+        <p className="text-xs text-slate-600">Lançamentos valorizados pelo preço registrado: {data.materialDonations?.fromMovement || 0}; pelo custo cadastral atual: {data.materialDonations?.fromCatalog || 0}; sem valor disponível: {data.materialDonations?.unvaluedMovements || 0}. Quantidades sem valorização permanecem no relatório.</p>
+      </div>}
+      {includeFinancial && <div className="space-y-1">
+        <h2 className="font-bold">Doações financeiras recebidas</h2>
+        <p>Total no período: <strong>{new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(data.financialDonations?.totalAmount || 0)}</strong></p>
+        <p className="text-xs text-slate-600">{data.financialDonations?.totalCount || 0} recebimentos registrados, incluindo carnês quitados; sem dupla contagem.</p>
+      </div>}
       <h2 className="font-bold pt-2">Análise do período (preenchimento opcional)</h2>
       {[
         ['Resultados e atividades relevantes',results,setResults],
