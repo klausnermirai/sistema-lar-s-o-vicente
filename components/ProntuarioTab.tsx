@@ -99,7 +99,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
     resident.nutrition?.evolutions?.forEach(ev => {
       allEvents.push({
         id: `nutri-evo-${ev.id}`,
-        date: ev.date,
+        date: ev.dataEvolucao || ev.date,
         competence: 'Nutrição',
         type: 'Evolução',
         professional: 'Nutricionista',
@@ -111,7 +111,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
             <p><strong>Status Meta PIA:</strong> {ev.piaGoalStatus || 'N/A'}</p>
           </div>
         ),
-        timestamp: new Date(ev.date).getTime()
+        timestamp: new Date(ev.dataEvolucao || ev.date).getTime()
       });
     });
 
@@ -183,7 +183,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
     resident.psychology?.evolutions?.forEach(ev => {
       allEvents.push({
         id: `psico-evo-${ev.id}`,
-        date: ev.date,
+        date: ev.dataEvolucao || ev.date,
         competence: 'Psicologia',
         type: 'Evolução',
         professional: 'Psicólogo(a)',
@@ -199,7 +199,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
             <p><strong>Evolução Humor/Comportamento:</strong> {ev.moodBehaviorEvolution}</p>
           </div>
         ),
-        timestamp: new Date(ev.date).getTime()
+        timestamp: new Date(ev.dataEvolucao || ev.date).getTime()
       });
     });
 
@@ -274,7 +274,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
     resident.occupationalTherapy?.evolutions?.forEach(ev => {
       allEvents.push({
         id: `to-evo-${ev.id}`,
-        date: ev.date,
+        date: ev.dataEvolucao || ev.date,
         competence: 'Terapeuta Ocupacional',
         type: 'Evolução',
         professional: 'Terapeuta Ocupacional',
@@ -290,7 +290,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
             <p><strong>Participação:</strong> {ev.participationEvolution}</p>
           </div>
         ),
-        timestamp: new Date(ev.date).getTime()
+        timestamp: new Date(ev.dataEvolucao || ev.date).getTime()
       });
     });
 
