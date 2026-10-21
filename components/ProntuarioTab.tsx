@@ -637,6 +637,28 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
       return String(value);
     };
 
+    // Identificação documental: somente dados cadastrais do residente.
+    const birthDate = resident.birthDate ? formatLocalDate(resident.birthDate) : 'Não informada';
+    const admissionDate = resident.admissionDate ? formatLocalDate(resident.admissionDate) : 'Não informada';
+    const roomAndBed = [
+      resident.room ? `Quarto: ${resident.room}` : '',
+      resident.bedNumber ? `Leito: ${resident.bedNumber}` : ''
+    ].filter(Boolean).join(' | ') || 'Não informados';
+    const reportPeriod = filterStartDate || filterEndDate
+      ? `${filterStartDate ? formatLocalDate(filterStartDate) : 'Início'} a ${filterEndDate ? formatLocalDate(filterEndDate) : 'Atual'}`
+      : 'Todo o histórico disponível';
+
+    writeWrappedText('IDENTIFICAÇÃO DO RESIDENTE', { font: 'bold', size: 10, color: [0, 76, 153] });
+    writeWrappedText(`Nome completo: ${safeValue(resident.name)}`, { font: 'bold', size: 10 });
+    writeWrappedText(`Data de nascimento: ${birthDate} | Data de acolhimento: ${admissionDate}`);
+    writeWrappedText(roomAndBed);
+    writeWrappedText(`Período do relatório: ${reportPeriod}`);
+    ensureSpace(7);
+    yPos += 2;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(LEFT, yPos, pageWidth - LEFT, yPos);
+    yPos += 6;
+
     filteredEvents.forEach((ev) => {
       // Evita deixar apenas o cabeçalho do registro no final da página.
       ensureSpace(22);
@@ -670,6 +692,18 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
     });
 
     await addPdfHeaderAndFooter(doc, settings, 'Prontuário Multidisciplinar');
+    // Identifica também as páginas seguintes caso sejam impressas separadamente.
+    const pageCount = doc.getNumberOfPages();
+    for (let page = 2; page <= pageCount; page++) {
+      doc.setPage(page);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(90, 90, 90);
+      doc.text(`Residente: ${safeValue(resident.name)}`, 14, 54, { maxWidth: pageWidth - 28 });
+      doc.setTextColor(0, 0, 0);
+    }
+    doc.setPage(pageCount);
+
 
       addPdfSignatureNode(doc);
       doc.save(`Prontuario_Multidisciplinar_${resident.name.replace(/\s+/g, '_')}.pdf`);
