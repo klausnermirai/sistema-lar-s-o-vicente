@@ -116,6 +116,8 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
   const [activeTab, setActiveTab] = React.useState<SubTab>(initialTab);
   const [prontuarioResident, setProntuarioResident] = React.useState<Resident | null>(null);
   const [loadingProntuario, setLoadingProntuario] = React.useState(false);
+  const [prontuarioError, setProntuarioError] = React.useState(false);
+  const [prontuarioRetry, setProntuarioRetry] = React.useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [croppingImage, setCroppingImage] = React.useState<string | null>(null);
   const [zoom, setZoom] = React.useState(1);
@@ -133,13 +135,15 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
 
   React.useEffect(() => {
     setProntuarioResident(null);
+    setProntuarioError(false);
   }, [initialData.id]);
 
   React.useEffect(() => {
-    if (activeTab !== 'prontuario' || !formData.id || prontuarioResident || loadingProntuario) return;
+    if (activeTab !== 'prontuario' || !formData.id || prontuarioResident || loadingProntuario || prontuarioError) return;
 
     const loadProntuarioResident = async () => {
       setLoadingProntuario(true);
+      setProntuarioError(false);
       try {
         const sessionStr = localStorage.getItem('ssvp_session');
         const session = sessionStr ? JSON.parse(sessionStr) : null;
@@ -149,13 +153,14 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
         setProntuarioResident(completeResident);
       } catch (error) {
         console.error('Erro ao carregar prontuário multidisciplinar completo:', error);
+        setProntuarioError(true);
       } finally {
         setLoadingProntuario(false);
       }
     };
 
     loadProntuarioResident();
-  }, [activeTab, formData.id, formData.institutionId, prontuarioResident, loadingProntuario]);
+  }, [activeTab, formData.id, formData.institutionId, prontuarioResident, loadingProntuario, prontuarioError, prontuarioRetry]);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1234,8 +1239,13 @@ const ElderlyForm: React.FC<ElderlyFormProps> = ({ initialData, initialTab = 'ge
         {activeTab === 'prontuario' && (
           loadingProntuario && !prontuarioResident ? (
             <div className="p-8 text-sm font-bold text-gray-500">Carregando prontuário multidisciplinar...</div>
+          ) : prontuarioError || !prontuarioResident ? (
+            <div role="alert" className="p-8 space-y-3">
+              <p className="text-sm font-bold text-red-700">Não foi possível carregar o prontuário completo. Para evitar um relatório parcial, a visualização e a impressão estão indisponíveis.</p>
+              <button type="button" className="px-4 py-2 rounded-lg bg-blue-700 text-white" onClick={() => { setProntuarioError(false); setProntuarioRetry(n => n + 1); }}>Recarregar prontuário</button>
+            </div>
           ) : (
-            <ProntuarioTab resident={prontuarioResident || formData} settings={settings} />
+            <ProntuarioTab resident={prontuarioResident} settings={settings} />
           )
         )}
 
