@@ -308,7 +308,7 @@ const ProntuarioTab: React.FC<ProntuarioTabProps> = ({ resident, settings }) => 
         fullContent: (
           <div className="space-y-2 text-sm">
             <p><strong>Tipo:</strong> {att.attendanceType}</p>
-            <p><strong>Evolução:</strong> {att.attendanceEvolution}</p>
+            <p><strong>Evolução:</strong> {att.descricaoAtendimento || att.attendanceEvolution}</p>
             {att.prontuarioNotes && <p><strong>Anotação Interna:</strong> {att.prontuarioNotes}</p>}
             {att.muralNotes && <p><strong>Mural:</strong> {att.muralNotes}</p>}
           </div>
