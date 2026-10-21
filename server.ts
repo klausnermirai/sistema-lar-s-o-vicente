@@ -1644,6 +1644,27 @@ async function startServer() {
   });
 
   
+  // Projeta dados psicológicos conforme o perfil, sem expor notas privativas por JSON.
+  const sanitizeResidentPsychology = (resident: any, level: string) => {
+    if (level === 'psicologia' || level === 'administrador') return resident;
+    if (!resident.psychology) return resident;
+    const psychology = { ...resident.psychology };
+    if (Array.isArray(psychology.attendances)) {
+      psychology.attendances = psychology.attendances.map((record: any) => {
+        const { privateNotes, ...publicRecord } = record;
+        const visibility = record?.visibilidade;
+        const whollyPrivate = visibility === 'privado' ||
+          (Array.isArray(visibility) && visibility.includes('privado'));
+        if (whollyPrivate) {
+          return { id: record.id, dateTime: record.dateTime, date: record.date,
+            visibilidade: 'privado', privateRestricted: true };
+        }
+        return publicRecord;
+      });
+    }
+    return { ...resident, psychology };
+  };
+
   app.get('/api/residents/:id', requireRole(['enfermeira', 'assistente_social', 'psicologia', 'terapeuta_ocupacional', 'fisioterapeuta', 'nutricionista', 'cuidados', 'gerencial', 'visitante', 'medico', 'administrador', 'auxiliar_administrativo']), async (req: any, res) => {
     try {
       const doc = await db.collection('residents').doc(req.params.id).get();
@@ -1676,7 +1697,7 @@ async function startServer() {
       if (!isAuthorizedForDocument(req.user, resident)) {
         return res.status(404).json({ error: 'Registro não encontrado ou acesso não autorizado.' });
       }
-      res.json(resident);
+      res.json(sanitizeResidentPsychology(resident, requesterLevel));
     } catch (error: any) {
       return sendDatabaseError(res, error, 'Erro ao buscar residente' );
     }
@@ -4802,13 +4823,17 @@ async function startServer() {
         if (competence === 'psicologia' && r.psychology) {
           if (Array.isArray(r.psychology.attendances)) {
             r.psychology.attendances.forEach((att: any) => {
+              const visibility = att.visibilidade;
+              const restricted = visibility === 'privado' || (Array.isArray(visibility) && visibility.includes('privado'));
+              const canRead = ['psicologia','administrador'].includes(normalizeAccessLevel(req.user?.accessLevel || req.user?.role));
+              if (restricted && !canRead) return;
               events.push({
                 residentName,
                 residentId: doc.id,
                 type: 'Atendimento',
                 timestamp: att.dateTime || att.date || new Date().toISOString(),
                 attendanceEvolution: att.descricaoAtendimento || att.attendanceEvolution || '',
-                notes: att.privateNotes || att.muralNotes || '',
+                notes: (normalizeAccessLevel(req.user?.accessLevel || req.user?.role) === 'psicologia' || normalizeAccessLevel(req.user?.accessLevel || req.user?.role) === 'administrador') ? (att.privateNotes || att.muralNotes || '') : (att.muralNotes || ''),
                 signature: att.signature || '',
                 interventionType: att.interventionType || ''
               });
