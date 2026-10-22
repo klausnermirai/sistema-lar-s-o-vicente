@@ -479,35 +479,52 @@ export default function SocialWorkerTab({
       return;
     }
 
+    const escapeHtml = (value: unknown): string => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    const dateKey = (value: unknown): string => {
+      const date = String(value || '').trim();
+      if (/^\d{4}-\d{2}-\d{2}/.test(date)) return date.slice(0, 10);
+      const br = date.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return br ? [br[3], br[2], br[1]].join('-') : '';
+    };
+    const sortedEvolutions = [...evolutions].sort((a, b) => {
+      const dateOrder = dateKey(b.date).localeCompare(dateKey(a.date));
+      return dateOrder || String(b.time || '00:00').localeCompare(String(a.time || '00:00'));
+    });
+
     const headerHtml = await getHtmlPrintHeader(settings, "PRONTUÁRIO SOCIAL - HISTÓRICO DE ATENDIMENTOS E EVOLUÇÕES");
 
-    const rowsHtml = evolutions.map((evo, idx) => {
+    const rowsHtml = sortedEvolutions.map((evo) => {
       const config = ACTION_TYPE_CONFIG[evo.type] || ACTION_TYPE_CONFIG.outro;
       return `
-        <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #cbd5e1; page-break-inside: avoid;">
+        <div class="social-history-entry">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <span style="font-weight: 800; font-size: 13px; color: #004c99;">
-              #${evolutions.length - idx} • ${formatDateToBR(evo.date)} ${evo.time ? `às ${evo.time}` : ''} - ${evo.title}
+              ${escapeHtml(formatDateToBR(evo.date))} ${evo.time ? `às ${escapeHtml(evo.time)}` : ''} - ${escapeHtml(evo.title || '')}
             </span>
             <span style="background-color: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase;">
-              ${config.label}
+              ${escapeHtml(config.label)}
             </span>
           </div>
           ${evo.targetPersonOrEntity ? `
             <div style="font-size: 11px; color: #475569; margin-bottom: 4px;">
-              <strong>Envolvido / Contato:</strong> ${evo.targetPersonOrEntity} ${evo.contactPhone ? `(${evo.contactPhone})` : ''}
+              <strong>Envolvido / Contato:</strong> ${escapeHtml(evo.targetPersonOrEntity)} ${evo.contactPhone ? `(${escapeHtml(evo.contactPhone)})` : ''}
             </div>
           ` : ''}
           <div style="font-size: 12px; line-height: 1.5; color: #1e293b; margin-top: 6px; white-space: pre-wrap;">
-            <strong>Relato:</strong> ${evo.visibility === 'confidential' ? '[REGISTRO SIGILOSO - CONTEÚDO NÃO INCLUÍDO NO HISTÓRICO GERAL]' : (evo.description || '')}
+            <strong>Relato:</strong> ${evo.visibility === 'confidential' ? '[REGISTRO SIGILOSO - CONTEÚDO NÃO INCLUÍDO NO HISTÓRICO GERAL]' : escapeHtml(evo.description || '')}
           </div>
           ${evo.visibility !== 'confidential' && evo.referrals ? `
             <div style="font-size: 11px; line-height: 1.4; color: #0f172a; margin-top: 6px; background-color: #f8fafc; padding: 6px 8px; border-left: 2px solid #004c99;">
-              <strong>Encaminhamentos:</strong> ${evo.referrals}
+              <strong>Encaminhamentos:</strong> ${escapeHtml(evo.referrals)}
             </div>
           ` : ''}
           <div style="font-size: 10px; color: #64748b; margin-top: 6px; text-align: right;">
-            Registrado por: <strong>${evo.professionalName || 'Assistente Social'}</strong> ${evo.cress ? `(CRESS: ${evo.cress})` : ''}
+            Registrado por: <strong>${escapeHtml(evo.professionalName || 'Assistente Social')}</strong> ${evo.cress ? `(CRESS: ${escapeHtml(evo.cress)})` : ''}
           </div>
         </div>
       `;
@@ -517,31 +534,39 @@ export default function SocialWorkerTab({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Prontuário Social - ${resident.name}</title>
-          <style>${getHtmlPrintStyles()}</style>
+          <meta charset="UTF-8"/><title>Prontuário Social - ${escapeHtml(resident.name)}</title>
+          <style>
+            ${getHtmlPrintStyles()}
+            .social-history-report .value { border-bottom: none; padding-bottom: 0; }
+            .social-history-entry { margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid #cbd5e1; break-inside: auto; page-break-inside: auto; }
+            .social-history-entry > div:first-child { break-after: avoid; page-break-after: avoid; }
+            .social-history-entry div { overflow-wrap: break-word; }
+            .social-history-entry div[style*="white-space: pre-wrap"] { height: auto; overflow: visible; break-inside: auto; page-break-inside: auto; word-break: break-word; }
+            .social-history-report .print-footer { position: static; margin-top: 24px; }
+          </style>
         </head>
         <body>
-          ${headerHtml}
+          <div class="social-history-report">\n          ${headerHtml}
 
           <h2 class="section-title">1. Identificação do Idoso(a)</h2>
           <div class="flex-row">
             <div class="flex-col-full field">
               <span class="label">Nome Completo:</span>
-              <span class="value" style="font-weight: 800; font-size: 14px;">${resident.name}</span>
+              <span class="value" style="font-weight: 800; font-size: 14px;">${escapeHtml(resident.name)}</span>
             </div>
           </div>
           <div class="flex-row">
             <div class="flex-col field">
               <span class="label">Data de Nascimento:</span>
-              <span class="value">${formatDateToBR(resident.birthDate)}</span>
+              <span class="value">${resident.birthDate ? escapeHtml(formatDateToBR(resident.birthDate)) : "Não informado"}</span>
             </div>
             <div class="flex-col field">
               <span class="label">Data de Admissão:</span>
-              <span class="value">${formatDateToBR(resident.admissionDate)}</span>
+              <span class="value">${resident.admissionDate ? escapeHtml(formatDateToBR(resident.admissionDate)) : "Não informado"}</span>
             </div>
             <div class="flex-col field">
               <span class="label">Quarto / Leito:</span>
-              <span class="value">${resident.room || '-'} / ${resident.bedNumber || '-'}</span>
+              <span class="value">${escapeHtml(resident.room || '-')} / ${escapeHtml(resident.bedNumber || '-')}</span>
             </div>
           </div>
 
@@ -559,7 +584,7 @@ export default function SocialWorkerTab({
             </div>
           </div>
 
-          ${getHtmlPrintFooter()}
+          ${getHtmlPrintFooter()}\n          </div>
         </body>
       </html>
     `;
