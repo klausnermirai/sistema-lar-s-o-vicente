@@ -965,7 +965,8 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
       supplierId: '',
       donorId: '',
       donorName: '',
-      donorPhone: ''
+      donorPhone: '',
+      department: ''
     });
     setIsMovementModalOpen(true);
   };
