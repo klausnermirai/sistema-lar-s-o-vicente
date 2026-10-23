@@ -173,7 +173,7 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
     }
 
     try {
-      const grantData: Grant = {
+      const grantData: Omit<Grant, 'id'> & { id?: string } = {
         id: editingGrantId || undefined,
         name: newGrant.name!,
         color: newGrant.color || '#3b82f6',
