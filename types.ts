@@ -1524,6 +1524,7 @@ export interface StockMovement {
   userName: string;
   notes?: string;
   reason?: 'compra' | 'doacao' | 'consumo' | 'descarte';
+  department?: string | null;
   price?: number;
   invoiceNumber?: string;
   supplierId?: string;
