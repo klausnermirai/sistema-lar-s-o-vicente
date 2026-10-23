@@ -107,7 +107,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
   const [historyReasonFilter, setHistoryReasonFilter] = useState('TODOS');
   const [historyDepartmentFilter, setHistoryDepartmentFilter] = useState('TODOS');
   const [stockDepartments, setStockDepartments] = useState<string[]>([]);
-  const [historyMode, setHistoryMode] = useState<'detalhado'|'agrupado'>('detalhado');
+  const [historyMode, setHistoryMode] = useState<'detalhado'|'agrupado'|'consumo'>('detalhado');
   const [historyStartDate, setHistoryStartDate] = useState('');
   const [historyEndDate, setHistoryEndDate] = useState('');
   
@@ -667,8 +667,39 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
   };
 
   const purchasesGrouped=group(filteredHistoryMovements,products,'compra');
+  const consumptionGrouped = (() => {
+    const rows = new Map<string, {key:string;name:string;unit:string;category:string;quantity:number;count:number}>();
+    for (const mv of filteredHistoryMovements) {
+      if (mv.type !== 'saida' || mv.reason !== 'consumo') continue;
+      const product = products.find(p => p.id === mv.productId);
+      const name = product?.name || mv.productName || 'Produto não identificado';
+      const unit = product?.unit || 'Unidade não informada';
+      const category = product?.category || 'Não informada';
+      const key = JSON.stringify([mv.productId || name.toLowerCase(),unit]);
+      const row = rows.get(key) || { key, name, unit, category, quantity:0,count:0 };
+      row.quantity += Number(mv.quantity) || 0;
+      row.count++;
+      rows.set(key,row);
+    }
+    return [...rows.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  })();
   // Export Movements History PDF
   const exportHistoryPDF = () => {
+    if(historyMode==='consumo'){
+      if (reportLoading || reportError || reportMovements === null) return;
+      const pdf = new jsPDF({ orientation:'landscape',unit:'mm',format:'a4' });
+      pdf.setFontSize(15);
+      pdf.text('RELATÓRIO QUANTITATIVO DE CONSUMO',14,17);
+      pdf.setFontSize(10);
+      pdf.text(String(settings?.name || 'Instituição'),14,25);
+      pdf.text('Período: '+(historyStartDate||'Início')+' a '+(historyEndDate||'Atual'),14,32);
+      pdf.text('Centro de custo: '+(historyDepartmentFilter==='TODOS'?'Todos':historyDepartmentFilter==='NAO_INFORMADO'?'Não informado':historyDepartmentFilter),14,38);
+      autoTable(pdf,{startY:45,head:[['Produto','Categoria','Unidade','Retiradas','Quantidade consumida']],
+        body:consumptionGrouped.map(g=>[g.name,g.category,g.unit,String(g.count),String(g.quantity)]),
+        theme:'striped',headStyles:{fillColor:[0,76,153]}});
+      pdf.save('Consumo_Agrupado_Estoque.pdf');
+      return;
+    }
     if(historyMode==='agrupado'){
       if(reportLoading||reportError||reportMovements===null)return;
       const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
@@ -2002,7 +2033,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
 
                       </div>
 
-                      <label className="text-xs font-semibold">Modo <select value={historyMode} onChange={e=>setHistoryMode(e.target.value as 'detalhado'|'agrupado')} className="border p-2 rounded-lg"><option value="detalhado">Detalhado</option><option value="agrupado">Compras agrupadas</option></select></label>
+                      <label className="text-xs font-semibold">Modo <select value={historyMode} onChange={e=>setHistoryMode(e.target.value as 'detalhado'|'agrupado'|'consumo')} className="border p-2 rounded-lg"><option value="detalhado">Detalhado</option><option value="agrupado">Compras agrupadas</option><option value="consumo">Consumo agrupado</option></select></label>
                   {/* Botão de PDF */}
                       <button
                         onClick={exportHistoryPDF}
@@ -2018,6 +2049,12 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                   {reportLoading && <p className="p-3 text-sm text-blue-700">Consultando histórico completo…</p>}
                   {reportError && <p role="alert" className="p-3 text-sm text-red-700">{reportError}</p>}
                   {!reportLoading && !reportError && <p className="text-xs text-slate-500">{filteredHistoryMovements.length} movimentações encontradas no histórico.</p>}
+                  {historyMode==='consumo'&&<div className="overflow-x-auto border rounded-xl">
+                    <p className="p-3 text-xs">Somente consumo registrado, agrupado por produto e unidade. Valores monetários não estimados.</p>
+                    <table className="w-full text-xs text-left"><thead><tr><th className="p-3">Produto</th><th>Categoria</th><th>Unidade</th><th>Retiradas</th><th>Quantidade consumida</th></tr></thead>
+                      <tbody>{consumptionGrouped.map(g=><tr key={g.key} className="border-t"><td className="p-3">{g.name}</td><td>{g.category}</td><td>{g.unit}</td><td>{g.count}</td><td>{g.quantity}</td></tr>)}</tbody>
+                    </table>
+                  </div>}
                   {historyMode==='agrupado'&&<div className="overflow-x-auto border rounded-xl">
                   <p className="p-3 text-xs">Somente compras recebidas, respeitando os filtros aplicados.</p>
                   <table className="w-full text-xs text-left"><thead><tr><th className="p-3">Produto</th><th>Quantidade</th><th>Unidade</th><th>Lançamentos</th><th>Valor registrado</th><th>Sem preço</th></tr></thead><tbody>
