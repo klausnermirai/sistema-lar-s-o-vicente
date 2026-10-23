@@ -174,7 +174,7 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
 
     try {
       const grantData: Grant = {
-        id: editingGrantId || `grant_${Date.now()}`,
+        id: editingGrantId || undefined,
         name: newGrant.name!,
         color: newGrant.color || '#3b82f6',
         totalValue: newGrant.totalValue!,
