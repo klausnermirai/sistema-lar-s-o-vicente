@@ -1199,3 +1199,14 @@ export const fetchConferenciaById = async (id: string) => {
 
 
 
+
+export const fetchStockDepartments = async (): Promise<string[]> => {
+  const res = await apiFetch('/api/stock-departments', { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Erro ao consultar centros de custo');
+  return res.json();
+};
+export const addStockDepartment = async (name: string): Promise<string[]> => {
+  const res = await apiFetch('/api/stock-departments', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ name }) });
+  if (!res.ok) throw new Error('Erro ao adicionar centro de custo');
+  return res.json();
+};
