@@ -724,12 +724,12 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
     { id: 'outra_receita', label: 'Outras receitas' }
   ];
 
-  const handleOpenNewCaixinhaModal = (defaultType: CaixinhaMovementType = 'saida', defaultCat: CaixinhaCategory = 'servico_sem_nota') => {
+  const handleOpenNewCaixinhaModal = (defaultType: CaixinhaMovementType = 'saida', defaultCat: string = 'servico_sem_nota') => {
     setEditingCaixinhaMovement(null);
     setCashOperation(defaultCat === 'deposito_bancario' ? 'deposito' : defaultCat.startsWith('receita_') || defaultCat === 'outra_receita' ? 'outra_receita' : defaultType === 'entrada' ? 'saque' : 'despesa');
     setCaixinhaForm({
       type: defaultType,
-      category: defaultCat,
+      category: defaultCat as CaixinhaCategory,
       description: '',
       value: '',
       date: new Date().toISOString().split('T')[0],
@@ -785,7 +785,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
     const payload: CaixinhaMovement = {
       id: editingCaixinhaMovement?.id,
       type: caixinhaForm.type,
-      category: caixinhaForm.category,
+      category: caixinhaForm.category as CaixinhaCategory,
       description: caixinhaForm.description.trim(),
       value: valFloat,
       date: caixinhaForm.date,
@@ -852,6 +852,8 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
     totalDepositosBancariosPeriodo,
     totalServicosSemNotaPeriodo,
     totalOutrasDespesasPeriodo,
+    totalOutrasReceitasPeriodo,
+    totalSaquesBancoPeriodo,
     saldoFinalPeriodo
   } = useMemo(() => {
     // 1. Convert Cash Donations into Caixinha Inflows
@@ -943,6 +945,8 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
     let totalDepositos = 0;
     let totalServicos = 0;
     let totalOutras = 0;
+    let totalOutrasReceitas = 0;
+    let totalSaquesBanco = 0;
 
     combined.forEach(item => {
       const itemDate = item.date;
@@ -955,6 +959,8 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
       } else if ((!caixinhaStartDate || itemDate >= caixinhaStartDate) && (!caixinhaEndDate || itemDate <= caixinhaEndDate)) {
         if (item.type === 'entrada') {
           totalEntradas += item.value;
+          if (!item.isFromDonation && item.category === 'entrada_avulsa') totalSaquesBanco += item.value;
+          if (!item.isFromDonation && (item.category.startsWith('receita_') || item.category === 'outra_receita')) totalOutrasReceitas += item.value;
         } else {
           totalSaidas += item.value;
           if (item.category === 'deposito_bancario') {
@@ -999,6 +1005,8 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
       totalDepositosBancariosPeriodo: totalDepositos,
       totalServicosSemNotaPeriodo: totalServicos,
       totalOutrasDespesasPeriodo: totalOutras,
+      totalOutrasReceitasPeriodo: totalOutrasReceitas,
+      totalSaquesBancoPeriodo: totalSaquesBanco,
       saldoFinalPeriodo
     };
   }, [donations, caixinhaMovements, cashCategories, caixinhaStartDate, caixinhaEndDate, caixinhaTypeFilter, caixinhaCategoryFilter, caixinhaSearch]);
@@ -1131,7 +1139,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
 
             <div style="margin-top: 10px; font-size: 9px; color: #374151; display: flex; justify-content: space-between; background: #ffffff; padding: 6px 10px; border-radius: 4px; border: 1px dashed #93c5fd;">
               <span><strong>Detalhamento das Saídas:</strong> Depósitos em Banco: <strong>${formatCurrency(totalDepositosBancariosPeriodo)}</strong> | Serviços s/ Nota e Despesas Miúdas: <strong>${formatCurrency(totalServicosSemNotaPeriodo + totalOutrasDespesasPeriodo)}</strong></span>
-              <span>Saldo Projetado do Período: <strong>${formatCurrency(saldoFinalPeriodo)}</strong></span>
+              <span>Outras Receitas: <strong>${formatCurrency(totalOutrasReceitasPeriodo)}</strong> | Saques p/ Caixa: <strong>${formatCurrency(totalSaquesBancoPeriodo)}</strong> | Saldo Projetado do Período: <strong>${formatCurrency(saldoFinalPeriodo)}</strong></span>
             </div>
           </div>
 
@@ -2073,7 +2081,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                   </div>
 
                   <div className="mt-5 pt-4 border-t border-white/15 flex flex-wrap items-center gap-2">
-                    <button onClick={() => handleOpenNewCaixinhaModal('entrada', 'receita_alugueis' as CaixinhaCategory)} className="flex-1 min-w-[130px] bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider">Cadastrar Outras Receitas</button>
+                    <button onClick={() => handleOpenNewCaixinhaModal('entrada', 'receita_alugueis')} className="flex-1 min-w-[130px] bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider">Cadastrar Outras Receitas</button>
                     <button onClick={() => handleOpenNewCaixinhaModal('saida', 'servico_sem_nota')} className="flex-1 min-w-[130px] bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2"><ArrowDownRight size={14}/> Registrar Saída</button>
                     <button onClick={() => handleOpenNewCaixinhaModal('saida', 'deposito_bancario')} className="flex-1 min-w-[130px] bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2"><Landmark size={14}/> Transferência</button>
                   </div>
