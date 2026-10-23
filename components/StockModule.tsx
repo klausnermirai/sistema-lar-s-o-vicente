@@ -11,7 +11,7 @@ import {
   fetchStockProducts, saveStockProduct, deleteStockProduct, 
   bootstrapStockProducts, fetchStockMovements, registerStockMovement,
   fetchSuppliers, saveSupplier, deleteSupplier, fetchCaixinhaMovements,
-  fetchDonors, saveDonor, deleteDonor,
+  fetchDonors, saveDonor, deleteDonor, fetchStockDepartments, addStockDepartment,
   Session
 } from '../lib/api';
 import { defaultStockItems } from './defaultStockData';
@@ -105,6 +105,8 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
   const [historyCategoryFilter, setHistoryCategoryFilter] = useState('TODAS');
   const [historyTypeFilter, setHistoryTypeFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
   const [historyReasonFilter, setHistoryReasonFilter] = useState('TODOS');
+  const [historyDepartmentFilter, setHistoryDepartmentFilter] = useState('TODOS');
+  const [stockDepartments, setStockDepartments] = useState<string[]>([]);
   const [historyMode, setHistoryMode] = useState<'detalhado'|'agrupado'>('detalhado');
   const [historyStartDate, setHistoryStartDate] = useState('');
   const [historyEndDate, setHistoryEndDate] = useState('');
@@ -168,6 +170,21 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [movementProduct, setMovementProduct] = useState<ProductStockItem | null>(null);
 
+  useEffect(() => {
+    if (supplierOnly) return;
+    fetchStockDepartments().then(setStockDepartments).catch(() => setError('Não foi possível carregar os centros de custo.'));
+  }, [supplierOnly]);
+
+  const handleAddDepartment = async () => {
+    const name = window.prompt('Nome do novo centro de custo:')?.trim();
+    if (!name) return;
+    try {
+      setStockDepartments(await addStockDepartment(name));
+    } catch {
+      alert('Não foi possível cadastrar o centro de custo.');
+    }
+  };
+
   const [singleItemCategory, setSingleItemCategory] = useState('');
   const [multiDraftCategory, setMultiDraftCategory] = useState('');
 
@@ -198,7 +215,8 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
     supplierId: '',
     donorId: '',
     donorName: '',
-    donorPhone: ''
+    donorPhone: '',
+    department: ''
   });
 
   // Multi-item movement entry states
@@ -485,7 +503,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
     return () => { active = false; };
   }, [activeTab, supplierOnly, donationStartDate, donationEndDate, historyStartDate, historyEndDate, refetchTrigger]);
 
-  useEffect(() => { setHistoryPage(1); }, [historySearchQuery, historyCategoryFilter, historyTypeFilter, historyReasonFilter, historyStartDate, historyEndDate]);
+  useEffect(() => { setHistoryPage(1); }, [historySearchQuery, historyCategoryFilter, historyTypeFilter, historyReasonFilter, historyDepartmentFilter, historyStartDate, historyEndDate]);
 
   // Filtered History movements
   const filteredHistoryMovements = (reportMovements || []).filter(mv => {
@@ -508,6 +526,8 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
       const cat = prod ? prod.category : '';
       if (cat !== historyCategoryFilter) return false;
     }
+
+    if (historyDepartmentFilter !== 'TODOS' && (historyDepartmentFilter === 'NAO_INFORMADO' ? (mv.reason !== 'consumo' || !!mv.department) : mv.department !== historyDepartmentFilter)) return false;
 
     if (historyReasonFilter !== 'TODOS' && mv.reason !== historyReasonFilter) {
       return false;
@@ -923,6 +943,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
   const handleMovementSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!movementProduct) return;
+    if (movementForm.type === 'saida' && movementForm.reason === 'consumo' && !movementForm.department) { alert('Selecione o centro de custo.'); return; }
     try {
       setError(null);
       
@@ -974,6 +995,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
         date: movementForm.date,
         userName: session.fullName || session.username,
         reason: movementForm.reason,
+        department: movementForm.type === 'saida' && movementForm.reason === 'consumo' ? movementForm.department : null,
         price: (isPurchase || isDonation) ? Number(movementForm.price) || 0 : undefined,
         invoiceNumber: isPurchase ? movementForm.invoiceNumber : undefined,
         supplierId: isPurchase ? movementForm.supplierId : undefined,
@@ -1907,6 +1929,14 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                           </select>
                         </div>
 
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Centro de custo:</span>
+                          <select value={historyDepartmentFilter} onChange={e=>setHistoryDepartmentFilter(e.target.value)} className="border rounded-xl px-3 py-1.5 text-xs bg-white">
+                            <option value="TODOS">Todos os setores</option>
+                            {stockDepartments.map(d=><option key={d} value={d}>{d}</option>)}
+                            <option value="NAO_INFORMADO">Não informado (histórico)</option>
+                          </select>
+                        </div>
                         {/* Motivo */}
                         <div className="flex flex-col gap-1">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Motivo:</span>
@@ -1952,13 +1982,14 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                         </div>
 
                         {/* Limpar Filtros */}
-                        {(historySearchQuery || historyTypeFilter !== 'todos' || historyCategoryFilter !== 'TODAS' || historyReasonFilter !== 'TODOS' || historyStartDate || historyEndDate) && (
+                        {(historySearchQuery || historyTypeFilter !== 'todos' || historyCategoryFilter !== 'TODAS' || historyReasonFilter !== 'TODOS' || historyDepartmentFilter !== 'TODOS' || historyStartDate || historyEndDate) && (
                           <button
                             onClick={() => {
                               setHistorySearchQuery('');
                               setHistoryTypeFilter('todos');
                               setHistoryCategoryFilter('TODAS');
                               setHistoryReasonFilter('TODOS');
+                              setHistoryDepartmentFilter('TODOS');
                               setHistoryStartDate('');
                               setHistoryEndDate('');
                             }}
@@ -2013,6 +2044,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                             <th className="p-4 text-center">Quantidade</th>
                             <th className="p-4">Operador</th>
                             <th className="p-4">Motivo / Notas</th>
+                            <th className="p-4">Centro de custo</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -2095,6 +2127,7 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                                     )}
                                   </div>
                                 </td>
+                                <td className="p-4 text-xs">{mv.reason === 'consumo' ? (mv.department || 'Não informado') : '—'}</td>
                               </tr>
                             );
                           })}
@@ -3767,6 +3800,18 @@ export const StockModule: React.FC<StockModuleProps> = ({ session, settings, sup
                 </div>
               )}
 
+              {movementForm.type === 'saida' && movementForm.reason === 'consumo' && (
+                <div className="flex flex-col gap-2 border-t pt-3">
+                  <label className="text-xs font-bold text-slate-600">Centro de custo / Departamento *</label>
+                  <div className="flex gap-2">
+                    <select required value={movementForm.department} onChange={e=>setMovementForm(prev=>({...prev,department:e.target.value}))} className="border rounded-lg px-3 py-2 flex-1 text-xs">
+                      <option value="">Selecione o setor</option>
+                      {stockDepartments.map(d=><option key={d} value={d}>{d}</option>)}
+                    </select>
+                    <button type="button" onClick={handleAddDepartment} className="border rounded-lg px-3 text-blue-700 font-bold" title="Cadastrar setor">+</button>
+                  </div>
+                </div>
+              )}
               {/* Movement notes */}
               <div className="flex flex-col gap-1.5 mb-1">
                 <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Notas Adicionais / Lote</label>
