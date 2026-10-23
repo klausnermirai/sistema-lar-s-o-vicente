@@ -3739,6 +3739,76 @@ async function startServer() {
     }
   });
 
+
+  // Execução financeira das emendas: lançamentos independentes do planejamento.
+  app.get('/api/amendments/expenses', rejectVisitor, async (req: any, res) => {
+    try {
+      const realId = await getRealInstitutionId(String(req.query.institutionId || ''));
+      if (!isAuthorizedForDocument(req.user, { institutionId: realId })) return res.status(403).json({ error: 'Acesso não autorizado.' });
+      const snapshot = await db.collection('amendment_expenses').where('institutionId', '==', realId).get();
+      res.json(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter((e: any) => !e.archived));
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao consultar despesas executadas.');
+    }
+  });
+
+  app.post('/api/amendments/expenses', requireRole(['administrador', 'gerencial']), async (req: any, res) => {
+    const { institutionId, id, grantId, categoryId, date, amount, description } = req.body || {};
+    try {
+      const realId = await getRealInstitutionId(institutionId);
+      const value = Number(amount);
+      if (!grantId || !categoryId || !/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ||
+          !Number.isFinite(value) || value <= 0 || !String(description || '').trim()) {
+        return res.status(400).json({ error: 'Dados da despesa inválidos.' });
+      }
+      const grantDoc = await db.collection('amendment_grants').doc(String(grantId)).get();
+      const grant = grantDoc.data();
+      if (!grantDoc.exists || grant?.archived || grant?.institutionId !== realId ||
+          !isAuthorizedForDocument(req.user, grant) ||
+          !Array.isArray(grant.allocations) ||
+          !grant.allocations.some((a: any) => a.categoryId === categoryId && Number(a.amount) > 0)) {
+        return res.status(400).json({ error: 'Emenda ou categoria não autorizada para esta despesa.' });
+      }
+      const now = new Date().toISOString();
+      const actor = String(req.user?.username || req.user?.id || 'Sistema');
+      const data = { grantId, categoryId, date, amount: value, description: String(description).trim() };
+      if (id) {
+        const ref = db.collection('amendment_expenses').doc(String(id));
+        const old = await ref.get();
+        if (!old.exists || old.data()?.archived || old.data()?.institutionId !== realId ||
+            old.data()?.grantId !== grantId || !isAuthorizedForDocument(req.user, old.data())) {
+          return res.status(404).json({ error: 'Despesa não encontrada ou sem autorização.' });
+        }
+        await ref.update({ ...data, updatedAt: now, updatedBy: actor });
+        await logAudit('update', 'amendment_expenses', String(id), req, realId, 'Correção de despesa executada');
+        return res.json({ ...old.data(), ...data, updatedAt: now, updatedBy: actor, id });
+      }
+      const created = await db.collection('amendment_expenses').add({
+        ...data, institutionId: realId, createdAt: now, createdBy: actor, archived: false
+      });
+      await logAudit('create', 'amendment_expenses', created.id, req, realId, 'Despesa executada');
+      res.json({ ...data, institutionId: realId, createdAt: now, createdBy: actor, archived: false, id: created.id });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao salvar despesa executada.');
+    }
+  });
+
+  app.delete('/api/amendments/expenses/:id', requireRole(['administrador', 'gerencial']), async (req: any, res) => {
+    try {
+      const ref = db.collection('amendment_expenses').doc(req.params.id);
+      const old = await ref.get();
+      if (!old.exists || old.data()?.archived || !isAuthorizedForDocument(req.user, old.data())) {
+        return res.status(404).json({ error: 'Despesa inexistente ou não autorizada.' });
+      }
+      await ref.update({ archived: true, archivedAt: new Date().toISOString(),
+        archivedBy: String(req.user?.username || req.user?.id || 'Sistema') });
+      await logAudit('delete', 'amendment_expenses', req.params.id, req, old.data()?.institutionId, 'Arquivamento de despesa');
+      res.json({ success: true });
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao arquivar despesa executada.');
+    }
+  });
+
   // --- Amendments API ---
   app.get('/api/amendments/categories', rejectVisitor, async (req, res) => {
     const { institutionId } = req.query;
