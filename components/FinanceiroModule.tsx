@@ -2221,6 +2221,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                       <span>Imprimir Relatório (PDF)</span>
                     </button>
 
+                    <button onClick={() => handleOpenNewCaixinhaModal('entrada', 'receita_alugueis')} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider"><Plus size={15}/> Cadastrar Outras Receitas</button>
                     <button
                       onClick={() => handleOpenNewCaixinhaModal('saida', 'servico_sem_nota')}
                       className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm"
