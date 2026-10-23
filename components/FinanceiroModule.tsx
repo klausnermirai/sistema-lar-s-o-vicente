@@ -109,7 +109,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
   const [categoryEditorName, setCategoryEditorName] = useState('');
   const [quickCashSupplierOpen, setQuickCashSupplierOpen] = useState(false);
   const [quickCashSupplierName, setQuickCashSupplierName] = useState('');
-  const [cashOperation, setCashOperation] = useState<'despesa' | 'deposito' | 'saque'>('despesa');
+  const [cashOperation, setCashOperation] = useState<'despesa' | 'deposito' | 'saque' | 'outra_receita'>('despesa');
 
   // Search/Filters
   const [donationSearch, setDonationSearch] = useState('');
@@ -717,9 +717,16 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
   };
 
   // Operations: Caixinha (Petty Cash)
+  const receitaCategories = [
+    { id: 'receita_alugueis', label: 'Aluguéis' },
+    { id: 'receita_eventos', label: 'Eventos' },
+    { id: 'receita_reembolsos', label: 'Reembolsos' },
+    { id: 'outra_receita', label: 'Outras receitas' }
+  ];
+
   const handleOpenNewCaixinhaModal = (defaultType: CaixinhaMovementType = 'saida', defaultCat: CaixinhaCategory = 'servico_sem_nota') => {
     setEditingCaixinhaMovement(null);
-    setCashOperation(defaultCat === 'deposito_bancario' ? 'deposito' : defaultType === 'entrada' ? 'saque' : 'despesa');
+    setCashOperation(defaultCat === 'deposito_bancario' ? 'deposito' : defaultCat.startsWith('receita_') || defaultCat === 'outra_receita' ? 'outra_receita' : defaultType === 'entrada' ? 'saque' : 'despesa');
     setCaixinhaForm({
       type: defaultType,
       category: defaultCat,
@@ -738,7 +745,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
     const original = caixinhaMovements.find(m => m.id === item.originalId || m.id === item.id);
     if (!original) return;
     setEditingCaixinhaMovement(original);
-    setCashOperation(original.category === 'deposito_bancario' ? 'deposito' : original.type === 'entrada' ? 'saque' : 'despesa');
+    setCashOperation(original.category === 'deposito_bancario' ? 'deposito' : original.type === 'entrada' ? (original.category === 'entrada_avulsa' ? 'saque' : 'outra_receita') : 'despesa');
     setCaixinhaForm({
       type: original.type,
       category: original.category,
@@ -879,7 +886,11 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
         case 'deposito_bancario': catLabel = 'Depósito Bancário'; break;
         case 'despesa_miuda': catLabel = 'Despesa Miúda / Suprimentos'; break;
         case 'alimentacao_diaria': catLabel = 'Alimentação / Diárias'; break;
-        case 'entrada_avulsa': catLabel = 'Entrada / Reforço em Dinheiro'; break;
+        case 'entrada_avulsa': catLabel = 'Saque do Banco / Reforço de Caixa'; break;
+        case 'receita_alugueis': catLabel = 'Aluguéis'; break;
+        case 'receita_eventos': catLabel = 'Eventos'; break;
+        case 'receita_reembolsos': catLabel = 'Reembolsos'; break;
+        case 'outra_receita': catLabel = 'Outras receitas'; break;
         case 'doacao_dinheiro': catLabel = 'Doação em Dinheiro'; break;
         case 'carne_dinheiro': catLabel = 'Carnê em Dinheiro'; break;
         default: catLabel = cashCategories.find(c => c.id === m.category)?.name || m.categoryLabel || 'Outras Movimentações'; break;
@@ -2062,6 +2073,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                   </div>
 
                   <div className="mt-5 pt-4 border-t border-white/15 flex flex-wrap items-center gap-2">
+                    <button onClick={() => handleOpenNewCaixinhaModal('entrada', 'receita_alugueis' as CaixinhaCategory)} className="flex-1 min-w-[130px] bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider">Cadastrar Outras Receitas</button>
                     <button onClick={() => handleOpenNewCaixinhaModal('saida', 'servico_sem_nota')} className="flex-1 min-w-[130px] bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2"><ArrowDownRight size={14}/> Registrar Saída</button>
                     <button onClick={() => handleOpenNewCaixinhaModal('saida', 'deposito_bancario')} className="flex-1 min-w-[130px] bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2"><Landmark size={14}/> Transferência</button>
                   </div>
@@ -2257,7 +2269,8 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                         <option value="alimentacao_diaria">Alimentação / Diárias</option>
                         <option value="doacao_dinheiro">Doações em Dinheiro</option>
                         <option value="carne_dinheiro">Carnês em Dinheiro</option>
-                        <option value="entrada_avulsa">Entradas Avulsas / Reforço</option>
+                        <option value="entrada_avulsa">Saques do Banco / Reforço</option>
+                    {receitaCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
                         <option value="outro">Outras</option>
                         {cashCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                       </select>
@@ -3893,7 +3906,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
               <div className="flex items-center gap-2 text-[#004c99]">
                 <Wallet className="w-5 h-5" />
                 <h3 className="text-base font-black uppercase tracking-tight">
-                  {editingCaixinhaMovement ? 'Editar Movimentação da Caixinha' : cashOperation === 'despesa' ? 'Registrar Saída em Dinheiro' : 'Transferência entre Banco e Caixinha'}
+                  {cashOperation === 'outra_receita' ? (editingCaixinhaMovement ? 'Editar Outra Receita' : 'Cadastrar Outras Receitas') : editingCaixinhaMovement ? 'Editar Movimentação da Caixinha' : cashOperation === 'despesa' ? 'Registrar Saída em Dinheiro' : 'Transferência entre Banco e Caixinha'}
                 </h3>
               </div>
               <button
@@ -3908,7 +3921,7 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
             </div>
 
             <form onSubmit={handleSaveCaixinhaSubmit} className="space-y-4 mt-5">
-              {cashOperation !== 'despesa' && (
+              {(cashOperation === 'deposito' || cashOperation === 'saque') && (
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black uppercase tracking-wider text-gray-500">Tipo de transferência *</label>
                   <div className="grid grid-cols-2 gap-2">
@@ -3927,6 +3940,13 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                     <option value="alimentacao_diaria">Alimentação / Diárias</option>
                     <option value="outro">Outra Saída em Dinheiro</option>
                     {cashCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                  </select>
+                </div>
+              ) : cashOperation === 'outra_receita' ? (
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-gray-500 mb-1.5">Categoria da Receita *</label>
+                  <select required value={caixinhaForm.category} onChange={e => setCaixinhaForm(prev => ({ ...prev, category: e.target.value }))} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold">
+                    {receitaCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
                   </select>
                 </div>
               ) : (
