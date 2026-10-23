@@ -6383,6 +6383,40 @@ async function startServer() {
     }
   });
 
+
+  // Centros de custo do estoque: lista institucional, sem modificar produtos.
+  app.get('/api/stock-departments', rejectVisitor, async (req: any, res) => {
+    try {
+      const rawId = String(req.headers['x-institution-id'] || req.query.institutionId || '');
+      const id = await getRealInstitutionId(rawId);
+      if (!isAuthorizedForDocument(req.user, { institutionId: id })) return res.status(403).json({ error: 'Acesso não autorizado.' });
+      const doc = await db.collection('institutions').doc(id).get();
+      const defaults = ['Cozinha', 'Lavanderia', 'Enfermagem', 'Limpeza Geral', 'Administração'];
+      return res.json(Array.isArray(doc.data()?.stockDepartments) ? doc.data()?.stockDepartments : defaults);
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao consultar centros de custo.');
+    }
+  });
+
+  app.post('/api/stock-departments', requireRole(['administrador', 'gerencial', 'nutricionista', 'enfermeira', 'auxiliar_administrativo']), async (req: any, res) => {
+    try {
+      const id = await getRealInstitutionId(String(req.headers['x-institution-id'] || req.body?.institutionId || ''));
+      if (!isAuthorizedForDocument(req.user, { institutionId: id })) return res.status(403).json({ error: 'Acesso não autorizado.' });
+      const name = String(req.body?.name || '').trim();
+      if (!name || name.length > 75) return res.status(400).json({ error: 'Nome inválido.' });
+      const ref = db.collection('institutions').doc(id);
+      const defaults = ['Cozinha', 'Lavanderia', 'Enfermagem', 'Limpeza Geral', 'Administração'];
+      const doc = await ref.get();
+      if (!doc.exists) return res.status(404).json({ error: 'Instituição inexistente.' });
+      const current: string[] = Array.isArray(doc.data()?.stockDepartments) ? doc.data()?.stockDepartments : defaults;
+      const updated = current.some(x => x.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR')) ? current : [...current, name];
+      await ref.update({ stockDepartments: updated });
+      return res.json(updated);
+    } catch (error: any) {
+      return sendDatabaseError(res, error, 'Erro ao cadastrar centro de custo.');
+    }
+  });
+
   app.post('/api/stock-movements', requireRole(['administrador', 'gerencial', 'nutricionista', 'enfermeira', 'auxiliar_administrativo']), async (req, res) => {
     try {
       const institutionId = req.headers['x-institution-id'] as string;
@@ -6428,6 +6462,7 @@ async function startServer() {
         userName: mv.userName || 'Sistema',
         notes: mv.notes || '',
         reason: mv.reason || null,
+        department: mv.type === 'saida' && mv.reason === 'consumo' ? (String(mv.department || '').trim() || null) : null,
         price: Number(mv.price) || null,
         invoiceNumber: mv.invoiceNumber || null,
         supplierId: mv.supplierId || null,
