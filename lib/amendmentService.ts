@@ -64,3 +64,33 @@ export const bulkBootstrapAmendments = async (institutionId: string, categories:
   if (!response.ok) throw new Error('Erro ao realizar bootstrap');
   return response.json();
 };
+
+export interface AmendmentExpense {
+  id: string;
+  grantId: string;
+  categoryId: string;
+  date: string;
+  amount: number;
+  description: string;
+  createdBy?: string;
+  createdAt?: string;
+}
+
+export const fetchAmendmentExpenses = async (institutionId: string): Promise<AmendmentExpense[]> => {
+  const res = await apiFetch(`/api/amendments/expenses?institutionId=${encodeURIComponent(institutionId)}`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Erro ao consultar despesas de emendas');
+  return res.json();
+};
+
+export const saveAmendmentExpense = async (institutionId: string, expense: Omit<AmendmentExpense, 'id'> & { id?: string }): Promise<AmendmentExpense> => {
+  const res = await apiFetch('/api/amendments/expenses', {
+    method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ institutionId, ...expense })
+  });
+  if (!res.ok) throw new Error('Erro ao salvar despesa executada');
+  return res.json();
+};
+
+export const archiveAmendmentExpense = async (id: string): Promise<void> => {
+  const res = await apiFetch(`/api/amendments/expenses/${encodeURIComponent(id)}`, { method: 'DELETE', headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Erro ao arquivar despesa executada');
+};
