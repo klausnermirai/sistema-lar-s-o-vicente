@@ -27,7 +27,9 @@ import {
   deleteAmendmentCategory,
   fetchAmendmentGrants,
   saveAmendmentGrant,
-  deleteAmendmentGrant
+  deleteAmendmentGrant,
+  fetchAmendmentExpenses, saveAmendmentExpense, archiveAmendmentExpense,
+  AmendmentExpense
 } from '../lib/amendmentService';
 
 export interface Grant {
@@ -73,6 +75,8 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'agua', name: 'ÁGUA E ESGOTO', monthlyAverage: 2250 },
 ];
 
+const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
 export const MONTHS = [
   'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO', 'JANEIRO', 'FEVEREIRO', 'MARÇO'
 ];
@@ -84,6 +88,9 @@ interface PlanningEmendasModuleProps {
 export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ institutionId }) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [grants, setGrants] = useState<Grant[]>([]);
+  const [expenses, setExpenses] = useState<AmendmentExpense[]>([]);
+  const [expenseForm, setExpenseForm] = useState({ id: '', categoryId: '', date: new Date().toISOString().slice(0, 10), amount: '', description: '' });
+  const [expenseSaving, setExpenseSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGrant, setSelectedGrant] = useState<string | null>(null);
@@ -115,6 +122,8 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
       setLoading(true);
       const fetchedCats = await fetchAmendmentCategories(institutionId);
       const fetchedGrants = await fetchAmendmentGrants(institutionId);
+      const fetchedExpenses = await fetchAmendmentExpenses(institutionId);
+      setExpenses(fetchedExpenses);
       
       if (fetchedCats.length === 0) {
         // Bootstrap if empty for this institution
@@ -163,6 +172,41 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
       setCategories(prev => prev.filter(c => c.id !== id));
     } catch (error) {
       console.error("Erro ao arquivar categoria:", error);
+    }
+  };
+
+  const handleSaveExpense = async () => {
+    if (!detailsGrantId || !expenseForm.categoryId || !expenseForm.date || !expenseForm.description.trim() ||
+        !Number.isFinite(Number(expenseForm.amount)) || Number(expenseForm.amount) <= 0) {
+      alert('Preencha categoria, data, descrição e valor válido.');
+      return;
+    }
+    setExpenseSaving(true);
+    try {
+      const saved = await saveAmendmentExpense(institutionId, {
+        ...(expenseForm.id ? { id: expenseForm.id } : {}),
+        grantId: detailsGrantId,
+        categoryId: expenseForm.categoryId,
+        date: expenseForm.date,
+        amount: Number(expenseForm.amount),
+        description: expenseForm.description.trim()
+      });
+      setExpenses(prev => expenseForm.id ? prev.map(e => e.id === saved.id ? saved : e) : [...prev, saved]);
+      setExpenseForm({ id: '', categoryId: '', date: new Date().toISOString().slice(0, 10), amount: '', description: '' });
+    } catch {
+      alert('Erro ao salvar despesa executada.');
+    } finally {
+      setExpenseSaving(false);
+    }
+  };
+
+  const handleArchiveExpense = async (id: string) => {
+    if (!confirm('Arquivar este lançamento de despesa?')) return;
+    try {
+      await archiveAmendmentExpense(id);
+      setExpenses(prev => prev.filter(e => e.id !== id));
+    } catch {
+      alert('Não foi possível arquivar o lançamento.');
     }
   };
 
@@ -891,7 +935,7 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
 
         {detailsGrantId && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDetailsGrantId(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setDetailsGrantId(null); setExpenseForm({ id: '', categoryId: '', date: new Date().toISOString().slice(0, 10), amount: '', description: '' }); }} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-3xl bg-white rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               {/* Header com cor da emenda */}
               <div className="p-8 pb-12 border-b border-slate-100 flex items-start justify-between relative overflow-hidden">
@@ -938,6 +982,47 @@ export const PlanningEmendasModule: React.FC<PlanningEmendasModuleProps> = ({ in
                   </div>
                 </div>
 
+                {/* Execução registrada de forma independente do planejamento da emenda. */}
+                {(() => {
+                  const grant = grants.find(g => g.id === detailsGrantId);
+                  if (!grant) return null;
+                  const ownExpenses = expenses.filter(e => e.grantId === grant.id).sort((a,b) => b.date.localeCompare(a.date));
+                  const executed = ownExpenses.reduce((total,e) => total + Number(e.amount || 0), 0);
+                  return <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+                    <h4 className="font-black text-slate-800">Execução financeira da emenda</h4>
+                    <div className="grid grid-cols-3 gap-3 text-xs">
+                      <div>Destinado<strong className="block">{money(grant.totalValue)}</strong></div>
+                      <div>Executado<strong className="block">{money(executed)}</strong></div>
+                      <div>Saldo<strong className="block">{money(grant.totalValue - executed)}</strong></div>
+                    </div>
+                    <div className="space-y-2">
+                      {grant.allocations.filter(a=>a.amount>0).map(a=>{
+                        const spent = ownExpenses.filter(e=>e.categoryId===a.categoryId).reduce((t,e)=>t+Number(e.amount),0);
+                        return <div key={a.categoryId} className="text-xs flex flex-wrap gap-3 justify-between border-b pb-2">
+                          <span>{categories.find(c=>c.id===a.categoryId)?.name || a.categoryId}</span>
+                          <span>Destinado: {money(a.amount)} | Executado: {money(spent)} | Saldo: {money(a.amount-spent)}</span>
+                        </div>;
+                      })}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select className="border rounded p-2 text-xs" value={expenseForm.categoryId} onChange={e=>setExpenseForm(prev=>({...prev,categoryId:e.target.value}))}>
+                        <option value="">Categoria da emenda</option>
+                        {grant.allocations.filter(a=>a.amount>0).map(a=><option key={a.categoryId} value={a.categoryId}>{categories.find(c=>c.id===a.categoryId)?.name || a.categoryId}</option>)}
+                      </select>
+                      <input type="date" className="border rounded p-2 text-xs" value={expenseForm.date} onChange={e=>setExpenseForm(prev=>({...prev,date:e.target.value}))}/>
+                      <input type="number" min="0.01" step="0.01" placeholder="Valor (R$)" className="border rounded p-2 text-xs" value={expenseForm.amount} onChange={e=>setExpenseForm(prev=>({...prev,amount:e.target.value}))}/>
+                      <input className="border rounded p-2 text-xs" placeholder="Descrição da despesa paga" value={expenseForm.description} onChange={e=>setExpenseForm(prev=>({...prev,description:e.target.value}))}/>
+                    </div>
+                    <button disabled={expenseSaving} onClick={handleSaveExpense} className="bg-blue-700 text-white text-xs font-bold rounded px-4 py-2">{expenseForm.id ? 'Salvar correção' : 'Registrar despesa executada'}</button>
+                    {ownExpenses.map(e=><div key={e.id} className="border-t pt-2 text-xs flex flex-wrap justify-between gap-2">
+                      <span>{e.date.split('-').reverse().join('/')} — {categories.find(c=>c.id===e.categoryId)?.name || e.categoryId}: {e.description} — <strong>{money(e.amount)}</strong></span>
+                      <span className="flex gap-3">
+                        <button className="text-blue-700" onClick={()=>setExpenseForm({id:e.id,categoryId:e.categoryId,date:e.date,amount:String(e.amount),description:e.description})}>Editar</button>
+                        <button className="text-red-600" onClick={()=>handleArchiveExpense(e.id)}>Arquivar</button>
+                      </span>
+                    </div>)}
+                  </div>;
+                })()}
                 {/* Tabela de Destinação */}
                 <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                   <div className="grid grid-cols-[1fr_120px_120px_120px] bg-slate-50 p-4 border-b border-slate-200">
