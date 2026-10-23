@@ -2117,12 +2117,13 @@ export const FinanceiroModule: React.FC<FinanceiroModuleProps> = ({ session, set
                       + {formatCurrency(totalEntradasPeriodo)}
                     </span>
                     <span className="text-[10px] text-gray-400 font-semibold block mt-1">
-                      Doações, carnês e reforços em dinheiro
+                      Doações, carnês, transferências e outras receitas em dinheiro
                     </span>
                   </div>
-                  <div className="mt-3 pt-2 border-t border-gray-50 text-[10px] text-emerald-700 font-medium flex items-center gap-1">
-                    <CheckCircle2 size={12} />
-                    Entradas automáticas em dinheiro
+                  <div className="mt-3 pt-2 border-t border-gray-50 text-[10px] text-emerald-700 font-medium space-y-1">
+                    <div>Outras receitas: <strong>{formatCurrency(totalOutrasReceitasPeriodo)}</strong></div>
+                    <div>Saques bancários para o caixa: <strong>{formatCurrency(totalSaquesBancoPeriodo)}</strong></div>
+                    <div>Doações / carnês em dinheiro: <strong>{formatCurrency(totalEntradasPeriodo - totalOutrasReceitasPeriodo - totalSaquesBancoPeriodo)}</strong></div>
                   </div>
                 </div>
 
